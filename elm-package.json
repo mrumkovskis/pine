@@ -1,0 +1,28 @@
+{
+    "version": "1.0.0",
+    "summary": "Models and controllers for http rest services based on mojoz metadata",
+    "repository": "https://github.com/mrumkovskis/pine.git",
+    "license": "MIT",
+    "source-directories": [
+        "src",
+        "tests"
+    ],
+    "exposed-modules": [
+        "AddressModel",
+        "Ask",
+        "DeferredRequests",
+        "EditModel",
+        "JsonModel",
+        "Messages",
+        "Select",
+        "Utils"
+    ],
+    "dependencies": {
+        "elm-lang/core": "5.1.1 <= v < 6.0.0",
+        "elm-lang/html": "2.0.0 <= v < 3.0.0",
+        "elm-lang/http": "1.0.0 <= v < 2.0.0",
+        "elm-lang/websocket": "1.0.2 <= v < 2.0.0",
+        "elm-lang/window": "1.0.1 <= v < 2.0.0"
+    },
+    "elm-version": "0.18.0 <= v < 0.19.0"
+}

@@ -1,0 +1,80 @@
+module AddressModel exposing
+  ( Address, decoder, initAddress, init )
+
+
+import Json.Decode as JD
+import Json.Encode as JE
+import JsonModel as JM
+import Ask
+import DeferredRequests as DR
+import Select
+import Utils
+
+
+type alias Address =
+ { code: Maybe Int
+ , address: String
+ , zipCode: Maybe String
+ , coordX: Maybe Float
+ , coordY: Maybe Float
+ , pilCode: Maybe Int
+ , novCode: Maybe Int
+ , pagCode: Maybe Int
+ , pilName: Maybe String
+ , novName: Maybe String
+ , pagName: Maybe String
+ }
+
+
+decoder: JD.Decoder Address
+decoder =
+  let
+    opt = Utils.optField
+  in
+    JD.map5
+      Address
+      (opt "code" JD.int)
+      (JD.field "address" JD.string)
+      (opt "zipCode" JD.string)
+      (opt "coordX" JD.float)
+      (opt "coordY" JD.float)
+    |>
+    JD.andThen
+      (\a ->
+        JD.map6
+          a
+          (opt "pilCode" JD.int)
+          (opt "novCode" JD.int)
+          (opt "pagCode" JD.int)
+          (opt "pilName" JD.string)
+          (opt "novName" JD.string)
+          (opt "pagName" JD.string)
+      )
+
+
+initAddress: String -> Address
+initAddress address =
+  Address Nothing address Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+
+
+init:
+  String ->
+  Ask.Tomsg msg ->
+  DR.Tomsg msg ->
+  String ->
+  (Address -> msg) ->
+  Select.SelectModel msg Address
+init uri toMessagemsg toDeferredmsg search toAddressmsg =
+  Select.init
+    (JM.initList
+      "/metadata"
+      uri
+      "address"
+      decoder
+      (always JE.null)
+      toMessagemsg |>
+      JM.defaultDeferredSettings toDeferredmsg "20s"
+    )
+    search
+    toAddressmsg
+    .address
