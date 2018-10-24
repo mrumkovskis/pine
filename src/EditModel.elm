@@ -9,6 +9,20 @@ module EditModel exposing
   , update
   )
 
+{-| Binding layer between [`Input`](#Input) representing form input field and [`JsonModel`](JsonModel).
+[Controller](#Controller) functions are responsible for binding.
+
+# Commands
+@docs fetch, set, save, delete
+
+# Inuput attributes (input is associated with controller)
+@docs inputEvents, onTextSelectInput, onTextSelectMouse,
+      addressInputEvents, onAddressSelectInput, onAddressSelectMouse
+
+# Utility
+@docs id
+-}
+
 
 import JsonModel as JM
 import Ask
@@ -140,32 +154,42 @@ type Msg msg model inputs
 type alias Tomsg msg model inputs = (Msg msg model inputs -> msg)
 
 
+{-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
+-}
 fetch: Tomsg msg model inputs -> Int -> Cmd msg
 fetch toMsg id =
   JM.fetch (toMsg << FetchModelMsg) <| [ ("id", toString id) ]
 
 
+{-| Set model data. After updating inputs, calls [`JsonModel.set`](JsonModel#set)
+-}
 set: Tomsg msg model inputs -> (model -> model) -> Cmd msg
 set toMsg editFun =
   Task.perform toMsg <| Task.succeed <| EditModelMsg editFun
 
 
+{-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
+-}
 save: Tomsg msg model inputs -> Cmd msg
 save toMsg =
   JM.save (toMsg << SaveModelMsg) []
 
 
+{-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
+-}
 delete: Tomsg msg model inputs -> Int -> Cmd msg
 delete toMsg id =
   JM.delete (toMsg << DeleteModelMsg) [("id", toString id)]
 
 
+{-| Gets model id.  Calls [`JsonModel.id`](JsonModel#id) and tries to convert result to `Int`
+-}
 id: EditModel msg model inputs controllers -> Maybe Int
 id =
   .model >> JM.id >> Maybe.map String.toInt >> Maybe.andThen Result.toMaybe
 
 
-{- event attributes -}
+{- event attributes private function -}
 inputFocusBlurEvents:
   Tomsg msg model inputs ->
   (String -> Msg msg model inputs) ->
@@ -181,6 +205,9 @@ inputFocusBlurEvents toMsg inputMsg focusMsg blurMsg =
 
 {- Select event listeners -}
 
+{-| Returns `onInput`, `onFocus`, `onBlur` `Html.Attributes`
+for input associated with the controller.
+-}
 inputEvents: Tomsg msg model inputs -> TextController msg model inputs -> List (Attribute msg)
 inputEvents toMsg ctrl =
   inputFocusBlurEvents
@@ -190,16 +217,25 @@ inputEvents toMsg ctrl =
     (OnFocusMsg ctrl False)
 
 
+{-| Returns attributes for [`Select`](Select) management. Generally this is key listener
+reacting on arrow, escape, enter keys.
+-}
 onTextSelectInput: Tomsg msg model inputs -> TextController msg model inputs -> List (Attribute msg)
 onTextSelectInput toMsg ctrl =
   Select.onSelectInput <| toMsg << SelectTextMsg ctrl
 
 
+{-| Returns attributes for [`Select`](Select) management. Generally this is mouse down listener
+to enable value selection from list. `Int` parameter indicates selected index.
+-}
 onTextSelectMouse: Tomsg msg model inputs -> TextController msg model inputs -> Int -> List (Attribute msg)
 onTextSelectMouse toMsg ctrl idx =
   Select.onMouseSelect (toMsg << SelectTextMsg ctrl) idx
 
 
+{-| The same as [`inputEvents`](#inputEvents) with the difference that instead of string value
+[`AddressModel.Address`](AddressModel#Address) is selected.
+-}
 addressInputEvents: Tomsg msg model inputs -> AddressController msg model inputs -> List (Attribute msg)
 addressInputEvents toMsg ctrl =
   inputFocusBlurEvents
@@ -209,11 +245,17 @@ addressInputEvents toMsg ctrl =
     (OnAddressFocusMsg ctrl False)
 
 
+{-| The same as [`onTextSelectInput`](#onTextSelectInput) with the difference that instead of string value
+[`AddressModel.Address`](AddressModel#Address) is selected.
+-}
 onAddressSelectInput: Tomsg msg model inputs -> AddressController msg model inputs -> List (Attribute msg)
 onAddressSelectInput toMsg ctrl =
   Select.onSelectInput <| toMsg << SelectAddressMsg ctrl
 
 
+{-| The same as [`onTextSelectMouse`](#onTextSelectMouse) with the difference that instead of string value
+[`AddressModel.Address`](AddressModel#Address) is selected.
+-}
 onAddressSelectMouse: Tomsg msg model inputs -> AddressController msg model inputs -> Int -> List (Attribute msg)
 onAddressSelectMouse toMsg ctrl idx =
   Select.onMouseSelect (toMsg << SelectAddressMsg ctrl) idx
