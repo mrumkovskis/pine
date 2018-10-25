@@ -21,6 +21,13 @@ module EditModel exposing
 
 # Utility
 @docs id
+
+# Types
+@docs AddressController, AddressInput, AddressInputWithAttributes, Controller, EditModel,
+      Input, InputWithAttributes, Msg, TextController, TextInput, TextInputWithAttributes,
+      Tomsg
+
+@docs update
 -}
 
 
@@ -37,6 +44,7 @@ import Task
 import Debug exposing (log)
 
 
+{-| Represents form input field. Is synchronized with model. -}
 type alias Input msg value =
   { input: String
   , editing: Bool
@@ -45,9 +53,11 @@ type alias Input msg value =
   }
 
 
+{-| Text input field. -}
 type alias TextInput msg = Input msg String
 
 
+{-| Address input field. -}
 type alias AddressInput msg = Input msg Address
 
 
@@ -90,6 +100,7 @@ type alias SelectInitializer msg value =
   SelectModel msg value
 
 
+{-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
 type alias Controller msg value model inputs =
   { value: Getter value
   , setter: Setter value model
@@ -100,12 +111,17 @@ type alias Controller msg value model inputs =
   }
 
 
+{-| Text field controller -}
 type alias TextController msg model inputs = Controller msg String model inputs
 
 
+{-| Address field controller -}
 type alias AddressController msg model inputs = Controller msg Address model inputs
 
 
+{-| Input together with proposed html input element attributes and with
+mouse selection attributes of select component.
+-}
 type alias InputWithAttributes msg value =
   { input: Input msg value
   , mouseSelectAttrs: Int -> List (Attribute msg)
@@ -113,12 +129,16 @@ type alias InputWithAttributes msg value =
   }
 
 
+{-| Text onput and attributes -}
 type alias TextInputWithAttributes msg = InputWithAttributes msg String
 
 
+{-| Address input and attributes -}
 type alias AddressInputWithAttributes msg = InputWithAttributes msg Address
 
 
+
+{-| Edit model -}
 type alias EditModel msg model inputs controllers =
   { model: JM.FormModel msg model
   , inputs: inputs
@@ -132,6 +152,7 @@ type alias EditModel msg model inputs controllers =
   }
 
 
+{-| Edit model update messages -}
 type Msg msg model inputs
   = UpdateModelMsg Bool (JM.FormMsg msg model)
   | FetchModelMsg (JM.FormMsg msg model)
@@ -151,6 +172,7 @@ type Msg msg model inputs
   | EditModelMsg (model -> model)
 
 
+{-| Edit model message constructor -}
 type alias Tomsg msg model inputs = (Msg msg model inputs -> msg)
 
 
@@ -263,6 +285,7 @@ onAddressSelectMouse toMsg ctrl idx =
 -- end of select event listeners
 
 
+{-| Model update -}
 update: Tomsg msg model inputs -> Msg msg model inputs -> EditModel msg model inputs controllers -> (EditModel msg model inputs controllers, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let

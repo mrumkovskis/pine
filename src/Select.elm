@@ -4,6 +4,9 @@ module Select exposing
   )
 
 {-| Model and controller for typeahead (a.k.a autocomplete, suggestion) data.
+
+@docs SelectModel, Msg, init, searchParamName, additionalParams,
+      onSelectInput, onMouseSelect, search, update
 -}
 
 import JsonModel as JM
@@ -17,6 +20,7 @@ import Task
 import Debug exposing (log)
 
 
+{-| Model for select component -}
 type alias SelectModel msg value =
   { model: JM.ListModel msg value
   , search: String
@@ -29,6 +33,7 @@ type alias SelectModel msg value =
   }
 
 
+{-| Message for select model update -}
 type Msg msg value
   = Navigate SE.Msg
   | Search String
@@ -80,6 +85,7 @@ search: Tomsg msg value -> String -> Cmd msg
 search toMsg search = Task.perform (toMsg << Search) <| Task.succeed search
 
 
+{-| Model update -}
 update: Tomsg msg value -> Msg msg value -> SelectModel msg value -> (SelectModel msg value, Cmd msg)
 update toMsg msg ({model, activeIdx, toSelectedmsg, searchParamName, active} as same) =
   let

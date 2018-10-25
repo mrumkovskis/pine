@@ -2,8 +2,7 @@ module JsonModel exposing
   ( -- types
     Model (..), DataValue (..), Msg, ListModel, ListMsg, DataValueListModel
   , DataValueListMsg, FormModel, FormMsg, DataValueFormModel, DataValueFormMsg
-  , Path (..), SearchParams, DeferredConfig, TimeoutDeferredConfig
-  , Decoder, Encoder, Setter, Editor, Reader
+  , Path (..), SearchParams, Decoder, Encoder
   -- initialization, configuration
   , initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder
   , countBaseUri, pageSize, countDecoder, idParam, offsetLimitParams
@@ -33,9 +32,9 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 
 # Types
 @docs DataValue, DataValueFormModel, DataValueFormMsg, DataValueListModel,
-      DataValueListMsg, Decoder, DeferredConfig, Editor, Encoder, FormModel,
+      DataValueListMsg, Decoder, Encoder, FormModel,
       FormMsg, ListModel, ListMsg, Model, Msg, Path,
-      Reader, SearchParams, Setter, TimeoutDeferredConfig
+      SearchParams
 
 # Initialization, configuration
 @docs initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder, countBaseUri,
@@ -78,12 +77,15 @@ import Debug exposing (log)
 type alias TypeName = String
 
 
+{-| http query parameters as list of tuples. -}
 type alias SearchParams = List (String, String)
 
 
+{-| Decoder based on metadata provided by first parameter, view name provided by second. -}
 type alias Decoder value = Dict String VM.View -> String -> JD.Decoder value
 
 
+{-| Encoder based on metadata provided by first parameter, view name provided by second. -}
 type alias Encoder value = Dict String VM.View -> String -> value -> JD.Value
 
 
@@ -156,34 +158,46 @@ type alias Config msg value =
   }
 
 
+{-| Json model. Consists of data and configuration. -}
 type Model msg value = Model (Data value) (Config msg value)
 
 
 -- list types
 
+{-| Json model based on list values. -}
 type alias ListModel msg value = Model msg (List value)
 
 
+{-| Json model based on `DataValue` list. This model comes with encoder, decoder and
+can be partialy edited. See [`edit`](#edit)
+-}
 type alias DataValueListModel msg = ListModel msg DataValue
 
 
+{-| Message for [`ListModel`](#ListModel) -}
 type alias ListMsg msg value = Msg msg (List value)
 
 
+{-| Message for [`DataValueListModel`](#DataValueListModel) -}
 type alias DataValueListMsg msg = ListMsg msg DataValue
 
 
 --form types
-
+{-| Json model based on abstract value -}
 type alias FormModel msg value = Model msg value
 
 
+{-| Json model based on `DataValue`. This comes with encoder, decoder and can be partialy
+edited. See [`edit`](#edit)
+-}
 type alias DataValueFormModel msg = FormModel msg DataValue
 
 
+{-| Message for [`FormModel`](#FormModel) -}
 type alias FormMsg msg value = Msg msg value
 
 
+{-| Message for [`DataValueFormModel`](#DataValueFormModel) -}
 type alias DataValueFormMsg msg = FormMsg msg DataValue
 
 
@@ -202,6 +216,7 @@ type Path
   | End
 
 
+{-| Message for model update. -}
 type Msg msg value
   = MetadataMsg (Maybe (Cmd msg)) VM.Msg
   | DataMsg TypeName Bool SearchParams (Result Http.Error value)
@@ -969,8 +984,7 @@ delete toMsg searchParams =
   Task.perform toMsg <| Task.succeed <| DeleteCmdMsg searchParams
 
 
--- update
-
+{-| Model updater. -}
 update: Tomsg msg value -> Msg msg value -> Model msg value -> (Model msg value, Cmd msg)
 update toMsg msg (Model data conf as same) =
   let

@@ -3,7 +3,9 @@ module AddressModel exposing
 
 
 {-| Address service according to [`addresses`](https://github.com/mrumkovskis/addresses)
-This is relevant only for LV addresses.
+This is relevant for LV addresses.
+
+@docs Address, decoder, initAddress, init
 -}
 
 
@@ -16,7 +18,7 @@ import Select
 import Utils
 
 
-
+{-| Address structure (LV) -}
 type alias Address =
  { code: Maybe Int
  , address: String
