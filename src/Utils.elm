@@ -4,6 +4,9 @@ module Utils exposing
 
 
 {-| Various useful utility methods.
+
+@docs at, httpQuery, matchIdx, noBreakSpace, optField,
+      orElse, strOrEmpty, zip
 -}
 
 

@@ -31,6 +31,12 @@ informs about progress.
 Service data are form [`JsonModel.FormModel`](JsonModel#FormModel) or
 list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 
+# Types
+@docs DataValue, DataValueFormModel, DataValueFormMsg, DataValueListModel,
+      DataValueListMsg, Decoder, DeferredConfig, Editor, Encoder, FormModel,
+      FormMsg, ListModel, ListMsg, Model, Msg, Path,
+      Reader, SearchParams, Setter, TimeoutDeferredConfig
+
 # Initialization, configuration
 @docs initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder, countBaseUri,
       pageSize, countDecoder, idParam, offsetLimitParams,
@@ -48,6 +54,9 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 
 # Utility functions
 @docs isInitialized, notInitialized, ready, dataDecoder, pathDecoder
+
+# Model update
+@docs update
 -}
 
 

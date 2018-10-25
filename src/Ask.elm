@@ -5,23 +5,31 @@ module Ask exposing
 
 
 {-| Sends or asks messages.
+
+@docs MsgType, Msg, Tomsg, ask, info, warn, error, text
 -}
 
 
 import Task
 
 
+{-| Message type: Info, Warn, Error
+-}
 type MsgType
   = Info
   | Warn
   | Error 
 
 
+{-| Command message - generate info, warn on error message - `Message` or
+    ask question - `Question`
+-}
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg)
 
 
+{-| Message constructor -}
 type alias Tomsg msg = Msg msg -> msg
 
 

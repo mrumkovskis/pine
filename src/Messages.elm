@@ -14,6 +14,9 @@ module Messages exposing
 
 # Data examination
 @docs messages
+
+# Types & update
+@docs Messages, Msg, update
 -}
 
 
@@ -23,6 +26,8 @@ import Dict exposing (Dict)
 import Task
 
 
+{-| Messages storage
+-}
 type Messages msg =
   Messages (MsgInternal msg)
 
@@ -32,6 +37,8 @@ type alias MsgInternal msg =
   }
 
 
+{-| Model update messages.
+-}
 type Msg msg
   = Add (Ask.Msg msg)
   | Remove String
@@ -98,6 +105,7 @@ msgInternal toMsg stringTomsg msg =
   Task.perform (toMsg << stringTomsg) <| Task.succeed msg
 
 
+{-| Model update -}
 update: Tomsg msg -> Msg msg -> Messages msg -> (Messages msg, Cmd msg)
 update toMsg message (Messages messages) =
   let

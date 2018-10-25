@@ -15,6 +15,10 @@ module DeferredRequests exposing
 
 # Data examination
 @docs requests, subscriptions
+
+# Types & other
+@docs DeferredRequest, DeferredStatus, Model, Msg, Tomsg,
+      update, wsSubscriptions
 -}
 
 
@@ -25,18 +29,24 @@ import WebSocket
 import Task
 
 
+{-| Deferred request structure, consists of status and notification time.
+-}
 type alias DeferredRequest =
   { status: DeferredStatus
   , time: String
   }
 
 
+{-| Deferred status
+-}
 type DeferredStatus
   = OK
   | ERR
   | EXE
 
 
+{-| Msg constructor type alias
+-}
 type alias Tomsg msg = Msg msg -> msg
 
 
@@ -50,9 +60,14 @@ type alias Config =
   , wsNotificationUri: String
   }
 
+
+{-| Model
+-}
 type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription msg)) Config
 
 
+{-| Messages. Sent to update deferred request statuses and subscribe to deferred results.
+-}
 type Msg msg
   = UpdateMsg String
   | SubscribeMsg String (Subscription msg)
@@ -101,6 +116,8 @@ maybeSubscribeCmd toMsg subscription deferredResponse =
     (Maybe.map <| subscribeCmd toMsg subscription)
 
 
+{-| Model update.
+-}
 update: Tomsg msg -> Msg msg -> Model msg -> ( Model msg, Cmd msg )
 update toMsg msg (Model requests subs conf) =
   let

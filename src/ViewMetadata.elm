@@ -6,11 +6,11 @@ module ViewMetadata exposing
   )
 
 
-{-| Elm represantation of [mojoz](https://github.com/guntiso/mojoz) metadata.
+{-| Elm represantation of [mojoz](https://github.com/guntiso/mojoz) view metadata.
 `fetchMetadata` command gets view's metadata from server.
 
 # Types
-@docs View, Field
+@docs View, Field, Msg
 
 # Commands
 @docs fetchMetadata
@@ -22,12 +22,16 @@ import Http
 import Set exposing (Set)
 
 
+{-| View definition.
+-}
 type alias View =
   { typeName: String
   , fields: List Field
   }
 
 
+{-| Field definition.
+-}
 type alias Field =
   { name: String
   , label: String
