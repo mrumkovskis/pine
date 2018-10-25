@@ -1,17 +1,21 @@
 module DeferredRequests exposing
-  ( DeferredRequest
-  , DeferredStatus (..)
-  , Tomsg
-  , Model
-  , Msg
-  , init
-  , update
-  , subscribeCmd
-  , maybeSubscribeCmd
-  , wsSubscriptions
-  , requests
-  , subscriptions
+  ( DeferredRequest, DeferredStatus (..), Tomsg, Model, Msg
+  , init, update, subscribeCmd, maybeSubscribeCmd, wsSubscriptions
+  , requests, subscriptions
   )
+
+
+{-| Deferred request notification subscription module.
+
+# Initialization, configuration
+@docs init
+
+# Commands
+@docs subscribeCmd, maybeSubscribeCmd
+
+# Data examination
+@docs requests, subscriptions
+-}
 
 
 import Json.Decode as JD
@@ -36,6 +40,8 @@ type DeferredStatus
 type alias Tomsg msg = Msg msg -> msg
 
 
+{-| Subscription to deferred result.
+-}
 type alias Subscription msg = (Result Http.Error JD.Value) -> msg
 
 
@@ -52,24 +58,40 @@ type Msg msg
   | SubscribeMsg String (Subscription msg)
 
 
+{-| Creates model. First argument specifies base uri where to get ready results
+(real uri appends requests id to the base), second argument is web socket notification
+uri of request execution progress.
+-}
 init: String -> String -> Model msg
 init deferredResultBaseUri wsNotificationUri =
   Model Dict.empty Dict.empty <| Config deferredResultBaseUri wsNotificationUri
 
 
+{-| Get active requests. Key is request id.
+-}
 requests: Model msg -> Dict String DeferredRequest
 requests (Model r _ _) = r
 
 
+{-| Get active subscriptions. List element is request id.
+-}
 subscriptions: Model msg -> List String
 subscriptions (Model _ s _) = Dict.keys s
 
 
+{-| Subscribe to deferred result. Subscription message is sent
+when result is ready (OK or ERR).
+-}
 subscribeCmd: Tomsg msg -> Subscription msg -> String -> Cmd msg
 subscribeCmd toMsg subscription deferredRequestId =
   Task.perform toMsg <| Task.succeed <| SubscribeMsg deferredRequestId subscription
 
 
+{-| Maybe subscribe to deferred result. Subscription is successful if
+third argument `deferredResponse` corresponds following json pattern:
+
+    `{"deferred":"w4OIXzaWt2437gZ1fqxMsFAHXVA"}`
+-}
 maybeSubscribeCmd: Tomsg msg -> Subscription msg -> String -> Maybe (Cmd msg)
 maybeSubscribeCmd toMsg subscription deferredResponse =
   let
@@ -151,6 +173,8 @@ update toMsg msg (Model requests subs conf) =
         processSubscription id toSubMsg
 
 
+{-| Subscription to web socket deferred request notifications.
+-}
 wsSubscriptions : Tomsg msg -> Model msg -> Sub msg
 wsSubscriptions toMsg (Model _ _ { wsNotificationUri }) =
   Sub.batch

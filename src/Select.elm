@@ -40,29 +40,42 @@ type Msg msg value
 type alias Tomsg msg value = (Msg msg value) -> msg
 
 
+{-| Initializes SelectModel with [`JsonModel`](JsonModel), initial search string,
+selected value message constructor and value to string converter.
+-}
 init: JM.ListModel msg value -> String -> (value -> msg) -> (value -> String) -> SelectModel msg value
 init model search toSelectedmsg toString =
   SelectModel model search [] toSelectedmsg Nothing "search" False toString
 
 
+{-| Change search http uri query parameter name. Default value is "search"
+-}
 searchParamName: String -> SelectModel msg value -> SelectModel msg value
 searchParamName name model =
   { model | searchParamName = name }
 
 
+{-| Adds additional search parameters.
+-}
 additionalParams: JM.SearchParams -> SelectModel msg value -> SelectModel msg value
 additionalParams params model =
   { model | additionalParams = params }
 
 
+{-| Key listeners. Listens to key up, down, esc, enter.
+-}
 onSelectInput: Tomsg msg value -> List (Attribute msg)
 onSelectInput toMsg = [ SE.onNavigation (toMsg << Navigate) ]
 
 
+{-| Mouse down listener on list item specified with idx parameter.
+-}
 onMouseSelect: Tomsg msg value -> Int -> List (Attribute msg)
 onMouseSelect toMsg idx = [ onMouseDown (toMsg <| SetActive True idx) ]
 
 
+{-| Search command.
+-}
 search: Tomsg msg value -> String -> Cmd msg
 search toMsg search = Task.perform (toMsg << Search) <| Task.succeed search
 

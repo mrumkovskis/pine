@@ -2,6 +2,11 @@ module AddressModel exposing
   ( Address, decoder, initAddress, init )
 
 
+{-| Address service according to [`addresses`](https://github.com/mrumkovskis/addresses)
+This is relevant only for LV addresses.
+-}
+
+
 import Json.Decode as JD
 import Json.Encode as JE
 import JsonModel as JM
@@ -9,6 +14,7 @@ import Ask
 import DeferredRequests as DR
 import Select
 import Utils
+
 
 
 type alias Address =
@@ -26,6 +32,8 @@ type alias Address =
  }
 
 
+{-| Address decoder.
+-}
 decoder: JD.Decoder Address
 decoder =
   let
@@ -52,11 +60,16 @@ decoder =
       )
 
 
+{-| Initialize address with text (without structure).
+-}
 initAddress: String -> Address
 initAddress address =
   Address Nothing address Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
+{-| Initialize [`Select`](Select)
+backed by [`addresses`](https://github.com/mrumkovskis/addresses) service.
+-}
 init:
   String ->
   Ask.Tomsg msg ->

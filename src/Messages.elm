@@ -1,15 +1,20 @@
 module Messages exposing
-  ( Msg (..)
-  , Messages
-  , init
-  , messages
-  , add
-  , remove
-  , yes
-  , no
-  , clear
-  , update
+  ( Msg (..), Messages
+  , init, messages, add, remove, yes, no, clear, update
   )
+
+
+{-| Stores [`Ask`](Ask#Msg) messages.
+
+# Initialization, configuration
+@docs init
+
+# Commands
+@docs add, remove, yes, no, clear
+
+# Data examination
+@docs messages
+-}
 
 
 import Ask
@@ -38,36 +43,51 @@ type Msg msg
 type alias Tomsg msg = (Msg msg -> msg)
 
 
+{-| Initialize empty message storage.
+-}
 init: Messages msg
 init =
   Messages { messages = Dict.empty }
 
 
+{-| Gets all messages.
+-}
 messages: Messages msg -> List (Ask.Msg msg)
 messages (Messages { messages }) =
   Dict.values messages
 
 
+{-| Add message.
+-}
 add: Tomsg msg -> Ask.Msg msg -> Cmd msg
 add toMsg msg =
   Task.perform (toMsg << Add) <| Task.succeed msg
 
 
+{-| Remove message.
+-}
 remove: Tomsg msg -> String -> Cmd msg
 remove toMsg msg =
   msgInternal toMsg Remove msg
 
 
+{-| Answer yes to [`Question`](Ask#Msg) message.
+This triggers associated command execution.
+-}
 yes: Tomsg msg -> String -> Cmd msg
 yes toMsg msg =
   msgInternal toMsg Yes msg
 
 
+{-| Answer no to [`Question`](Ask#Msg) message.
+-}
 no: Tomsg msg -> String -> Cmd msg
 no toMsg msg =
   msgInternal toMsg No msg
 
 
+{-| Remove all messages
+-}
 clear: Tomsg msg -> Cmd msg
 clear toMsg =
   Task.perform toMsg <| Task.succeed Clear

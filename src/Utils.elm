@@ -1,18 +1,21 @@
 module Utils exposing
-  ( zip
-  , at
-  , orElse
-  , httpQuery
-  , matchIdx
-  , strOrEmpty
-  , optField
-  , noBreakSpace
+  ( zip, at, orElse, httpQuery, matchIdx, strOrEmpty, optField, noBreakSpace
   )
+
+
+{-| Various useful utility methods.
+-}
+
 
 import Http
 import Dict
 import Json.Decode as JD
 
+
+{-| Zip together to lists. If lists are various size resulting list size
+equals to shortest one. This is reverse operation to `List.unzip` function from
+core package.
+-}
 zip: List a -> List b -> List (a, b)
 zip l1 l2 =
   let
@@ -27,26 +30,34 @@ zip l1 l2 =
     zip l1 l2 []
 
 
+{-| Finds list element at specified index.
+-}
 at: Int -> List a -> Maybe a
 at idx l =
   if idx == 0 then List.head l
   else List.tail l |> Maybe.andThen (at (idx - 1))
 
 
+{-| Returns first `Just` value `Maybe`
+-}
 orElse: Maybe.Maybe a -> Maybe.Maybe a -> Maybe.Maybe a
 orElse mb2 mb1 = if mb1 == Nothing then mb2 else mb1
 
 
+{-| Forms http query string from key value list.
+-}
 httpQuery: List (String, String) -> String
 httpQuery params =
   String.join "&" <| List.map (\(k,v) -> Http.encodeUri k ++ "=" ++ Http.encodeUri v) params
 
 
+{-| Useful for &nbsp; characters in html.
+-}
 noBreakSpace: String
 noBreakSpace = String.fromChar '\x00A0'
 
 
-{- Finds index of element most closely matching pattern.
+{-| Finds index of element most closely matching pattern.
    Matching priority:
      1. Exact match
      2. Exact case insensitive without latvian diacritic match
@@ -114,11 +125,15 @@ matchIdx pattern list =
     Maybe.map Tuple.first
 
 
+{-| `JD.oneOf [ JD.string, JD.null "" ]`
+-}
 strOrEmpty: JD.Decoder String
 strOrEmpty =
   JD.oneOf [ JD.string, JD.null "" ]
 
 
+{-| `JD.maybe (JD.field name decoder)`
+-}
 optField: String -> JD.Decoder a -> JD.Decoder (Maybe a)
 optField name decoder =
   JD.maybe (JD.field name decoder)
