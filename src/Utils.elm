@@ -1,18 +1,20 @@
 module Utils exposing
-  ( zip, at, orElse, httpQuery, matchIdx, strOrEmpty, optField, noBreakSpace
+  ( zip, at, orElse, httpQuery, matchIdx, strOrEmpty, optField, noBreakSpace,
+    flip, curry, uncurry
   )
 
 
 {-| Various useful utility methods.
 
 @docs at, httpQuery, matchIdx, noBreakSpace, optField,
-      orElse, strOrEmpty, zip
+      orElse, strOrEmpty, zip, flip, curry, uncurry
 -}
 
 
 import Http
 import Dict
 import Json.Decode as JD
+import Url.Builder as UB
 
 
 {-| Zip together to lists. If lists are various size resulting list size
@@ -20,17 +22,17 @@ equals to shortest one. This is reverse operation to `List.unzip` function from
 core package.
 -}
 zip: List a -> List b -> List (a, b)
-zip l1 l2 =
+zip list1 list2 =
   let
-    zip l1 l2 r =
+    z l1 l2 r =
       case (l1, l2) of
         ([], []) -> List.reverse r
 
-        (e1 :: t1, e2 :: t2) -> zip t1 t2 <| (e1, e2) :: r
+        (e1 :: t1, e2 :: t2) -> z t1 t2 <| (e1, e2) :: r
 
         _ -> r
   in
-    zip l1 l2 []
+    z list1 list2 []
 
 
 {-| Finds list element at specified index.
@@ -51,13 +53,15 @@ orElse mb2 mb1 = if mb1 == Nothing then mb2 else mb1
 -}
 httpQuery: List (String, String) -> String
 httpQuery params =
-  String.join "&" <| List.map (\(k,v) -> Http.encodeUri k ++ "=" ++ Http.encodeUri v) params
+  params |>
+  List.map (uncurry UB.string) |>
+  UB.toQuery
 
 
 {-| Useful for &nbsp; characters in html.
 -}
 noBreakSpace: String
-noBreakSpace = String.fromChar '\x00A0'
+noBreakSpace = String.fromChar '\u{00A0}'
 
 
 {-| Finds index of element most closely matching pattern.
@@ -70,7 +74,7 @@ noBreakSpace = String.fromChar '\x00A0'
 matchIdx: String -> List String -> Maybe Int
 matchIdx pattern list =
   let
-    stringMatch pattern string =
+    stringMatch string =
       let
         charMap =
           Dict.fromList
@@ -120,8 +124,8 @@ matchIdx pattern list =
           x -> (3, String.length string - x)
   in
     list |>
-    List.indexedMap (,) |>
-    List.map (\(i, s) -> (i, stringMatch pattern s)) |>
+    List.indexedMap Tuple.pair |>
+    List.map (\(i, s) -> (i, stringMatch s)) |>
     List.filter (\(_, (r, _)) -> not <| r == 5) |>
     List.sortBy (\(_, r) -> r) |>
     List.head |>
@@ -140,3 +144,26 @@ strOrEmpty =
 optField: String -> JD.Decoder a -> JD.Decoder (Maybe a)
 optField name decoder =
   JD.maybe (JD.field name decoder)
+
+
+{-| Flips first two arguments of a function. Removed from elm 0.19
+-}
+flip: (a -> b -> c) -> (b -> a -> c)
+flip f b a =
+  f a b
+
+
+{-| Change how arguments are passed to a function.
+This splits paired arguments into two separate arguments.
+-}
+curry : ((a,b) -> c) -> a -> b -> c
+curry f a b =
+  f (a,b)
+
+
+{-| Change how arguments are passed to a function.
+This combines two arguments into a single pair.
+-}
+uncurry : (a -> b -> c) -> (a,b) -> c
+uncurry f (a,b) =
+  f a b

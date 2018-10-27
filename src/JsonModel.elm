@@ -71,7 +71,7 @@ import DeferredRequests as DR
 import Ask
 import Utils
 
-import Debug exposing (log)
+import Debug exposing (log, toString)
 
 
 type alias TypeName = String
@@ -243,30 +243,29 @@ type alias Tomsg msg value = Msg msg value -> msg
 initDataValueList: String -> String -> String -> Ask.Tomsg msg -> DataValueListModel msg
 initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    decoder metadata typeName = JD.list <| dataDecoder metadata typeName
+    decoder metadata deTypeName = JD.list <| dataDecoder metadata deTypeName
 
-    encoder metadata typeName value =
+    encoder metadata eTypeName value =
       value |>
-      List.map (dataEncoder metadata typeName) |>
-      JE.list
+      JE.list (dataEncoder metadata eTypeName)
 
-    editor typeName metadata path value data =
+    editor eTypeName metadata path value edata =
       let
-        edit =
-          case recordEditor typeName metadata path value <| RecordValue data of
+        result =
+          case recordEditor eTypeName metadata path value <| RecordValue edata of
             RecordValue rows -> rows
 
-            _ -> data
+            _ -> edata
       in
         case path of
-          End -> edit
+          End -> result
 
-          Idx _ _ -> edit
+          Idx _ _ -> result
 
-          Name _ _ -> data -- list editing path cannot start with name
+          Name _ _ -> edata -- list editing path cannot start with name
 
-    reader typeName metadata path value =
-      let read = fieldValue typeName metadata path <| RecordValue value
+    reader rTypeName metadata path value =
+      let read = fieldValue rTypeName metadata path <| RecordValue value
       in case path of
         End -> RecordValue value
 
@@ -274,9 +273,9 @@ initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
 
         Name _ _ -> RecordValue [] -- list reading cannot start with name
 
-    dataValueModel (Model data conf) =
-      Model data
-        { conf |
+    dataValueModel (Model md mc) =
+      Model md
+        { mc |
           decoder = decoder
         , encoder = encoder
         , editor = editor
@@ -300,9 +299,9 @@ initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
 initList: String -> String -> String -> JD.Decoder value -> (value -> JD.Value) -> Ask.Tomsg msg -> Model msg (List value)
 initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
   let
-    dataDecoder _ _ = JD.list decoder
+    listDataDecoder _ _ = JD.list decoder
 
-    dataEncoder _ _ value = List.map encoder value |> JE.list
+    listDataEncoder _ _ value = JE.list encoder value
 
     editor _ _ _ _ value = value
 
@@ -318,47 +317,45 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
         []
         (Progress False False False)
 
-    listSetter newData (Model data conf) =
+    listSetter newData (Model md mc) =
       Model
-        { data |
-          data = data.data ++ newData
+        { md |
+          data = md.data ++ newData
         , count = Nothing
-        , completed = List.length newData < conf.pageSize
+        , completed = List.length newData < mc.pageSize
         , ready = True
         }
-        conf
+        mc
 
-    listUri restart searchParams (Model data conf) =
+    listUri restart searchParams (Model md mc) =
       let
         offset =
-          if not restart && searchParams == data.searchParams then
-            List.length data.data
+          if not restart && searchParams == md.searchParams then
+            List.length md.data
           else 0
 
         searchParamsWithOffsetLimit =
           List.append
             searchParams
-            [ (conf.offsetParamName, toString <| offset)
-            , (conf.limitParamName, toString conf.pageSize)
+            [ (mc.offsetParamName, String.fromInt <| offset)
+            , (mc.limitParamName, String.fromInt mc.pageSize)
             ]
 
         queryString = Utils.httpQuery searchParamsWithOffsetLimit
       in
-        conf.dataBaseUri ++ "/" ++ conf.typeName ++
-        (if String.isEmpty queryString then "" else "?") ++ queryString
+        mc.dataBaseUri ++ "/" ++ mc.typeName ++ queryString
 
-    countUri searchParams (Model _ conf) =
+    countUri searchParams (Model _ mc) =
       let
         queryString = Utils.httpQuery searchParams
       in
-        conf.countBaseUri ++ "/" ++ conf.typeName ++
-        (if String.isEmpty queryString then "" else "?") ++ queryString
+        mc.countBaseUri ++ "/" ++ mc.typeName ++ queryString
   in
     Model
       (emptyListData False) -- model not ready upon initialization
       { typeName = typeName
-      , decoder = dataDecoder
-      , encoder = dataEncoder
+      , decoder = listDataDecoder
+      , encoder = listDataEncoder
       , setter = listSetter
       , editor = editor
       , reader = reader
@@ -390,27 +387,27 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
 initDataValueForm: String -> String -> String -> Ask.Tomsg msg -> DataValueFormModel msg
 initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    decoder metadata typeName = dataDecoder metadata typeName
+    decoder metadata deTypeName = dataDecoder metadata deTypeName
 
-    encoder metadata typeName value = dataEncoder metadata typeName value
+    encoder metadata eTypeName value = dataEncoder metadata eTypeName value
 
-    editor typeName metadata path value data =
+    editor eTypeName metadata path value edata =
       let
-        edit =
-          case recordEditor typeName metadata path value data of
+        result =
+          case recordEditor eTypeName metadata path value edata of
             RecordValue fields -> RecordValue fields
 
-            _ -> data
+            _ -> edata
       in
         case path of
-          End -> edit
+          End -> result
 
-          Name _ _ -> edit
+          Name _ _ -> result
 
-          Idx _ _ -> data -- form editing path cannot start with index
+          Idx _ _ -> edata -- form editing path cannot start with index
 
-    reader typeName metadata path value =
-      let read = fieldValue typeName metadata path value
+    reader rTypeName metadata path value =
+      let read = fieldValue rTypeName metadata path value
       in case path of
         End -> value
 
@@ -418,18 +415,18 @@ initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
 
         Idx _ _ -> RecordValue [] -- form reading cannot start with index
 
-    id (Model data conf) =
-      case conf.reader conf.typeName conf.metadata (Name conf.idParamName End) data.data of
+    formId (Model md mc) =
+      case mc.reader mc.typeName mc.metadata (Name mc.idParamName End) md.data of
         FieldValue v ->
           JD.decodeValue JD.int v |>
           Result.toMaybe |>
-          Maybe.map toString
+          Maybe.map String.fromInt
 
         x -> Nothing
 
-    dataValueModel (Model data conf) =
-      Model data
-       { conf |
+    dataValueModel (Model md mc) =
+      Model md
+       { mc |
          decoder = decoder
        , encoder = encoder
        , editor = editor
@@ -444,7 +441,7 @@ initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
         (dataDecoder Dict.empty "")
         (dataEncoder Dict.empty "")
         (RecordValue [])
-        id
+        formId
         toMessagemsg
 
 
@@ -458,52 +455,49 @@ initForm:
   value -> (FormModel msg value -> Maybe String) ->
   Ask.Tomsg msg ->
   FormModel msg value
-initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue id toMessagemsg =
+initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId toMessagemsg =
   let
-    dataDecoder _ _ = decoder
+    formDataDecoder _ _ = decoder
 
-    dataEncoder _ _ value = encoder value
+    formDataEncoder _ _ value = encoder value
 
     editor _ _ _ _ value = value -- not implemented (only for DataValue model)
 
     reader _ _ _ _ = RecordValue [] -- not implemented (only for DataValue model)
 
-    setter newdata (Model data conf) =
+    setter newdata (Model md mc) =
       Model
-        { data |
+        { md |
           data = newdata
         , count = Nothing
         , completed = True
         , ready = True
         }
-        conf
+        mc
 
-    query params =
-      String.join "&" <| List.map (\(k,v) -> Http.encodeUri k ++ "=" ++ Http.encodeUri v) params
-
-    queryString params = let q = query params in if String.isEmpty q then "" else "?" ++ q
+    query = Utils.httpQuery
 
     maybeIdPathAndQueryString idParamName params =
       (case List.partition (\(n, _) -> n == idParamName) params of
-        ([], pars) -> queryString pars
+        ([], pars) -> query pars
 
-        ((_, id) :: tail, pars) -> "/" ++ id ++ queryString pars
+        ((_, fid) :: tail, pars) -> "/" ++ fid ++ query pars
       )
 
-    formUri _ searchParams (Model data conf) =
-      conf.dataBaseUri ++ "/" ++ conf.typeName ++
-        (maybeIdPathAndQueryString conf.idParamName searchParams)
+    formUri _ searchParams (Model _ mc) =
+      mc.dataBaseUri ++ "/" ++ mc.typeName ++
+        (maybeIdPathAndQueryString mc.idParamName searchParams)
 
-    saveUri searchParams ((Model data conf) as model) =
+    saveUri searchParams ((Model _ mc) as model) =
       let
         uriEnd =
             id model |>
-            Maybe.map ((,) conf.idParamName) |>
-            Maybe.map (flip (::) searchParams) |>
-            Maybe.map (maybeIdPathAndQueryString conf.idParamName) |>
-            Maybe.withDefault (maybeIdPathAndQueryString conf.idParamName searchParams)
+            Maybe.map (Tuple.pair mc.idParamName) |>
+            Maybe.map (Utils.flip (::) searchParams) |>
+            Maybe.map (maybeIdPathAndQueryString mc.idParamName) |>
+            Maybe.withDefault (maybeIdPathAndQueryString mc.idParamName searchParams)
       in
-        conf.dataBaseUri ++ "/" ++ conf.typeName ++ uriEnd
+        mc.dataBaseUri ++ "/" ++ mc.typeName ++ uriEnd
 
     emptyFormData =
       Data
@@ -516,8 +510,8 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue id toMes
     Model
       (emptyFormData False) -- model not ready upon initialization
       { typeName = typeName
-      , decoder = dataDecoder
-      , encoder = dataEncoder
+      , decoder = formDataDecoder
+      , encoder = formDataEncoder
       , setter = setter
       , editor = editor
       , reader = reader
@@ -534,7 +528,7 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue id toMes
       , countUri = (\_ _ -> "")
       , pageSize = 0
       , idParamName = "id"
-      , id = id
+      , id = formId
       , offsetParamName = "offset"
       , limitParamName = "limit"
       , toMessagemsg = toMessagemsg
@@ -545,54 +539,54 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue id toMes
 {-| Set list model decoder
 -}
 listDecoder: Decoder (List value) -> ListModel msg value -> ListModel msg value
-listDecoder decoder (Model d conf) = Model d { conf | decoder = decoder }
+listDecoder decoder (Model d c) = Model d { c | decoder = decoder }
 
 
 {-| Set form model decoder
 -}
 formDecoder: Decoder value -> FormModel msg value -> FormModel msg value
-formDecoder decoder (Model d conf) = Model d { conf | decoder = decoder }
+formDecoder decoder (Model d c) = Model d { c | decoder = decoder }
 
 
 {-| Set count base uri
 -}
 countBaseUri: String -> Model msg value -> Model msg value
-countBaseUri uri (Model d conf) = Model d { conf | countBaseUri = uri }
+countBaseUri uri (Model d c) = Model d { c | countBaseUri = uri }
 
 
 {-| Set page size for list model - [`JsonModel.ListModel`](JsonModel#ListModel)
 -}
 pageSize: Int -> Model msg value -> Model msg value
-pageSize pageSize (Model d conf) = Model d { conf | pageSize = pageSize }
+pageSize ps (Model d c) = Model d { c | pageSize = ps }
 
 
 {-| Set count decoder for list model - [`JsonModel.ListModel`](JsonModel#ListModel)
 -}
 countDecoder: JD.Decoder Int -> Model msg value -> Model msg value
-countDecoder decoder (Model d conf) = Model d { conf | countDecoder = decoder }
+countDecoder decoder (Model d c) = Model d { c | countDecoder = decoder }
 
 
 {-| Set id parameter name for form model - [`JsonModel.FormModel`](JsonModel#FormModel)
 -}
 idParam: String -> Model msg value -> Model msg value
-idParam param (Model d conf) = Model d { conf | idParamName = param }
+idParam param (Model d c) = Model d { c | idParamName = param }
 
 
 {-| Set offset, limit parameter names for list model - [`JsonModel.ListModel`](JsonModel#ListModel)
 -}
 offsetLimitParams: String -> String -> Model msg value -> Model msg value
-offsetLimitParams offset limit (Model d conf) =
-  Model d { conf | offsetParamName = offset, limitParamName = limit }
+offsetLimitParams offset limit (Model d c) =
+  Model d { c | offsetParamName = offset, limitParamName = limit }
 
 
 {-| Enable sending messages to [`DeferredRequests`](DeferredRequests)
 -}
 toDeferredMsg: DR.Tomsg msg -> Model msg value -> Model msg value
-toDeferredMsg toMsg (Model d conf) =
+toDeferredMsg toMsg (Model d c) =
   Model d
-    { conf |
+    { c |
       deferredConfig =
-        case conf.deferredConfig of
+        case c.deferredConfig of
           Just dc -> Just { dc | toMsg = toMsg }
 
           Nothing -> Just <| DeferredConfig toMsg Nothing
@@ -609,14 +603,14 @@ deferredSettings:
   (String -> Maybe DeferredHeader) ->
   Model msg value ->
   Model msg value
-deferredSettings toDeferredMsg deferredHeader deferredHeaderIfTimeout (Model d conf) =
+deferredSettings toDeferMsg deferredHeader deferredHeaderIfTimeout (Model d c) =
   let
     newDefConf =
       DeferredConfig
-        toDeferredMsg
+        toDeferMsg
         (Just <| TimeoutDeferredConfig deferredHeader deferredHeaderIfTimeout)
   in
-    Model d { conf | deferredConfig = Just newDefConf }
+    Model d { c | deferredConfig = Just newDefConf }
 
 
 {-| Helper function for deferred requests [`DeferredRequests`](DeferredRequests).
@@ -656,83 +650,86 @@ defaultDeferredSettings toDeferredmsg timeout model =
 {-| Get model data.
 -}
 data: Model msg value -> value
-data (Model data _) = data.data
+data (Model d _) = d.data
 
 
 {-| Check model [`Progress`](#Progress)
 -}
 progress: Model msg value -> Progress
-progress (Model { progress } _) = progress
+progress (Model d _) = d.progress
 
 
 {-| Check whether on if [`Progress`](#Progress) flags is set.
 -}
 isProgress: Model msg value -> Bool
-isProgress (Model { progress } _ ) =
+isProgress (Model d _ ) =
   (\ { fetchProgress, countProgress, metadataProgress } ->
     fetchProgress || countProgress || metadataProgress
-  ) progress
+  ) d.progress
 
 
 {-| Check whether all data are fetched from server. Relevant for [`ListModel`](#ListModel)
     since data are fetched in pages.
 -}
 completed: Model msg value -> Bool
-completed (Model data _) = data.completed
+completed (Model d _) = d.completed
 
 
-{-|
+{-| Maybe returns count of potential [`ListModel`](#ListModel)
+    data. **Note** value is not dependant of actually fetched data in model.
 -}
 count: Model msg value -> Maybe Int
-count (Model data _) = data.count
+count (Model d _) = d.count
 
-{-|
+
+{-| Checks whether [`ListModel`](#ListModel) is empty
 -}
 isEmpty: ListModel msg value -> Bool
 isEmpty model = List.isEmpty <| data model
 
 
-{-|
+{-| Maybe returns id string of model data
 -}
 id: Model msg value -> Maybe String
-id ((Model data conf) as model) =
-  conf.id model
+id ((Model _ c) as model) =
+  c.id model
 
 
-{-|
+{-| True if metadata are not empty and metadata fetch is not progress
 -}
 isInitialized: Model msg value -> Bool
 isInitialized model = not (notInitialized model)
 
 
-{-| True if Model is metadata are empty
+{-| True if metadata are empty or metadata fetch is in progress
 -}
 notInitialized: Model msg value -> Bool
-notInitialized (Model { progress } { metadata }) =
-  Dict.isEmpty metadata || progress.metadataProgress
+notInitialized (Model d { metadata }) =
+  Dict.isEmpty metadata || d.progress.metadataProgress
 
 
 {-| True if data are set at least once during Model lifetime
 -}
 ready: Model msg value -> Bool
-ready (Model data _) =
-  data.ready
+ready (Model d _) =
+  d.ready
 
 -- metadata examination
 
-{-|
+{-| Returns column names from metadata
 -}
 columnNames: Model msg value -> List String
-columnNames (Model _ conf as model) = fieldNames True conf.typeName model
+columnNames (Model _ c as model) = fieldNames True c.typeName model
 
 
-{-|
+{-| Returns visible column names from metdata
 -}
 visibleColumnNames: Model msg value -> List String
-visibleColumnNames (Model _ conf as model) = visibleFieldNames conf.typeName model
+visibleColumnNames (Model _ c as model) = visibleFieldNames c.typeName model
 
 
-{-|
+{-| Returns visible field names from metadata indicated by string parameter
+(child structure may be specified)
 -}
 visibleFieldNames: String -> Model msg value -> List String
 visibleFieldNames typeName model =
@@ -740,6 +737,7 @@ visibleFieldNames typeName model =
 
 
 {-| If bool parameter is True return all field labels else only visible.
+String parameter may indicated child structure.
 -}
 fieldNames: Bool -> String -> Model msg value -> List String
 fieldNames all typeName (Model _ { metadata }) =
@@ -749,10 +747,11 @@ fieldNames all typeName (Model _ { metadata }) =
   Maybe.map (List.map .label) |>
   Maybe.withDefault []
 
+
 {-| Returns model configuration
 -}
 conf: Model msg value -> Config msg value
-conf (Model _ conf) = conf
+conf (Model _ c) = c
 
 
 -- utility functions
@@ -778,7 +777,7 @@ dataDecoder metadata viewTypeName =
         JD.map RecordValue
       else
         Dict.get fieldmd.typeName metadata |>
-        Maybe.map listDecoder |>
+        Maybe.map dataValueListDecoder |>
         Maybe.map (\ld -> JD.map RecordValue ld) |>
         Maybe.withDefault (fail fieldmd.typeName)
 
@@ -795,7 +794,7 @@ dataDecoder metadata viewTypeName =
         JD.oneOf [ fieldsDecoder viewmd.fields [], JD.null [] ] |>
         JD.map RecordValue
 
-    listDecoder viewmd = JD.oneOf [ JD.list (recordDecoder viewmd), JD.null [] ]
+    dataValueListDecoder viewmd = JD.oneOf [ JD.list (recordDecoder viewmd), JD.null [] ]
   in
     Dict.get viewTypeName metadata |>
     Maybe.map recordDecoder |>
@@ -809,8 +808,8 @@ pathDecoder =
   let
     pathElementDecoder =
       JD.oneOf
-        [ JD.string |> JD.map ((flip Name) End)
-        , JD.int |> JD.map ((flip Idx) End)
+        [ JD.string |> JD.map ((Utils.flip Name) End)
+        , JD.int |> JD.map ((Utils.flip Idx) End)
         ]
   in
     JD.list pathElementDecoder |>
@@ -835,31 +834,30 @@ pathDecoder =
 dataEncoder: Dict String VM.View -> String -> DataValue -> JD.Value
 dataEncoder metadata viewTypeName value =
   let
-    encodeField value = case value of
+    encodeField fv = case fv of
       FieldValue v -> v
 
       _ -> JE.null -- unexpected element, encode as null
 
-    encodeRecord value vmd = case value of
+    encodeRecord rv vmd = case rv of
       RecordValue values ->
         Utils.zip vmd.fields values |>
         List.map
-          (\(fmd, value) ->
+          (\(fmd, fv) ->
             ( fmd.name
             , if (not fmd.isComplexType) && (not fmd.isCollection) then
-                encodeField value
+                encodeField fv
               else if fmd.isComplexType && (not fmd.isCollection) then
                 Dict.get fmd.typeName metadata |>
-                Maybe.map (encodeRecord value) |>
+                Maybe.map (encodeRecord fv) |>
                 Maybe.withDefault JE.null
               else if (not fmd.isComplexType) && fmd.isCollection then
-                case value of
+                case fv of
                   RecordValue primitiveValues ->
                     primitiveValues |>
-                    List.map encodeField |>
-                    JE.list
+                    JE.list encodeField
 
-                  _ -> JE.list []
+                  _ -> JE.list identity []
               else
                 Dict.get fmd.typeName metadata |>
                 Maybe.map (encodeList value) |>
@@ -870,11 +868,10 @@ dataEncoder metadata viewTypeName value =
 
       _ -> JE.null -- unexpected element, encode as null
 
-    encodeList value vmd = case value of
+    encodeList lv vmd = case lv of
       RecordValue values ->
         values |>
-        List.map ((flip encodeRecord) vmd) |>
-        JE.list
+        JE.list ((Utils.flip encodeRecord) vmd)
 
       _ -> JE.null -- unexpected element, encode as null
   in
@@ -986,42 +983,42 @@ delete toMsg searchParams =
 
 {-| Model updater. -}
 update: Tomsg msg value -> Msg msg value -> Model msg value -> (Model msg value, Cmd msg)
-update toMsg msg (Model data conf as same) =
+update toMsg msg (Model modelData modelConf as same) =
   let
     --model construction
-    maybeWithNewData restart searchParams (Model _ conf) =
-      if not restart && searchParams == data.searchParams then
+    maybeWithNewData restart searchParams (Model _ mc) =
+      if not restart && searchParams == modelData.searchParams then
         same
-      else let emptyData = conf.emptyData in
-        Model { emptyData | searchParams = searchParams } conf
-    withProgress progress (Model d c) = Model { d | progress = progress } c
+      else let emptyData = mc.emptyData in
+        Model { emptyData | searchParams = searchParams } mc
+    withProgress pr (Model d c) = Model { d | progress = pr } c
     withEmptyQueue ((Model d c) as m) =
       if c.queuedCmd == Nothing then m else Model d { c | queuedCmd = Nothing }
     --progress
-    fetchProgress = Progress True data.progress.countProgress False
-    fetchDone = Progress False data.progress.countProgress False
-    countProgress = Progress data.progress.fetchProgress True False
-    countDone = Progress data.progress.fetchProgress False False
+    fetchProgress = Progress True modelData.progress.countProgress False
+    fetchDone = Progress False modelData.progress.countProgress False
+    countProgress = Progress modelData.progress.fetchProgress True False
+    countDone = Progress modelData.progress.fetchProgress False False
     -- metadata progress can be within other progress, so keep other values
-    metadataProgress = data.progress |> (\p -> { p | metadataProgress = True })
-    metadataDone = data.progress |> (\p -> { p | metadataProgress = False })
+    metadataProgress = modelData.progress |> (\p -> { p | metadataProgress = True })
+    metadataDone = modelData.progress |> (\p -> { p | metadataProgress = False })
     allDone = Progress False False False
-    isFetchProgress = data.progress.fetchProgress
-    isCountProgress = data.progress.countProgress
-    isMetadataProgress = data.progress.metadataProgress
+    isFetchProgress = modelData.progress.fetchProgress
+    isCountProgress = modelData.progress.countProgress
+    isMetadataProgress = modelData.progress.metadataProgress
     --message - model integrity check
-    hasIntegrity (name, progress) = name == conf.typeName && progress
+    hasIntegrity (name, isPr) = name == modelConf.typeName && isPr
     unInitialized = notInitialized same -- shortcut function
 
     -- metadata fetch
-    fetchMetadata andThen =
+    fetchMd andThen =
       Task.perform toMsg <| Task.succeed <| MetadataMsgCmd andThen
 
     metadataHttpRequest maybeAndThen typeName =
       let
         mapper = MetadataMsg maybeAndThen >> toMsg
       in
-        Cmd.map mapper <| conf.metadataFetcher (conf.metadataBaseUri ++ "/" ++ typeName)
+        Cmd.map mapper <| modelConf.metadataFetcher (modelConf.metadataBaseUri ++ "/" ++ typeName)
 
     viewHttpRequest uri maybeHeader decoder =
       maybeHeader |>
@@ -1069,79 +1066,80 @@ update toMsg msg (Model data conf as same) =
       in
         jsonResult |>
         Result.andThen
-          (\data ->
+          (\jdata ->
             (Result.mapError
-              ((flip Http.BadPayload) emptyHttpResponse)
-              (JD.decodeValue decoder data)
+              ((Utils.flip Http.BadPayload) emptyHttpResponse)
+              (Result.mapError JD.errorToString (JD.decodeValue decoder jdata))
             )
           )
 
     maybeSubscribeDeferred dataMsgConstr integrity deferredResponse =
       (if hasIntegrity integrity then Just deferredResponse else Nothing) |>
       Maybe.map2
-        ((flip DR.maybeSubscribeCmd) (toMsg << dataMsgConstr))
-        (Maybe.map .toMsg conf.deferredConfig)
+        ((Utils.flip DR.maybeSubscribeCmd) (toMsg << dataMsgConstr))
+        (Maybe.map .toMsg modelConf.deferredConfig)
       |> Maybe.andThen identity
-      |> Maybe.map ((,) same)
+      |> Maybe.map (Tuple.pair same)
 
-    maybeAskDeferred cmdMsgConstr integrity response progress =
+    maybeAskDeferred cmdMsgConstr integrity response pr =
       let
         askCmd toAskMsg header =
           Ask.ask toAskMsg "Timeout occurred. Try deferred request?" <|
             Task.perform toMsg <| Task.succeed <| cmdMsgConstr (Just header)
       in
         (if hasIntegrity integrity then Just 1 else Nothing) |>
-        Maybe.andThen (always conf.deferredConfig) |>
+        Maybe.andThen (always modelConf.deferredConfig) |>
         Maybe.andThen .timeoutDeferredConfig |>
         Maybe.andThen
           (\{ deferredHeaderIfTimeout } ->
             deferredHeaderIfTimeout response |>
-            Maybe.map (askCmd conf.toMessagemsg)
+            Maybe.map (askCmd modelConf.toMessagemsg)
           ) |>
-        Maybe.map ((,) (withProgress progress same))
+        Maybe.map (Tuple.pair (withProgress pr same))
 
     maybeSubscribeOrAskDeferred -- withDefault method is not used because we do not need to print default error every time
-      dataMsgConstr cmdMsgConstr integrity response progress default =
+      dataMsgConstr cmdMsgConstr integrity response pr default =
       case maybeSubscribeDeferred dataMsgConstr integrity response of
         Just resp -> resp
 
         Nothing ->
-          case maybeAskDeferred cmdMsgConstr integrity response progress of
+          case maybeAskDeferred cmdMsgConstr integrity response pr of
             Just resp -> resp
 
             Nothing -> default ()
 
-    maybeAskDeferredOrError cmdMsgConstr integrity response progress default =
-      case maybeAskDeferred cmdMsgConstr integrity response progress of
+    maybeAskDeferredOrError cmdMsgConstr integrity response pr default =
+      case maybeAskDeferred cmdMsgConstr integrity response pr of
         Just resp -> resp
 
         Nothing -> default ()
 
-    maybeErrorResponse progress err = \() -> errorResponse progress err
+    maybeErrorResponse pr err = \() -> errorResponse pr err
 
     queueCmd cmd =
-      Model data { conf | queuedCmd = Just cmd }
-        ! []
+      ( Model modelData { modelConf | queuedCmd = Just cmd }
+      , Cmd.none
+      )
 
-    maybeUnqueueCmd (Model _ conf) =
-      conf.queuedCmd |>
-      Maybe.map (\msg -> Task.perform toMsg <| Task.succeed msg) |>
+    maybeUnqueueCmd (Model _ mc) =
+      mc.queuedCmd |>
+      Maybe.map (\qmsg -> Task.perform toMsg <| Task.succeed qmsg) |>
       Maybe.withDefault Cmd.none
 
-    errorResponse progress err =
+    errorResponse pr err =
       let
-        errToString err =
+        errToString =
           case err of
             Http.BadStatus { body } -> body
 
-            Http.BadPayload msg { body } -> msg
+            Http.BadPayload emsg { body } -> emsg
 
             x -> toString x
       in
         log
           (toString err)
-          ( same |> withProgress progress
-          , Ask.error conf.toMessagemsg (errToString err)
+          ( same |> withProgress pr
+          , Ask.error modelConf.toMessagemsg errToString
           )
   in
     case msg of
@@ -1155,8 +1153,8 @@ update toMsg msg (Model data conf as same) =
               Set.toList children |>
               List.map (\n -> (n, VM.View "" [])) |>
               Dict.fromList |>
-              Dict.union (Dict.insert view.typeName view conf.metadata)
-            newModel = Model data { conf | metadata = newMetadata }
+              Dict.union (Dict.insert view.typeName view modelConf.metadata)
+            newModel = Model modelData { modelConf | metadata = newMetadata }
             maybeNewMetadataCmd =
               Dict.filter (\_ v -> String.isEmpty v.typeName) newMetadata |>
               Dict.keys |>
@@ -1164,7 +1162,7 @@ update toMsg msg (Model data conf as same) =
               Maybe.map (metadataHttpRequest maybeCmd)
           in
             maybeNewMetadataCmd |>
-            Maybe.map ((,) newModel) |>
+            Maybe.map (Tuple.pair newModel) |>
             Maybe.withDefault
               ( newModel |> withProgress metadataDone
               , maybeCmd |> Maybe.withDefault Cmd.none
@@ -1176,21 +1174,21 @@ update toMsg msg (Model data conf as same) =
         in
           ( if hasIntegrity (name, isFetchProgress) then
               let newModel = maybeWithNewData restart searchParams emptyQueueModel in
-                conf.setter newdata newModel |> withProgress fetchDone
+                modelConf.setter newdata newModel |> withProgress fetchDone
             else emptyQueueModel
           , maybeUnqueueCmd same
           )
 
-      CountMsg name searchParams (Ok count) ->
-        ( if hasIntegrity (name, data.progress.countProgress) then
+      CountMsg name searchParams (Ok cnt) ->
+        ( if hasIntegrity (name, modelData.progress.countProgress) then
             let
               newModel =
                   Model
-                    { data |
+                    { modelData |
                       -- if search params correspond set count else reset count
-                      count = if (searchParams == data.searchParams) then Just count else Nothing
+                      count = if (searchParams == modelData.searchParams) then Just cnt else Nothing
                     }
-                    conf
+                    modelConf
             in
               newModel |> withProgress countDone |> withEmptyQueue
           else same |> withEmptyQueue
@@ -1210,7 +1208,7 @@ update toMsg msg (Model data conf as same) =
       DataMsg name restart searchParams (Err ((Http.BadPayload _ response) as err)) ->
         maybeSubscribeOrAskDeferred
           (DataMsg name restart searchParams <<
-            mapJsonHttpResult (conf.decoder conf.metadata conf.typeName))
+            mapJsonHttpResult (modelConf.decoder modelConf.metadata modelConf.typeName))
           (DataCmdMsg restart searchParams)
           (name, isFetchProgress)
           response.body
@@ -1219,7 +1217,7 @@ update toMsg msg (Model data conf as same) =
 
       CountMsg name searchParams (Err ((Http.BadPayload _ response) as err)) ->
         maybeSubscribeOrAskDeferred
-          (CountMsg name searchParams << mapJsonHttpResult conf.countDecoder)
+          (CountMsg name searchParams << mapJsonHttpResult modelConf.countDecoder)
           (CountCmdMsg searchParams)
           (name, isCountProgress)
           response.body
@@ -1252,12 +1250,12 @@ update toMsg msg (Model data conf as same) =
 
       EditMsg path value ->
         if unInitialized then
-          ( same, fetchMetadata (Just <| edit toMsg path value) )
+          ( same, fetchMd (Just <| edit toMsg path value) )
         else
           let
             good =
               hasIntegrity
-                ( conf.typeName
+                ( modelConf.typeName
                 , not
                     ( isFetchProgress ||
                       isCountProgress ||
@@ -1267,19 +1265,20 @@ update toMsg msg (Model data conf as same) =
           in
             if good then
               let
-                newValue = conf.editor conf.typeName conf.metadata path value data.data
+                newValue = modelConf.editor modelConf.typeName modelConf.metadata path value modelData.data
               in
-                ( Model { data | data = newValue } conf
+                ( Model { modelData | data = newValue } modelConf
                 , Cmd.none
                 )
             else ( same, Cmd.none )
 
       MetadataMsgCmd maybeAndThen ->
         if isMetadataProgress then
-          same ! []
+          ( same, Cmd.none )
         else
-          (same |> withProgress metadataProgress)
-            ! [ metadataHttpRequest maybeAndThen conf.typeName ]
+          ( (same |> withProgress metadataProgress)
+          , metadataHttpRequest maybeAndThen modelConf.typeName
+          )
 
       UpdateCmdMsg value ->
         if isFetchProgress then
@@ -1288,12 +1287,12 @@ update toMsg msg (Model data conf as same) =
           let
             cmd =
               Task.perform
-                (toMsg << DataMsg conf.typeName True data.searchParams)
+                (toMsg << DataMsg modelConf.typeName True modelData.searchParams)
                 (Task.succeed <| Ok value)
           in
-            (same |> withEmptyQueue |> withProgress fetchProgress)
-              ! (if unInitialized then [ fetchMetadata <| Just cmd ] else [ cmd ])
-
+            ( (same |> withEmptyQueue |> withProgress fetchProgress)
+            , (if unInitialized then fetchMd <| Just cmd else cmd)
+            )
 
       DataCmdMsg restart searchParams deferredHeader ->
         if isFetchProgress then
@@ -1302,80 +1301,75 @@ update toMsg msg (Model data conf as same) =
           let
             cmd =
               Http.send
-                (toMsg << DataMsg conf.typeName restart searchParams) <|
-                viewHttpRequest (conf.uri restart searchParams same) deferredHeader <|
-                  conf.decoder conf.metadata conf.typeName
+                (toMsg << DataMsg modelConf.typeName restart searchParams) <|
+                viewHttpRequest (modelConf.uri restart searchParams same) deferredHeader <|
+                  modelConf.decoder modelConf.metadata modelConf.typeName
 
             newModel = same |> withEmptyQueue |> withProgress fetchProgress
           in
-            newModel
-              ! (if unInitialized then [ fetchMetadata <| Just cmd ] else [ cmd ])
+            ( newModel, if unInitialized then fetchMd <| Just cmd else cmd )
 
       CountCmdMsg searchParams deferredHeader ->
-        if String.isEmpty conf.countBaseUri then
-          ( same, Ask.warn conf.toMessagemsg "Cannot calculate count, count uri empty" )
+        if String.isEmpty modelConf.countBaseUri then
+          ( same, Ask.warn modelConf.toMessagemsg "Cannot calculate count, count uri empty" )
         else if isCountProgress then
           queueCmd <| CountCmdMsg searchParams deferredHeader
         else
           let
             cmd =
               Http.send
-                (toMsg << CountMsg conf.typeName searchParams) <|
-                viewHttpRequest (conf.countUri searchParams same) deferredHeader conf.countDecoder
+                (toMsg << CountMsg modelConf.typeName searchParams) <|
+                viewHttpRequest (modelConf.countUri searchParams same) deferredHeader modelConf.countDecoder
           in
             let
               newModel = same |> withEmptyQueue |> withProgress countProgress
             in
-              newModel
-                ! (if unInitialized then [ fetchMetadata <| Just cmd ] else [ cmd ])
+              ( newModel, if unInitialized then fetchMd <| Just cmd else cmd )
 
       SaveCmdMsg searchParams ->
         if isFetchProgress then
-          ( same, Ask.warn conf.toMessagemsg "Operation in progress, please try later." )
+          ( same, Ask.warn modelConf.toMessagemsg "Operation in progress, please try later." )
         else
           let
             method = id same |> Maybe.map (always "PUT") |> Maybe.withDefault "POST"
 
-            value = conf.encoder conf.metadata conf.typeName data.data
+            value = modelConf.encoder modelConf.metadata modelConf.typeName modelData.data
 
-            decoder = conf.decoder conf.metadata conf.typeName
+            decoder = modelConf.decoder modelConf.metadata modelConf.typeName
 
             cmd =
               Http.send
-                (toMsg << DataMsg conf.typeName False searchParams) <|
-                saveHttpRequest (conf.saveUri searchParams same) method value decoder
+                (toMsg << DataMsg modelConf.typeName False searchParams) <|
+                saveHttpRequest (modelConf.saveUri searchParams same) method value decoder
           in
-            (same |> withProgress fetchProgress)
-              ! [ cmd ]
+            ( (same |> withProgress fetchProgress), cmd )
 
       DeleteCmdMsg searchParams ->
         if isFetchProgress then
-          same
-            ! [ Ask.warn conf.toMessagemsg "Operation in progress, please try later." ]
+          ( same, Ask.warn modelConf.toMessagemsg "Operation in progress, please try later." )
         else
           let
             cmd =
               Http.send
-                (toMsg << DeleteMsg conf.typeName searchParams) <|
-                deleteHttpRequest <| conf.saveUri searchParams same
+                (toMsg << DeleteMsg modelConf.typeName searchParams) <|
+                deleteHttpRequest <| modelConf.saveUri searchParams same
           in
-            (same |> withProgress fetchProgress)
-              ! [ cmd ]
+            ( (same |> withProgress fetchProgress), cmd )
 
 
 {- private function -}
 recordEditor: String -> Dict String VM.View -> Path -> DataValue -> DataValue -> DataValue
-recordEditor typeName metadata path value data =
+recordEditor typeName metadata path value model =
   let
     vmd fmd default =
       if fmd.isComplexType then
         Dict.get fmd.typeName metadata |> Maybe.withDefault default
       else default
 
-    setRow path viewmd idx rows =
+    setRow rpath viewmd idx rows =
       ( rows |>
         List.indexedMap
-          (\i val -> if i == idx then transform path val viewmd else val)
+          (\i val -> if i == idx then transform rpath val viewmd else val)
       )
 
     deleteRow rows idx =
@@ -1394,12 +1388,12 @@ recordEditor typeName metadata path value data =
           rows
       of (l, _) -> List.reverse l
 
-    transform path data viewmd =
-      case path of
+    transform tpath tdata viewmd =
+      case tpath of
         End -> value
 
         Name name rest ->
-          case data of
+          case tdata of
             RecordValue values ->
               RecordValue
                 ( Utils.zip viewmd.fields values |>
@@ -1409,10 +1403,10 @@ recordEditor typeName metadata path value data =
                     )
                 )
 
-            fieldValue -> fieldValue -- do nothing since element must match complex type
+            fv -> fv -- do nothing since element must match complex type
 
         Idx idx End ->
-          case data of
+          case tdata of
             RecordValue rows ->
               RecordValue <|
                 if idx < 0 then -- insert or delete row with index -idx - 1
@@ -1422,27 +1416,27 @@ recordEditor typeName metadata path value data =
                     _ -> insertRow value rows (-idx - 1)
                 else setRow End viewmd idx rows
 
-            fieldValue -> fieldValue -- do nothing since element must be record
+            fv -> fv -- do nothing since element must be record
 
         Idx idx rest ->
-          case data of
+          case tdata of
             RecordValue rows -> RecordValue <| setRow rest viewmd idx rows
 
-            fieldValue -> fieldValue -- do nothing since element must match complex type
+            fv -> fv -- do nothing since element must match complex type
   in
     Dict.get typeName metadata |>
-    Maybe.map (transform path data) |>
-    Maybe.withDefault data
+    Maybe.map (transform path model) |>
+    Maybe.withDefault model
 
 
 {- private function -}
 fieldValue: String -> Dict String VM.View -> Path -> DataValue -> DataValue
-fieldValue typeName metadata path data =
+fieldValue typeName metadata fieldPath value =
   let
-    reader path data viewmd =
+    reader path result viewmd =
       case path of
         Name name rest ->
-          case data of
+          case result of
             RecordValue values ->
               Utils.zip values viewmd.fields |>
               List.filter (\(_, f) -> f.name == name) |>
@@ -1458,7 +1452,7 @@ fieldValue typeName metadata path data =
             _ -> RecordValue [] -- cannot match name, return empty data
 
         Idx idx rest ->
-          case data of
+          case result of
             RecordValue values ->
               Utils.at idx values |>
               Maybe.map (\v -> reader rest v viewmd) |>
@@ -1467,8 +1461,8 @@ fieldValue typeName metadata path data =
             _ -> RecordValue [] -- cannot match idx, return empty data
 
         End ->
-          data
+          result
   in
     Dict.get typeName metadata |>
-    Maybe.map (reader path data) |>
+    Maybe.map (reader fieldPath value) |>
     Maybe.withDefault (RecordValue [])

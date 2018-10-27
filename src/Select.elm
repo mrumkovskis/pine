@@ -49,8 +49,8 @@ type alias Tomsg msg value = (Msg msg value) -> msg
 selected value message constructor and value to string converter.
 -}
 init: JM.ListModel msg value -> String -> (value -> msg) -> (value -> String) -> SelectModel msg value
-init model search toSelectedmsg toString =
-  SelectModel model search [] toSelectedmsg Nothing "search" False toString
+init model initSearch toSelectedmsg toString =
+  SelectModel model initSearch [] toSelectedmsg Nothing "search" False toString
 
 
 {-| Change search http uri query parameter name. Default value is "search"
@@ -82,20 +82,20 @@ onMouseSelect toMsg idx = [ onMouseDown (toMsg <| SetActive True idx) ]
 {-| Search command.
 -}
 search: Tomsg msg value -> String -> Cmd msg
-search toMsg search = Task.perform (toMsg << Search) <| Task.succeed search
+search toMsg text = Task.perform (toMsg << Search) <| Task.succeed text
 
 
 {-| Model update -}
 update: Tomsg msg value -> Msg msg value -> SelectModel msg value -> (SelectModel msg value, Cmd msg)
-update toMsg msg ({model, activeIdx, toSelectedmsg, searchParamName, active} as same) =
+update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
   let
-    maybeSelectCmd idx =
+    selectCmd idx =
       Utils.at idx (JM.data model) |>
-      Maybe.map (\value -> [ Task.perform toSelectedmsg <| Task.succeed value ]) |>
-      Maybe.withDefault []
+      Maybe.map (\value -> Task.perform toSelectedmsg <| Task.succeed value) |>
+      Maybe.withDefault Cmd.none
 
-    findIdx model =
-      JM.data model |>
+    findIdx newModel =
+      JM.data newModel |>
       List.map same.toString |>
       Utils.matchIdx same.search
   in
@@ -104,26 +104,27 @@ update toMsg msg ({model, activeIdx, toSelectedmsg, searchParamName, active} as 
         let
           size = List.length (JM.data model)
 
-          upDownModel init delta =
+          upDownModel initIdx delta =
             let
               idx =
                 activeIdx |>
-                Maybe.withDefault init |>
+                Maybe.withDefault initIdx |>
                 Just |>
                 Maybe.map ((+) delta) |>
                 Maybe.andThen
                   (\i ->
                     if i >= 0 && i < size then Just i else Nothing
                   )
-            in
-              ( if active then { same | activeIdx = idx }
+
+              newModel =
+                if active then { same | activeIdx = idx }
                 else { same | active = True }
-              ) !
-                (if not active && JM.isEmpty model then -- if list collapsed and empty try search
-                    [ Task.perform (toMsg << Search) <| Task.succeed same.search ]
-                  else
-                    []
-                )
+            in
+              ( newModel
+              , if not active && JM.isEmpty model then -- if list collapsed and empty try search
+                  Task.perform (toMsg << Search) <| Task.succeed same.search
+                else Cmd.none
+              )
         in
           case action of
             SE.Up ->
@@ -133,24 +134,27 @@ update toMsg msg ({model, activeIdx, toSelectedmsg, searchParamName, active} as 
               upDownModel -1 1
 
             SE.Esc ->
-              { same | active = False }
-                ! []
+              ( { same | active = False }, Cmd.none )
 
             SE.Select ->
-              same
-                ! (if active then [ Task.perform toMsg <| Task.succeed Select ] else [])
+              ( same
+              , if active then Task.perform toMsg <| Task.succeed Select else Cmd.none
+              )
 
-      Search search ->
-        { same | active = True, search = search }
-          ! [ JM.fetch (toMsg << ModelMsg) <| [(searchParamName, search)] ++ same.additionalParams ]
+      Search text ->
+        ( { same | active = True, search = text }
+        , JM.fetch (toMsg << ModelMsg) <| [(same.searchParamName, text)] ++ same.additionalParams
+        )
 
       SetActive select idx ->
-        { same | activeIdx = Just idx }
-          ! (if select then maybeSelectCmd idx else [])
+        ( { same | activeIdx = Just idx }
+        , if select then selectCmd idx else Cmd.none
+        )
 
       Select ->
-        { same | active = False }
-          ! (activeIdx |> Maybe.map maybeSelectCmd |> Maybe.withDefault [])
+        ( { same | active = False }
+        , activeIdx |> Maybe.map selectCmd |> Maybe.withDefault Cmd.none
+        )
 
       ModelMsg data ->
         JM.update (toMsg << ModelMsg) data model |>

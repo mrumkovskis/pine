@@ -60,8 +60,8 @@ init =
 {-| Gets all messages.
 -}
 messages: Messages msg -> List (Ask.Msg msg)
-messages (Messages { messages }) =
-  Dict.values messages
+messages (Messages m) =
+  Dict.values m.messages
 
 
 {-| Add message.
@@ -107,37 +107,35 @@ msgInternal toMsg stringTomsg msg =
 
 {-| Model update -}
 update: Tomsg msg -> Msg msg -> Messages msg -> (Messages msg, Cmd msg)
-update toMsg message (Messages messages) =
+update toMsg message (Messages msgs) =
   let
-    newModel newMessages = Messages { messages | messages = newMessages }
+    newModel newMessages = Messages { msgs | messages = newMessages }
 
-    remove msg = newModel <| Dict.remove msg messages.messages
+    removeMsg msg = newModel <| Dict.remove msg msgs.messages
   in case message of
     Add msg ->
-      (newModel <| Dict.insert (Ask.text msg) msg messages.messages)
-        ! []
+      Tuple.pair
+        (newModel <| Dict.insert (Ask.text msg) msg msgs.messages)
+        Cmd.none
 
     Remove msg ->
-      (remove msg)
-        ! []
+      Tuple.pair (removeMsg msg) Cmd.none
 
     Yes msg ->
-      messages.messages |>
+      msgs.messages |>
       Dict.get msg |>
       Maybe.andThen
-        (\message ->
-          case message of
+        (\m ->
+          case m of
             Ask.Question _ cmd ->
-              Just <| remove msg ! [ cmd ] -- do command associated with Ask message
+              Just <| ( removeMsg msg, cmd ) -- do command associated with Ask message
 
             _ -> Nothing
         ) |>
-      Maybe.withDefault ((remove msg) ! [])
+      Maybe.withDefault (Tuple.pair (removeMsg msg) Cmd.none)
 
     No msg ->
-      (remove msg)
-        ! []
+      Tuple.pair (removeMsg msg) Cmd.none
 
     Clear ->
-      (newModel Dict.empty)
-        ! []
+      Tuple.pair (newModel Dict.empty) Cmd.none

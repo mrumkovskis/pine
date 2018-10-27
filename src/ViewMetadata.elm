@@ -16,6 +16,7 @@ module ViewMetadata exposing
 @docs fetchMetadata
 -}
 
+import Utils exposing (..)
 
 import Json.Decode as JD
 import Http

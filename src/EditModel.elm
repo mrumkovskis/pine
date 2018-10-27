@@ -36,6 +36,7 @@ import Ask
 import DeferredRequests as DR
 import Select exposing (..)
 import AddressModel exposing (..)
+import Utils
 
 import Html exposing (Attribute)
 import Html.Events exposing (..)
@@ -179,8 +180,8 @@ type alias Tomsg msg model inputs = (Msg msg model inputs -> msg)
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
 -}
 fetch: Tomsg msg model inputs -> Int -> Cmd msg
-fetch toMsg id =
-  JM.fetch (toMsg << FetchModelMsg) <| [ ("id", toString id) ]
+fetch toMsg fid =
+  JM.fetch (toMsg << FetchModelMsg) <| [ ("id", String.fromInt fid) ]
 
 
 {-| Set model data. After updating inputs, calls [`JsonModel.set`](JsonModel#set)
@@ -200,15 +201,15 @@ save toMsg =
 {-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
 -}
 delete: Tomsg msg model inputs -> Int -> Cmd msg
-delete toMsg id =
-  JM.delete (toMsg << DeleteModelMsg) [("id", toString id)]
+delete toMsg did =
+  JM.delete (toMsg << DeleteModelMsg) [("id", String.fromInt did)]
 
 
 {-| Gets model id.  Calls [`JsonModel.id`](JsonModel#id) and tries to convert result to `Int`
 -}
 id: EditModel msg model inputs controllers -> Maybe Int
 id =
-  .model >> JM.id >> Maybe.map String.toInt >> Maybe.andThen Result.toMaybe
+  .model >> JM.id >> Maybe.andThen String.toInt
 
 
 {- event attributes private function -}
@@ -312,7 +313,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           apply ctrl value <|
             ( ctrl.value value |>
               Result.andThen
-                (flip (ctrl.setter False) <| (JM.data model))
+                (Utils.flip (ctrl.setter False) <| (JM.data model))
             )
 
         searchCmd =
@@ -361,49 +362,51 @@ update toMsg msg ({ model, inputs, controllers } as same) =
               Maybe.map (initializer ctrl)
           else Nothing
       in
-        updateSelect
-          ctrl
-          newModel
-          select
-          ! []
+        Tuple.pair
+          ( updateSelect
+              ctrl
+              newModel
+              select
+          )
+          Cmd.none
 
-    updateSelect ctrl model value =
+    updateSelect ctrl newModel value =
       let
-        fieldGui = ctrl.guiGetter model.inputs
+        fieldGui = ctrl.guiGetter newModel.inputs
       in
-        { model | inputs = ctrl.guiUpdater model.inputs { fieldGui | select = value } }
+        { newModel | inputs = ctrl.guiUpdater newModel.inputs { fieldGui | select = value } }
 
-    applySelect ctrl model toMsg selMsg =
-      (ctrl.guiGetter model.inputs).select |>
-      Maybe.map (Select.update toMsg selMsg) |>
+    applySelect ctrl newModel toSelmsg selMsg =
+      (ctrl.guiGetter newModel.inputs).select |>
+      Maybe.map (Select.update toSelmsg selMsg) |>
       Maybe.map (Tuple.mapFirst Just) |>
-      Maybe.map (Tuple.mapFirst (updateSelect ctrl model)) |>
-      Maybe.withDefault (model ! [])
+      Maybe.map (Tuple.mapFirst (updateSelect ctrl newModel)) |>
+      Maybe.withDefault (Tuple.pair newModel Cmd.none)
 
     -- this method is expected to be called from gui so inputs are not updated
-    updateInputs model =
-      same.inputsUpdater same.isEditable controllers <| JM.data model
+    updateInputs newModel =
+      same.inputsUpdater same.isEditable controllers <| JM.data newModel
 
-    updateModel doInputUpdate model =
+    updateModel doInputUpdate newModel =
       { same |
-        model = model
-      , inputs = if doInputUpdate then updateInputs model else same.inputs
+        model = newModel
+      , inputs = if doInputUpdate then updateInputs newModel else same.inputs
       }
 
-    applyModel model =
+    applyModel newModel =
       { same |
-        model = model
-      , inputs = updateInputs model
+        model = newModel
+      , inputs = updateInputs newModel
       }
 
-    applyFetchModel model =
-      applyModel model
+    applyFetchModel newModel =
+      applyModel newModel
 
-    applySaveModel isSaving model =
-      applyModel model |> (\newModel -> { newModel | isSaving = isSaving })
+    applySaveModel isSaving newModel =
+      applyModel newModel |> (\nm -> { nm | isSaving = isSaving })
 
-    applyDeleteModel isDeleting model =
-      applyModel model |> (\newModel -> { newModel | isDeleting = isDeleting })
+    applyDeleteModel isDeleting newModel =
+      applyModel newModel |> (\nm -> { nm | isDeleting = isDeleting })
   in
     case msg of
       -- JM model messages
@@ -455,5 +458,4 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
       --edit entire model
       EditModelMsg editFun ->
-        same
-          ! [ JM.set (toMsg << UpdateModelMsg True) <| editFun <| JM.data model ]
+        ( same, JM.set (toMsg << UpdateModelMsg True) <| editFun <| JM.data model )

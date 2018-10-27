@@ -22,11 +22,14 @@ module DeferredRequests exposing
 -}
 
 
+import Utils exposing (uncurry)
+
 import Json.Decode as JD
 import Dict exposing (Dict)
 import Http
-import WebSocket
+-- import WebSocket
 import Task
+import Debug exposing (toString)
 
 
 {-| Deferred request structure, consists of status and notification time.
@@ -119,9 +122,9 @@ maybeSubscribeCmd toMsg subscription deferredResponse =
 {-| Model update.
 -}
 update: Tomsg msg -> Msg msg -> Model msg -> ( Model msg, Cmd msg )
-update toMsg msg (Model requests subs conf) =
+update toMsg msg (Model reqs subs conf) =
   let
-    same = Model requests subs conf
+    same = Model reqs subs conf
 
     notificationsDecoder =
       let
@@ -134,7 +137,7 @@ update toMsg msg (Model requests subs conf) =
 
         innerDecoder =
           JD.map2
-            (,)
+            Tuple.pair
             (JD.field "status"
               (JD.string |>
                 JD.andThen
@@ -150,7 +153,7 @@ update toMsg msg (Model requests subs conf) =
               (id, (status, time)) :: [] ->
                 JD.succeed <| (id, DeferredRequest status time)
 
-              x -> JD.fail (toString x)
+              x -> JD.fail (Debug.toString x)
           )
 
     cmd id toSubMsg =
@@ -162,20 +165,20 @@ update toMsg msg (Model requests subs conf) =
         (cmd id)
         (if req.status == EXE then Nothing else Dict.get id subs) |> -- get subscription if request is completed
       Maybe.map
-        ((,) <| Model requests (Dict.remove id subs) conf) |>  -- remove subscription, set deferred result cmd
+        (Tuple.pair <| Model reqs (Dict.remove id subs) conf) |>  -- remove subscription, set deferred result cmd
       Maybe.withDefault
-        ( Model (Dict.insert id req requests) subs conf, Cmd.none ) -- insert notification
+        ( Model (Dict.insert id req reqs) subs conf, Cmd.none ) -- insert notification
 
     processSubscription id toSubMsg =
-      Dict.get id requests |> -- get request
+      Dict.get id reqs |> -- get request
       Maybe.andThen
         (\req -> if req.status == EXE then Nothing else Just (id, toSubMsg)) |>  -- check if request is completed
       Maybe.map
         (uncurry cmd) |> -- get deferred result cmd
       Maybe.map
-        ((,) <| Model (Dict.remove id requests) subs conf) |> -- remove request, set deferred result cmd
+        (Tuple.pair <| Model (Dict.remove id reqs) subs conf) |> -- remove request, set deferred result cmd
       Maybe.withDefault
-        ( Model requests (Dict.insert id toSubMsg subs) conf, Cmd.none ) -- insert subscription
+        ( Model reqs (Dict.insert id toSubMsg subs) conf, Cmd.none ) -- insert subscription
 
   in
     case msg of
@@ -195,6 +198,6 @@ update toMsg msg (Model requests subs conf) =
 wsSubscriptions : Tomsg msg -> Model msg -> Sub msg
 wsSubscriptions toMsg (Model _ _ { wsNotificationUri }) =
   Sub.batch
-    [ WebSocket.listen wsNotificationUri (toMsg << UpdateMsg)
-    , WebSocket.keepAlive wsNotificationUri
+    [-- WebSocket.listen wsNotificationUri (toMsg << UpdateMsg)
+    --, WebSocket.keepAlive wsNotificationUri
     ]
