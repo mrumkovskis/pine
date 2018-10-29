@@ -1,6 +1,6 @@
 module JsonModel exposing
   ( -- types
-    Model (..), DataValue (..), Msg, ListModel, ListMsg, DataValueListModel
+    Model (..), DataValue (..), Msg, Tomsg, ListModel, ListMsg, DataValueListModel
   , DataValueListMsg, FormModel, FormMsg, DataValueFormModel, DataValueFormMsg
   , Path (..), SearchParams, Decoder, Encoder
   -- initialization, configuration
@@ -8,7 +8,7 @@ module JsonModel exposing
   , countBaseUri, pageSize, countDecoder, idParam, offsetLimitParams
   , toDeferredMsg, deferredSettings, defaultDeferredSettings
   -- data examination
-  , data, progress, isProgress, completed, count, isEmpty, id
+  , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
   , conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
   -- utility functions
@@ -34,7 +34,7 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 @docs DataValue, DataValueFormModel, DataValueFormMsg, DataValueListModel,
       DataValueListMsg, Decoder, Encoder, FormModel,
       FormMsg, ListModel, ListMsg, Model, Msg, Path,
-      SearchParams
+      SearchParams, Tomsg
 
 # Initialization, configuration
 @docs initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder, countBaseUri,
@@ -46,7 +46,7 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
       fetchMetadata, set, edit, save, delete
 
 # Data examination
-@docs data, progress, isProgress, completed, count, isEmpty, id
+@docs data, progress, isProgress, completed, count, isEmpty, id, searchPars
 
 # Metadata examination
 @docs conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
@@ -231,6 +231,7 @@ type Msg msg value
   | DeleteCmdMsg SearchParams
 
 
+{-| Json model message constructor -}
 type alias Tomsg msg value = Msg msg value -> msg
 
 
@@ -693,6 +694,11 @@ isEmpty model = List.isEmpty <| data model
 id: Model msg value -> Maybe String
 id ((Model _ c) as model) =
   c.id model
+
+
+{-| Return search params -}
+searchPars: Model msg value -> SearchParams
+searchPars (Model { searchParams} _) = searchParams
 
 
 {-| True if metadata are not empty and metadata fetch is not progress
