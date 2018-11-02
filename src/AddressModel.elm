@@ -90,6 +90,7 @@ init uri toMessagemsg toDeferredmsg search toAddressmsg =
       toMessagemsg |>
       JM.defaultDeferredSettings toDeferredmsg "20s"
     )
+    "search"
     search
     toAddressmsg
     .address

@@ -1,11 +1,11 @@
 module Select exposing
-  ( SelectModel, Msg, init, searchParamName, additionalParams
+  ( SelectModel, Msg, init, additionalParams
   , onSelectInput, onMouseSelect, search, update
   )
 
 {-| Model and controller for typeahead (a.k.a autocomplete, suggestion) data.
 
-@docs SelectModel, Msg, init, searchParamName, additionalParams,
+@docs SelectModel, Msg, init, additionalParams,
       onSelectInput, onMouseSelect, search, update
 -}
 
@@ -23,11 +23,11 @@ import Debug exposing (log)
 {-| Model for select component -}
 type alias SelectModel msg value =
   { model: JM.ListModel msg value
+  , searchParamName: String
   , search: String
   , additionalParams: JM.SearchParams
   , toSelectedmsg: value -> msg
   , activeIdx: Maybe Int
-  , searchParamName: String
   , active: Bool
   , toString: value -> String
   }
@@ -48,16 +48,9 @@ type alias Tomsg msg value = (Msg msg value) -> msg
 {-| Initializes SelectModel with [`JsonModel`](JsonModel), initial search string,
 selected value message constructor and value to string converter.
 -}
-init: JM.ListModel msg value -> String -> (value -> msg) -> (value -> String) -> SelectModel msg value
-init model initSearch toSelectedmsg toString =
-  SelectModel model initSearch [] toSelectedmsg Nothing "search" False toString
-
-
-{-| Change search http uri query parameter name. Default value is "search"
--}
-searchParamName: String -> SelectModel msg value -> SelectModel msg value
-searchParamName name model =
-  { model | searchParamName = name }
+init: JM.ListModel msg value -> String -> String -> (value -> msg) -> (value -> String) -> SelectModel msg value
+init model paramName initSearch toSelectedmsg toString =
+  SelectModel model paramName initSearch [] toSelectedmsg Nothing False toString
 
 
 {-| Adds additional search parameters.
