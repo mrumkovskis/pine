@@ -15,7 +15,7 @@ module JsonModel exposing
   , dataDecoder, pathDecoder, isInitialized, notInitialized, ready
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
-  , fetchCountDeferred, fetchMetadata, set, edit, save, delete
+  , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
   -- model updater
   , update
   )
@@ -43,7 +43,7 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 
 # Commands
 @docs fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount, fetchCountDeferred,
-      fetchMetadata, set, edit, save, delete
+      fetchMetadata, set, edit, save, create, delete
 
 # Data examination
 @docs data, progress, isProgress, completed, count, isEmpty, id, searchPars
@@ -142,6 +142,7 @@ type alias Config msg value =
   , dataBaseUri: String
   , uri: Bool -> SearchParams -> Model msg value -> String
   , saveUri: SearchParams -> Model msg value -> String
+  , createUri: SearchParams -> Model msg value -> String
   , metadata: Dict String VM.View
   , metadataFetcher: String -> Cmd VM.Msg
   , deferredConfig: Maybe (DeferredConfig msg)
@@ -228,6 +229,7 @@ type Msg msg value
   | DataCmdMsg Bool SearchParams (Maybe DeferredHeader)
   | CountCmdMsg SearchParams (Maybe DeferredHeader)
   | SaveCmdMsg SearchParams
+  | CreateCmdMsg SearchParams
   | DeleteCmdMsg SearchParams
 
 
@@ -300,16 +302,6 @@ initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
 initList: String -> String -> String -> JD.Decoder value -> (value -> JD.Value) -> Ask.Tomsg msg -> Model msg (List value)
 initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
   let
-    listDataDecoder _ _ = JD.list decoder
-
-    listDataEncoder _ _ value = JE.list encoder value
-
-    editor _ _ _ _ value = value
-
-    reader _ _ _ _ = RecordValue []
-
-    saveUri _ _ = ""
-
     emptyListData =
       Data
         []
@@ -355,16 +347,17 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
     Model
       (emptyListData False) -- model not ready upon initialization
       { typeName = typeName
-      , decoder = listDataDecoder
-      , encoder = listDataEncoder
+      , decoder = \_ _ -> JD.list decoder
+      , encoder = \_ _ value -> JE.list encoder value
       , setter = listSetter
-      , editor = editor
-      , reader = reader
+      , editor = \_ _ _ _ value -> value
+      , reader = \_ _ _ _ -> RecordValue []
       , emptyData = emptyListData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
       , uri = listUri
-      , saveUri = saveUri
+      , saveUri = \_ _ -> ""
+      , createUri = \_ _ -> ""
       , metadata = Dict.empty
       , metadataFetcher = VM.fetchMetadata
       , deferredConfig = Nothing
@@ -458,14 +451,6 @@ initForm:
   FormModel msg value
 initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId toMessagemsg =
   let
-    formDataDecoder _ _ = decoder
-
-    formDataEncoder _ _ value = encoder value
-
-    editor _ _ _ _ value = value -- not implemented (only for DataValue model)
-
-    reader _ _ _ _ = RecordValue [] -- not implemented (only for DataValue model)
-
     setter newdata (Model md mc) =
       Model
         { md |
@@ -500,6 +485,9 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId t
       in
         mc.dataBaseUri ++ "/" ++ mc.typeName ++ uriEnd
 
+    createUri searchParams (Model _ mc) =
+      mc.dataBaseUri ++ "/create/" ++ mc.typeName ++ query searchParams
+
     emptyFormData =
       Data
         initValue
@@ -511,16 +499,17 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId t
     Model
       (emptyFormData False) -- model not ready upon initialization
       { typeName = typeName
-      , decoder = formDataDecoder
-      , encoder = formDataEncoder
+      , decoder = \_ _ -> decoder
+      , encoder = \_ _ value -> encoder value
       , setter = setter
-      , editor = editor
-      , reader = reader
+      , editor = \_ _ _ _ value -> value -- not implemented (only for DataValue model)
+      , reader = \_ _ _ _ -> RecordValue [] -- not implemented (only for DataValue model)
       , emptyData = emptyFormData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
       , uri = formUri
       , saveUri = saveUri
+      , createUri = createUri
       , metadata = Dict.empty
       , metadataFetcher = VM.fetchMetadata
       , deferredConfig = Nothing
@@ -980,6 +969,13 @@ save toMsg searchParams =
   Task.perform toMsg <| Task.succeed <| SaveCmdMsg searchParams
 
 
+{-| Create model.
+-}
+create: Tomsg msg value -> SearchParams -> Cmd msg
+create toMsg searchParams =
+  Task.perform toMsg <| Task.succeed <| CreateCmdMsg searchParams
+
+
 {-| Delete model.
 -}
 delete: Tomsg msg value -> SearchParams -> Cmd msg
@@ -1347,6 +1343,20 @@ update toMsg msg (Model modelData modelConf as same) =
               Http.send
                 (toMsg << DataMsg modelConf.typeName False searchParams) <|
                 saveHttpRequest (modelConf.saveUri searchParams same) method value decoder
+          in
+            ( (same |> withProgress fetchProgress), cmd )
+
+      CreateCmdMsg searchParams ->
+        if isFetchProgress then
+          ( same, Ask.warn modelConf.toMessagemsg "Operation in progress, please try later.")
+        else
+          let
+            decoder = modelConf.decoder modelConf.metadata modelConf.typeName
+
+            cmd =
+              Http.send
+                (toMsg << DataMsg modelConf.typeName False searchParams) <|
+                Http.get (modelConf.createUri searchParams same) decoder
           in
             ( (same |> withProgress fetchProgress), cmd )
 

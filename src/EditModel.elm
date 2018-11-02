@@ -3,7 +3,7 @@ module EditModel exposing
   , Controller, TextController, AddressController
   , InputWithAttributes, TextInputWithAttributes, AddressInputWithAttributes
   , EditModel, Msg, Tomsg
-  , fetch, set, save, delete, id
+  , fetch, set, create, save, delete, id
   , inputEvents, onTextSelectInput, onTextSelectMouse
   , addressInputEvents, onAddressSelectInput, onAddressSelectMouse
   , update
@@ -13,7 +13,7 @@ module EditModel exposing
 [Controller](#Controller) functions are responsible for binding.
 
 # Commands
-@docs fetch, set, save, delete
+@docs fetch, set, create, save, delete
 
 # Inuput attributes (input is associated with controller)
 @docs inputEvents, onTextSelectInput, onTextSelectMouse,
@@ -158,6 +158,7 @@ type Msg msg model inputs
   = UpdateModelMsg Bool (JM.FormMsg msg model)
   | FetchModelMsg (JM.FormMsg msg model)
   | SaveModelMsg (JM.FormMsg msg model)
+  | CreateModelMsg (model -> model) (JM.FormMsg msg model)
   | DeleteModelMsg (JM.FormMsg msg model)
   -- select components messages
   | SelectTextMsg (TextController msg model inputs) (Select.Msg msg String)
@@ -171,6 +172,7 @@ type Msg msg model inputs
   | OnAddressSelect (AddressController msg model inputs) Address
   -- update entire model
   | EditModelMsg (model -> model)
+  | NewModelMsg JM.SearchParams (model -> model)
 
 
 {-| Edit model message constructor -}
@@ -189,6 +191,14 @@ fetch toMsg fid =
 set: Tomsg msg model inputs -> (model -> model) -> Cmd msg
 set toMsg editFun =
   Task.perform toMsg <| Task.succeed <| EditModelMsg editFun
+
+
+{-| Creates model data, calling [`JsonModel.set`](JsonModel#create).
+After that call function `createFun` on received data.
+-}
+create: Tomsg msg model inputs -> JM.SearchParams -> (model -> model) -> Cmd msg
+create toMsg createParams createFun =
+  Task.perform toMsg <| Task.succeed <| NewModelMsg createParams createFun
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
@@ -393,6 +403,12 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       , inputs = if doInputUpdate then updateInputs newModel else same.inputs
       }
 
+    applyCreateModel newModel =
+      { same | model = newModel }
+
+    createCmd createFun cmd =
+      if cmd == Cmd.none then set toMsg createFun else cmd
+
     applyModel newModel =
       { same |
         model = newModel
@@ -424,6 +440,10 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         case JM.update (toMsg << SaveModelMsg) data model of
           (newModel, cmd) ->
             (applySaveModel (not <| cmd == Cmd.none) newModel, cmd)
+
+      CreateModelMsg createFun data ->
+        JM.update (toMsg << CreateModelMsg createFun) data model |>
+        Tuple.mapBoth applyCreateModel (createCmd createFun)
 
       DeleteModelMsg data ->
         case JM.update (toMsg << DeleteModelMsg) data model of
@@ -459,3 +479,6 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       --edit entire model
       EditModelMsg editFun ->
         ( same, JM.set (toMsg << UpdateModelMsg True) <| editFun <| JM.data model )
+
+      NewModelMsg searchParams createFun ->
+        ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
