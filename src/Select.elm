@@ -1,11 +1,11 @@
 module Select exposing
-  ( SelectModel, Msg, init, additionalParams
+  ( SelectModel, Msg, init, additionalParams, updateSearch
   , onSelectInput, onMouseSelect, search, update
   )
 
 {-| Model and controller for typeahead (a.k.a autocomplete, suggestion) data.
 
-@docs SelectModel, Msg, init, additionalParams,
+@docs SelectModel, Msg, init, additionalParams, updateSearch,
       onSelectInput, onMouseSelect, search, update
 -}
 
@@ -60,6 +60,13 @@ additionalParams params model =
   { model | additionalParams = params }
 
 
+{-| Updates search condition but does not perform search command
+-}
+updateSearch: String -> SelectModel msg value -> SelectModel msg value
+updateSearch text model =
+  { model | search = text }
+
+
 {-| Key listeners. Listens to key up, down, esc, enter.
 -}
 onSelectInput: Tomsg msg value -> List (Attribute msg)
@@ -91,6 +98,10 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
       JM.data newModel |>
       List.map same.toString |>
       Utils.matchIdx same.search
+
+    maybeActivateModel (newModel, cmd) =
+     ( if cmd == Cmd.none then { newModel | active = True } else newModel, cmd )
+
   in
     case msg of
       Navigate action ->
@@ -108,13 +119,9 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
                   (\i ->
                     if i >= 0 && i < size then Just i else Nothing
                   )
-
-              newModel =
-                if active then { same | activeIdx = idx }
-                else { same | active = True }
             in
-              ( newModel
-              , if not active && JM.isEmpty model then -- if list collapsed and empty try search
+              ( if active then { same | activeIdx = idx } else same
+              , if not active then -- if list collapsed try search
                   Task.perform (toMsg << Search) <| Task.succeed same.search
                 else Cmd.none
               )
@@ -135,8 +142,10 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
               )
 
       Search text ->
-        ( { same | active = True, search = text }
-        , JM.fetch (toMsg << ModelMsg) <| [(same.searchParamName, text)] ++ same.additionalParams
+        ( { same | search = text }
+        , JM.fetchFromStart
+            (toMsg << ModelMsg) <|
+            [(same.searchParamName, text)] ++ same.additionalParams
         )
 
       SetActive select idx ->
@@ -151,4 +160,5 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
 
       ModelMsg data ->
         JM.update (toMsg << ModelMsg) data model |>
-        Tuple.mapFirst (\m -> { same | model = m, activeIdx = findIdx m })
+        Tuple.mapFirst (\m -> { same | model = m, activeIdx = findIdx m }) |>
+        maybeActivateModel

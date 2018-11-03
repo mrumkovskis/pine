@@ -301,26 +301,36 @@ update: Tomsg msg model inputs -> Msg msg model inputs -> EditModel msg model in
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
     apply ctrl input modelValueResult =
-      let fieldGui = ctrl.guiGetter inputs in
-      case modelValueResult of
-        Ok value ->
-          ( { same |
-              inputs = ctrl.guiUpdater inputs { fieldGui | input = input, error = Nothing }
-            }
-          , [ JM.set (toMsg << UpdateModelMsg False) value ]
-          )
+      let
+        fieldGui = ctrl.guiGetter inputs
 
-        Err err ->
-          ( { same |
-              inputs = ctrl.guiUpdater inputs { fieldGui | input = input, error = Just err }
-            }
-          , []
-          )
+        updateSelectModel =
+          fieldGui.select |> Maybe.map (Select.updateSearch input)
+      in
+        case modelValueResult of
+          Ok value ->
+            ( { same |
+                inputs =
+                  ctrl.guiUpdater
+                    inputs
+                    { fieldGui | input = input, error = Nothing, select = updateSelectModel }
+              }
+            , [ JM.set (toMsg << UpdateModelMsg False) value ]
+            )
+
+          Err err ->
+            ( { same |
+                inputs = ctrl.guiUpdater inputs { fieldGui | input = input, error = Just err }
+              }
+            , []
+            )
 
     applyInput toSelectmsg ctrl value =
       let
         res =
-          apply ctrl value <|
+          apply
+            ctrl
+            value
             ( ctrl.value value |>
               Result.andThen
                 (Utils.flip (ctrl.setter False) <| (JM.data model))
@@ -393,7 +403,6 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       Maybe.map (Tuple.mapFirst (updateSelect ctrl newModel)) |>
       Maybe.withDefault (Tuple.pair newModel Cmd.none)
 
-    -- this method is expected to be called from gui so inputs are not updated
     updateInputs newModel =
       same.inputsUpdater same.isEditable controllers <| JM.data newModel
 
