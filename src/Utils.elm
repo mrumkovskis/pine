@@ -1,13 +1,13 @@
 module Utils exposing
   ( zip, at, orElse, httpQuery, matchIdx, strOrEmpty, optField, noBreakSpace,
-    flip, curry, uncurry
+    flip, curry, uncurry, httpErrorToString
   )
 
 
 {-| Various useful utility methods.
 
 @docs at, httpQuery, matchIdx, noBreakSpace, optField,
-      orElse, strOrEmpty, zip, flip, curry, uncurry
+      orElse, strOrEmpty, zip, flip, curry, uncurry, httpErrorToString
 -}
 
 
@@ -15,6 +15,8 @@ import Http
 import Dict
 import Json.Decode as JD
 import Url.Builder as UB
+
+import Debug exposing (log, toString)
 
 
 {-| Zip together to lists. If lists are various size resulting list size
@@ -167,3 +169,19 @@ This combines two arguments into a single pair.
 uncurry : (a -> b -> c) -> (a,b) -> c
 uncurry f (a,b) =
   f a b
+
+
+{-| Converts Http Error to string and logs full error using `Debug` module
+-}
+httpErrorToString: Http.Error -> String
+httpErrorToString err =
+  case log "Http error occurred" err of
+    Http.BadUrl msg -> msg
+
+    Http.Timeout -> "Timeout occurred"
+
+    Http.NetworkError -> "Network error occurred"
+
+    Http.BadStatus resp -> toString resp
+
+    Http.BadPayload msg resp -> msg ++ "; " ++ toString resp

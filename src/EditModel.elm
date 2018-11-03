@@ -3,7 +3,7 @@ module EditModel exposing
   , Controller, TextController, AddressController
   , InputWithAttributes, TextInputWithAttributes, AddressInputWithAttributes
   , EditModel, Msg, Tomsg
-  , fetch, set, create, save, delete, id
+  , fetch, set, create, http, save, delete, id
   , inputEvents, onTextSelectInput, onTextSelectMouse
   , addressInputEvents, onAddressSelectInput, onAddressSelectMouse
   , update
@@ -13,7 +13,7 @@ module EditModel exposing
 [Controller](#Controller) functions are responsible for binding.
 
 # Commands
-@docs fetch, set, create, save, delete
+@docs fetch, set, create, http, save, delete
 
 # Inuput attributes (input is associated with controller)
 @docs inputEvents, onTextSelectInput, onTextSelectMouse,
@@ -41,6 +41,7 @@ import Utils
 import Html exposing (Attribute)
 import Html.Events exposing (..)
 import Task
+import Http
 
 import Debug exposing (log)
 
@@ -173,6 +174,7 @@ type Msg msg model inputs
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
+  | HttpModelMsg (Result Http.Error model)
 
 
 {-| Edit model message constructor -}
@@ -199,6 +201,13 @@ After that call function `createFun` on received data.
 create: Tomsg msg model inputs -> JM.SearchParams -> (model -> model) -> Cmd msg
 create toMsg createParams createFun =
   Task.perform toMsg <| Task.succeed <| NewModelMsg createParams createFun
+
+
+{-| Creates model from http request.
+-}
+http: Tomsg msg model inputs -> Http.Request model -> Cmd msg
+http toMsg req =
+  Http.send (toMsg << HttpModelMsg) req
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
@@ -436,14 +445,12 @@ update toMsg msg ({ model, inputs, controllers } as same) =
     case msg of
       -- JM model messages
       UpdateModelMsg doInputUpdate data ->
-        case JM.update (toMsg << UpdateModelMsg doInputUpdate) data model of
-          (newModel, cmd) ->
-            (updateModel doInputUpdate newModel, cmd)
+        JM.update (toMsg << UpdateModelMsg doInputUpdate) data model |>
+        Tuple.mapFirst (updateModel doInputUpdate)
 
       FetchModelMsg data ->
-        case JM.update (toMsg << FetchModelMsg) data model of
-          (newModel, cmd) ->
-            (applyFetchModel newModel, cmd)
+        JM.update (toMsg << FetchModelMsg) data model |>
+        Tuple.mapFirst applyFetchModel
 
       SaveModelMsg data ->
         case JM.update (toMsg << SaveModelMsg) data model of
@@ -491,3 +498,15 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
       NewModelMsg searchParams createFun ->
         ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
+
+      HttpModelMsg httpResult ->
+        let
+            result =
+              case httpResult of
+                Ok r ->
+                  set toMsg (always r)
+
+                Err e ->
+                  Ask.error same.toMessagemsg <| Utils.httpErrorToString e
+        in
+          ( same, result )
