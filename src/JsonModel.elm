@@ -1016,6 +1016,9 @@ update toMsg msg (Model modelData modelConf as same) =
     fetchMd andThen =
       Task.perform toMsg <| Task.succeed <| MetadataMsgCmd andThen
 
+    initializeAndCmd cmd =
+      if unInitialized then fetchMd <| Just cmd else cmd
+
     metadataHttpRequest maybeAndThen typeName =
       let
         mapper = MetadataMsg maybeAndThen >> toMsg
@@ -1252,7 +1255,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       EditMsg path value ->
         if unInitialized then
-          ( same, fetchMd (Just <| edit toMsg path value) )
+          ( same, initializeAndCmd <| edit toMsg path value )
         else
           let
             good =
@@ -1292,9 +1295,7 @@ update toMsg msg (Model modelData modelConf as same) =
                 (toMsg << DataMsg modelConf.typeName True modelData.searchParams)
                 (Task.succeed <| Ok value)
           in
-            ( (same |> withEmptyQueue |> withProgress fetchProgress)
-            , (if unInitialized then fetchMd <| Just cmd else cmd)
-            )
+            ( (same |> withEmptyQueue |> withProgress fetchProgress), initializeAndCmd cmd )
 
       DataCmdMsg restart searchParams deferredHeader ->
         if isFetchProgress then
@@ -1309,7 +1310,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
             newModel = same |> withEmptyQueue |> withProgress fetchProgress
           in
-            ( newModel, if unInitialized then fetchMd <| Just cmd else cmd )
+            ( newModel, initializeAndCmd cmd )
 
       CountCmdMsg searchParams deferredHeader ->
         if String.isEmpty modelConf.countBaseUri then
@@ -1326,7 +1327,7 @@ update toMsg msg (Model modelData modelConf as same) =
             let
               newModel = same |> withEmptyQueue |> withProgress countProgress
             in
-              ( newModel, if unInitialized then fetchMd <| Just cmd else cmd )
+              ( newModel, initializeAndCmd cmd )
 
       SaveCmdMsg searchParams ->
         if isFetchProgress then
@@ -1344,7 +1345,7 @@ update toMsg msg (Model modelData modelConf as same) =
                 (toMsg << DataMsg modelConf.typeName False searchParams) <|
                 saveHttpRequest (modelConf.saveUri searchParams same) method value decoder
           in
-            ( (same |> withProgress fetchProgress), cmd )
+            ( (same |> withProgress fetchProgress), initializeAndCmd cmd )
 
       CreateCmdMsg searchParams ->
         if isFetchProgress then
@@ -1358,7 +1359,7 @@ update toMsg msg (Model modelData modelConf as same) =
                 (toMsg << DataMsg modelConf.typeName False searchParams) <|
                 Http.get (modelConf.createUri searchParams same) decoder
           in
-            ( (same |> withProgress fetchProgress), cmd )
+            ( (same |> withProgress fetchProgress), initializeAndCmd cmd )
 
       DeleteCmdMsg searchParams ->
         if isFetchProgress then
@@ -1370,7 +1371,7 @@ update toMsg msg (Model modelData modelConf as same) =
                 (toMsg << DeleteMsg modelConf.typeName searchParams) <|
                 deleteHttpRequest <| modelConf.saveUri searchParams same
           in
-            ( (same |> withProgress fetchProgress), cmd )
+            ( (same |> withProgress fetchProgress), initializeAndCmd cmd )
 
 
 {- private function -}
