@@ -3,7 +3,7 @@ module EditModel exposing
   , Controller, TextController, AddressController
   , InputWithAttributes, TextInputWithAttributes, AddressInputWithAttributes
   , EditModel, Msg, Tomsg
-  , fetch, set, create, http, save, delete, id
+  , fetch, set, create, http, save, delete, id, noCmd
   , inputEvents, onTextSelectInput, onTextSelectMouse
   , addressInputEvents, onAddressSelectInput, onAddressSelectMouse
   , update
@@ -20,7 +20,7 @@ module EditModel exposing
       addressInputEvents, onAddressSelectInput, onAddressSelectMouse
 
 # Utility
-@docs id
+@docs id, noCmd
 
 # Types
 @docs AddressController, AddressInput, AddressInputWithAttributes, Controller, EditModel,
@@ -67,14 +67,14 @@ type alias AddressInput msg = Input msg Address
 type alias Getter value = String -> Result String value
 
 
-{- Set field value to model. Method ir called while user is typing in an input field.
+{- Set field value to model. Function ir called while user is typing in an input field.
    Bool argument is True if value is selected like from Select component with
-   Enter key or mouse, False otherwise.
+   Enter key or mouse, False otherwise. Function Returns updated model and command
 -}
-type alias Setter value model = Bool -> value -> model -> Result String model
+type alias Setter msg value model inputs = Tomsg msg model inputs -> Bool -> value -> model -> ( Result String model, Cmd msg )
 
 
-{- Get input field text from model. Method is called when value is selected from list or model
+{- Get input field text from model. Function is called when value is selected from list or model
    data are refreshed from update or fetch messages. Bool argument depends on EditModel.isEditable field
    so data can be formatted according to display mode.
 -}
@@ -87,7 +87,7 @@ type alias InputUpdater msg value inputs = inputs -> Input msg value -> inputs
 type alias InputGetter msg value inputs = inputs -> Input msg value
 
 
-{- Updates inputs from model. Method is called when model is updated from update or fetch messages.
+{- Updates inputs from model. Function is called when model is updated from update or fetch messages.
    In general calls controllers formatter methods and updates inputs.
    Bool argument depends on EditModel.isEditable field so data can be formatted according to display mode.
 -}
@@ -105,7 +105,7 @@ type alias SelectInitializer msg value =
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
 type alias Controller msg value model inputs =
   { value: Getter value
-  , setter: Setter value model
+  , setter: Setter msg value model inputs
   , formatter: Formatter model
   , guiUpdater: InputUpdater msg value inputs
   , guiGetter: InputGetter msg value inputs
@@ -231,6 +231,12 @@ id =
   .model >> JM.id >> Maybe.andThen String.toInt
 
 
+{-| Utility function which helps to create setter returning `Cmd.none` -}
+noCmd: (value -> model -> Result String model) -> Tomsg msg model inputs -> Bool -> value -> model -> ( Result String model, Cmd msg )
+noCmd simpleSetter toMsg selected value model =
+  ( simpleSetter value model, Cmd.none )
+
+
 {- event attributes private function -}
 inputFocusBlurEvents:
   Tomsg msg model inputs ->
@@ -309,7 +315,7 @@ onAddressSelectMouse toMsg ctrl idx =
 update: Tomsg msg model inputs -> Msg msg model inputs -> EditModel msg model inputs controllers -> (EditModel msg model inputs controllers, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
-    apply ctrl input modelValueResult =
+    apply ctrl input (modelValueResult, cmd) =
       let
         fieldGui = ctrl.guiGetter inputs
 
@@ -324,26 +330,27 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                     inputs
                     { fieldGui | input = input, error = Nothing, select = updateSelectModel }
               }
-            , [ JM.set (toMsg << UpdateModelMsg False) value ]
+            , if cmd == Cmd.none then
+                [ JM.set (toMsg << UpdateModelMsg False) value ]
+              else [ cmd ]
             )
 
           Err err ->
             ( { same |
                 inputs = ctrl.guiUpdater inputs { fieldGui | input = input, error = Just err }
               }
-            , []
+            , if cmd /= Cmd.none then [ cmd ] else []
             )
 
     applyInput toSelectmsg ctrl value =
       let
-        res =
-          apply
-            ctrl
-            value
-            ( ctrl.value value |>
-              Result.andThen
-                (Utils.flip (ctrl.setter False) <| (JM.data model))
-            )
+        resVal =
+          case ctrl.value value of
+            Ok fieldVal ->
+              ctrl.setter toMsg False fieldVal <| JM.data model
+
+            Err err ->
+              ( Err err, Cmd.none )
 
         searchCmd =
           (ctrl.guiGetter inputs).select |>
@@ -351,16 +358,19 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           Maybe.map List.singleton |>
           Maybe.withDefault []
       in
-        res |>
+        apply ctrl value resVal|>
         Tuple.mapSecond (\cmds -> Cmd.batch (cmds ++ searchCmd))
 
     applySelectedValue ctrl value modelData =
       let
-        newDataRes = ctrl.setter True value modelData
+        newDataRes = ctrl.setter toMsg True value modelData
 
         formatter = ctrl.formatter same.isEditable
 
-        input = newDataRes |> Result.map formatter |> Result.withDefault "<error setting value!>"
+        input =
+          Tuple.first newDataRes |>
+          Result.map formatter |>
+          Result.withDefault "<error setting value!>"
       in
         apply ctrl input newDataRes |>
         Tuple.mapSecond Cmd.batch
