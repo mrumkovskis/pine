@@ -1,7 +1,5 @@
 module EditModel exposing
-  ( Input, TextInput
-  , Controller, TextController
-  , InputWithAttributes, TextInputWithAttributes
+  ( Input, Controller, InputWithAttributes
   , EditModel, Msg, Tomsg
   , fetch, set, create, http, save, delete, id, noCmd
   , inputEvents, onTextSelectInput, onTextSelectMouse
@@ -21,8 +19,7 @@ module EditModel exposing
 @docs id, noCmd
 
 # Types
-@docs Controller, EditModel, Input, InputWithAttributes, Msg,
-      TextController, TextInput, TextInputWithAttributes, Tomsg
+@docs Controller, EditModel, Input, InputWithAttributes, Msg, Tomsg
 
 @docs update
 -}
@@ -43,27 +40,19 @@ import Debug exposing (log)
 
 
 {-| Represents form input field. Is synchronized with model. -}
-type alias Input msg value =
+type alias Input msg =
   { input: String
   , editing: Bool
   , error: Maybe String
-  , select: Maybe (SelectModel msg value)
+  , select: Maybe (SelectModel msg String)
   }
-
-
-{-| Text input field. -}
-type alias TextInput msg = Input msg String
-
-
-{- Get field value from input field text -}
-type alias Getter value = String -> Result String value
 
 
 {- Set field value to model. Function ir called while user is typing in an input field.
    Bool argument is True if value is selected like from Select component with
    Enter key or mouse, False otherwise. Function Returns updated model and command
 -}
-type alias Setter msg value model inputs = Tomsg msg model inputs -> Bool -> value -> model -> ( Result String model, Cmd msg )
+type alias Setter msg model inputs = Tomsg msg model inputs -> Bool -> String -> model -> ( Result String model, Cmd msg )
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -73,10 +62,10 @@ type alias Setter msg value model inputs = Tomsg msg model inputs -> Bool -> val
 type alias Formatter model = Bool -> model -> String
 
 
-type alias InputUpdater msg value inputs = inputs -> Input msg value -> inputs
+type alias InputUpdater msg inputs = inputs -> Input msg -> inputs
 
 
-type alias InputGetter msg value inputs = inputs -> Input msg value
+type alias InputGetter msg inputs = inputs -> Input msg
 
 
 {- Updates inputs from model. Function is called when model is updated from update or fetch messages.
@@ -86,41 +75,32 @@ type alias InputGetter msg value inputs = inputs -> Input msg value
 type alias InputsUpdater controllers model inputs = Bool -> controllers -> model -> inputs
 
 
-type alias SelectInitializer msg value =
+type alias SelectInitializer msg =
   Ask.Tomsg msg ->
   DR.Tomsg msg ->
   String ->
-  (value -> msg) ->
-  SelectModel msg value
+  (String -> msg) ->
+  SelectModel msg String
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
-type alias Controller msg value model inputs =
-  { value: Getter value
-  , setter: Setter msg value model inputs
+type alias Controller msg model inputs =
+  { setter: Setter msg model inputs
   , formatter: Formatter model
-  , guiUpdater: InputUpdater msg value inputs
-  , guiGetter: InputGetter msg value inputs
-  , selectInitializer: Maybe (SelectInitializer msg value)
+  , guiUpdater: InputUpdater msg inputs
+  , guiGetter: InputGetter msg inputs
+  , selectInitializer: Maybe (SelectInitializer msg)
   }
-
-
-{-| Text field controller -}
-type alias TextController msg model inputs = Controller msg String model inputs
 
 
 {-| Input together with proposed html input element attributes and with
 mouse selection attributes of select component.
 -}
-type alias InputWithAttributes msg value =
-  { input: Input msg value
+type alias InputWithAttributes msg =
+  { input: Input msg
   , mouseSelectAttrs: Int -> List (Attribute msg)
   , attrs: List (Attribute msg)
   }
-
-
-{-| Text onput and attributes -}
-type alias TextInputWithAttributes msg = InputWithAttributes msg String
 
 
 {-| Edit model -}
@@ -145,11 +125,11 @@ type Msg msg model inputs
   | CreateModelMsg (model -> model) (JM.FormMsg msg model)
   | DeleteModelMsg (JM.FormMsg msg model)
   -- select components messages
-  | SelectTextMsg (TextController msg model inputs) (Select.Msg msg String)
+  | SelectTextMsg (Controller msg model inputs) (Select.Msg msg String)
   -- input fields event messages
-  | OnMsg (TextController msg model inputs) String
-  | OnFocusMsg (TextController msg model inputs) Bool
-  | OnTextSelect (TextController msg model inputs) String
+  | OnMsg (Controller msg model inputs) String
+  | OnFocusMsg (Controller msg model inputs) Bool
+  | OnTextSelect (Controller msg model inputs) String
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
@@ -211,7 +191,7 @@ id =
 
 
 {-| Utility function which helps to create setter returning `Cmd.none` -}
-noCmd: (value -> model -> Result String model) -> Tomsg msg model inputs -> Bool -> value -> model -> ( Result String model, Cmd msg )
+noCmd: (String -> model -> Result String model) -> Tomsg msg model inputs -> Bool -> String -> model -> ( Result String model, Cmd msg )
 noCmd simpleSetter toMsg selected value model =
   ( simpleSetter value model, Cmd.none )
 
@@ -235,7 +215,7 @@ inputFocusBlurEvents toMsg inputMsg focusMsg blurMsg =
 {-| Returns `onInput`, `onFocus`, `onBlur` `Html.Attributes`
 for input associated with the controller.
 -}
-inputEvents: Tomsg msg model inputs -> TextController msg model inputs -> List (Attribute msg)
+inputEvents: Tomsg msg model inputs -> Controller msg model inputs -> List (Attribute msg)
 inputEvents toMsg ctrl =
   inputFocusBlurEvents
     toMsg
@@ -247,7 +227,7 @@ inputEvents toMsg ctrl =
 {-| Returns attributes for [`Select`](Select) management. Generally this is key listener
 reacting on arrow, escape, enter keys.
 -}
-onTextSelectInput: Tomsg msg model inputs -> TextController msg model inputs -> List (Attribute msg)
+onTextSelectInput: Tomsg msg model inputs -> Controller msg model inputs -> List (Attribute msg)
 onTextSelectInput toMsg ctrl =
   Select.onSelectInput <| toMsg << SelectTextMsg ctrl
 
@@ -255,7 +235,7 @@ onTextSelectInput toMsg ctrl =
 {-| Returns attributes for [`Select`](Select) management. Generally this is mouse down listener
 to enable value selection from list. `Int` parameter indicates selected index.
 -}
-onTextSelectMouse: Tomsg msg model inputs -> TextController msg model inputs -> Int -> List (Attribute msg)
+onTextSelectMouse: Tomsg msg model inputs -> Controller msg model inputs -> Int -> List (Attribute msg)
 onTextSelectMouse toMsg ctrl idx =
   Select.onMouseSelect (toMsg << SelectTextMsg ctrl) idx
 
@@ -296,13 +276,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
     applyInput toSelectmsg ctrl value =
       let
-        resVal =
-          case ctrl.value value of
-            Ok fieldVal ->
-              ctrl.setter toMsg False fieldVal <| JM.data model
-
-            Err err ->
-              ( Err err, Cmd.none )
+        resVal = ctrl.setter toMsg False value <| JM.data model
 
         searchCmd =
           (ctrl.guiGetter inputs).select |>
