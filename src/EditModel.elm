@@ -84,6 +84,18 @@ type alias SelectInitializer msg =
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
+type Controller msg model controllers =
+  Controller
+    { input: Input msg
+    , modelUpdater: Tomsg msg model controllers -> Input msg -> model -> (model, Cmd msg) -- called on OnSelect, OnFocus _ False
+    , formatter: model -> String  -- tiek izmantots veikstpējas nolūkos updatojot Inputus no modeļa, lai noteiktu vai ir jāsauc inputUpdater funka.
+    , inputUpdater: model -> Input msg -- tiek izsaukts uz JsonModel messagiem, (varbūt optimizācijai kad cmd == Cmd.none?)
+    , userInput: String -> Input msg -- tiek izsaukts uz OnMsg, OnSelect
+    , selectInitializer: Maybe (SelectInitializer msg) -- tiek izsaukts uz OnFocus _ True
+    , attrs: Tomsg msg model controllers -> controller -> Attributes msg
+    , controllerUpdater: controllers -> Controller msg model controllers -> controllers -- tiek izsaukts vienmēr kad tiek updatoti inputi
+    }
+
 type alias Controller msg model inputs =
   { setter: Setter msg model inputs
   , formatter: Formatter model
@@ -96,6 +108,11 @@ type alias Controller msg model inputs =
 {-| Input together with proposed html input element attributes and with
 mouse selection attributes of select component.
 -}
+type alias Attributes msg =
+  { mouseSelectAttrs: Int -> List (Attribute msg)
+  , attrs: List (Attribute msg)
+  }
+
 type alias InputWithAttributes msg =
   { input: Input msg
   , mouseSelectAttrs: Int -> List (Attribute msg)
@@ -104,6 +121,21 @@ type alias InputWithAttributes msg =
 
 
 {-| Edit model -}
+type alias EditModel msg model controllers =
+  { model: JM.FormModel msg model
+  , controllers: controllers
+  , controllerList: controllers -> List (Controller msg model controllers)
+  , toMessagemsg: Ask.Tomsg msg
+  , toDeferredmsg: DR.Tomsg msg
+  --, validate: Tomsg msg model controllers -> model -> (Result String model, Cmd msg)
+  --, error: Maybe String
+  , isSaving: Bool
+  , isDeleting: Bool
+  --, isValidating: Bool
+  , isEditable: Bool
+  }
+
+
 type alias EditModel msg model inputs controllers =
   { model: JM.FormModel msg model
   , inputs: inputs
@@ -118,6 +150,23 @@ type alias EditModel msg model inputs controllers =
 
 
 {-| Edit model update messages -}
+type Msg msg model controllers
+  = UpdateModelMsg Bool (JM.FormMsg msg model)
+  | FetchModelMsg (JM.FormMsg msg model)
+  | SaveModelMsg (JM.FormMsg msg model)
+  | CreateModelMsg (model -> model) (JM.FormMsg msg model)
+  | DeleteModelMsg (JM.FormMsg msg model)
+  -- select components messages
+  | SelectMsg (Controller msg model controllers) (Select.Msg msg String)
+  -- input fields event messages
+  | OnMsg (Controller msg model controllers) String
+  | OnFocusMsg (Controller msg model controllers) Bool
+  | OnSelect (Controller msg model controllers) String
+  -- update entire model
+  | EditModelMsg (model -> model)
+  | NewModelMsg JM.SearchParams (model -> model)
+  | HttpModelMsg (Result Http.Error model)
+
 type Msg msg model inputs
   = UpdateModelMsg Bool (JM.FormMsg msg model)
   | FetchModelMsg (JM.FormMsg msg model)
@@ -137,6 +186,8 @@ type Msg msg model inputs
 
 
 {-| Edit model message constructor -}
+type alias Tomsg msg model controllers = (Msg msg model controllers -> msg)
+
 type alias Tomsg msg model inputs = (Msg msg model inputs -> msg)
 
 
@@ -241,6 +292,35 @@ onTextSelectMouse toMsg ctrl idx =
 
 
 -- end of select event listeners
+
+updateModel: Tomsg msg model controllers -> List (Controller msg model controllers) -> model -> (model, Cmd msg)
+updateModel toMsg controllers model =
+  List.foldl
+    (\ctrl (mod, cmds) ->
+      if ctrl.formatter model == ctrl.input.input then
+        (mod, cmds)
+      else
+        (ctrl.modelUpdater toMsg ctrl.input model) |>
+        Tuple.mapSecond (\cmd -> cmd :: cmds)
+    )
+    (model, [])
+    controllers |>
+  Tuple.mapSecond List.reverse |>
+  Tuple.mapSecond Cmd.batch
+
+
+
+updateInputs: List (Controller msg model controllers) -> model -> controllers -> controllers
+updateInputs toMsg controllerList model controllers =
+  List.foldl
+    (\ctrl ctrls ->
+      if ctrl.formatter model == ctrl.input.input then
+        controllers
+      else
+        ctrl.controllerUpdater controllers { ctrl | input = ctrl.inputUpdater model }
+    )
+    controllers
+    controllerList
 
 
 {-| Model update -}
