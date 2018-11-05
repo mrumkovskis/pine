@@ -1,11 +1,10 @@
 module EditModel exposing
-  ( Input, TextInput, AddressInput
-  , Controller, TextController, AddressController
-  , InputWithAttributes, TextInputWithAttributes, AddressInputWithAttributes
+  ( Input, TextInput
+  , Controller, TextController
+  , InputWithAttributes, TextInputWithAttributes
   , EditModel, Msg, Tomsg
   , fetch, set, create, http, save, delete, id, noCmd
   , inputEvents, onTextSelectInput, onTextSelectMouse
-  , addressInputEvents, onAddressSelectInput, onAddressSelectMouse
   , update
   )
 
@@ -17,15 +16,13 @@ module EditModel exposing
 
 # Inuput attributes (input is associated with controller)
 @docs inputEvents, onTextSelectInput, onTextSelectMouse,
-      addressInputEvents, onAddressSelectInput, onAddressSelectMouse
 
 # Utility
 @docs id, noCmd
 
 # Types
-@docs AddressController, AddressInput, AddressInputWithAttributes, Controller, EditModel,
-      Input, InputWithAttributes, Msg, TextController, TextInput, TextInputWithAttributes,
-      Tomsg
+@docs Controller, EditModel, Input, InputWithAttributes, Msg,
+      TextController, TextInput, TextInputWithAttributes, Tomsg
 
 @docs update
 -}
@@ -35,7 +32,6 @@ import JsonModel as JM
 import Ask
 import DeferredRequests as DR
 import Select exposing (..)
-import AddressModel exposing (..)
 import Utils
 
 import Html exposing (Attribute)
@@ -57,10 +53,6 @@ type alias Input msg value =
 
 {-| Text input field. -}
 type alias TextInput msg = Input msg String
-
-
-{-| Address input field. -}
-type alias AddressInput msg = Input msg Address
 
 
 {- Get field value from input field text -}
@@ -117,10 +109,6 @@ type alias Controller msg value model inputs =
 type alias TextController msg model inputs = Controller msg String model inputs
 
 
-{-| Address field controller -}
-type alias AddressController msg model inputs = Controller msg Address model inputs
-
-
 {-| Input together with proposed html input element attributes and with
 mouse selection attributes of select component.
 -}
@@ -133,11 +121,6 @@ type alias InputWithAttributes msg value =
 
 {-| Text onput and attributes -}
 type alias TextInputWithAttributes msg = InputWithAttributes msg String
-
-
-{-| Address input and attributes -}
-type alias AddressInputWithAttributes msg = InputWithAttributes msg Address
-
 
 
 {-| Edit model -}
@@ -163,14 +146,10 @@ type Msg msg model inputs
   | DeleteModelMsg (JM.FormMsg msg model)
   -- select components messages
   | SelectTextMsg (TextController msg model inputs) (Select.Msg msg String)
-  | SelectAddressMsg (AddressController msg model inputs) (Select.Msg msg Address)
   -- input fields event messages
   | OnMsg (TextController msg model inputs) String
   | OnFocusMsg (TextController msg model inputs) Bool
-  | OnAddressMsg (AddressController msg model inputs) String
-  | OnAddressFocusMsg (AddressController msg model inputs) Bool
   | OnTextSelect (TextController msg model inputs) String
-  | OnAddressSelect (AddressController msg model inputs) Address
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
@@ -281,33 +260,6 @@ onTextSelectMouse toMsg ctrl idx =
   Select.onMouseSelect (toMsg << SelectTextMsg ctrl) idx
 
 
-{-| The same as [`inputEvents`](#inputEvents) with the difference that instead of string value
-[`AddressModel.Address`](AddressModel#Address) is selected.
--}
-addressInputEvents: Tomsg msg model inputs -> AddressController msg model inputs -> List (Attribute msg)
-addressInputEvents toMsg ctrl =
-  inputFocusBlurEvents
-    toMsg
-    (OnAddressMsg ctrl)
-    (OnAddressFocusMsg ctrl True)
-    (OnAddressFocusMsg ctrl False)
-
-
-{-| The same as [`onTextSelectInput`](#onTextSelectInput) with the difference that instead of string value
-[`AddressModel.Address`](AddressModel#Address) is selected.
--}
-onAddressSelectInput: Tomsg msg model inputs -> AddressController msg model inputs -> List (Attribute msg)
-onAddressSelectInput toMsg ctrl =
-  Select.onSelectInput <| toMsg << SelectAddressMsg ctrl
-
-
-{-| The same as [`onTextSelectMouse`](#onTextSelectMouse) with the difference that instead of string value
-[`AddressModel.Address`](AddressModel#Address) is selected.
--}
-onAddressSelectMouse: Tomsg msg model inputs -> AddressController msg model inputs -> Int -> List (Attribute msg)
-onAddressSelectMouse toMsg ctrl idx =
-  Select.onMouseSelect (toMsg << SelectAddressMsg ctrl) idx
-
 -- end of select event listeners
 
 
@@ -384,10 +336,6 @@ update toMsg msg ({ model, inputs, controllers } as same) =
     initTextSelect ctrl initializer =
       (initSelectBase ctrl initializer)
         (toMsg << OnTextSelect ctrl)
-
-    initAddressSelect ctrl initializer =
-      (initSelectBase ctrl initializer)
-        (toMsg << OnAddressSelect ctrl)
 
     setEditing ctrl initializer focus =
       let
@@ -477,11 +425,8 @@ update toMsg msg ({ model, inputs, controllers } as same) =
             (applyDeleteModel (not <| cmd == Cmd.none) newModel, cmd)
 
       -- Select messages
-      SelectTextMsg ctrl selMsg -> -- address field select list messages
+      SelectTextMsg ctrl selMsg -> -- field select list messages
         applySelect ctrl same (toMsg << SelectTextMsg ctrl) selMsg
-
-      SelectAddressMsg ctrl selMsg -> -- address field select list messages
-        applySelect ctrl same (toMsg << SelectAddressMsg ctrl) selMsg
 
       -- user input messages
       OnMsg ctrl value ->
@@ -490,17 +435,8 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       OnFocusMsg ctrl focus ->
         setEditing ctrl initTextSelect focus
 
-      OnAddressMsg ctrl value -> -- address field input
-        applyInput (toMsg << SelectAddressMsg ctrl) ctrl value
-
-      OnAddressFocusMsg ctrl focus ->
-        setEditing ctrl initAddressSelect focus
-
       OnTextSelect ctrl value -> -- text selected from select component
         (applySelectedValue ctrl value <| JM.data model)
-
-      OnAddressSelect ctrl address -> -- address selected from select component
-        (applySelectedValue ctrl address <| JM.data model)
 
       --edit entire model
       EditModelMsg editFun ->
