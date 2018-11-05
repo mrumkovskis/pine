@@ -1,16 +1,18 @@
 module AddressModel exposing
-  ( Address, decoder, initAddress, init )
+  ( Address, decoder, resolveAddressDecoder, initAddress, init )
 
 
 {-| Address service according to [`addresses`](https://github.com/mrumkovskis/addresses)
 This is relevant for LV addresses.
 
-@docs Address, decoder, initAddress, init
+@docs Address, decoder, resolveAddressDecoder, initAddress, init
 -}
 
 
 import Json.Decode as JD
 import Json.Encode as JE
+import Http
+
 import JsonModel as JM
 import Ask
 import DeferredRequests as DR
@@ -60,6 +62,41 @@ decoder =
           (opt "novName" JD.string)
           (opt "pagName" JD.string)
       )
+
+
+{-| Resolve address decoder. Resolved address has structure like this:
+    `
+    {
+      "address": "Vīlandes iela 7 - 9, Rīga",
+      "resolvedAddress": {
+        "dzvCode": 113136060,
+        "ielCode": 100314142,
+        "ielName": "Vīlandes iela",
+        "nltName": "7",
+        "coordX": 506183.961,
+        "pilCode": 100003003,
+        "zipCode": "LV-1010",
+        "dzvName": "9",
+        "nltCode": 102023651,
+        "code": 113136060,
+        "typ": 104,
+        "address": "Vīlandes iela 7 - 9\nRīga",
+        "coordY": 312966.488,
+        "pilName": "Rīga"
+      }
+    }
+    `
+-}
+resolveAddressDecoder: JD.Decoder Address
+resolveAddressDecoder =
+  JD.map2
+    Tuple.pair
+    (JD.field "address" JD.string)
+    (JD.maybe <| JD.field "resolvedAddress" decoder) |>
+  JD.map
+    (\(a, mra) ->
+      mra |> Maybe.map (\ra -> { ra | address = a }) |> Maybe.withDefault (initAddress a)
+    )
 
 
 {-| Initialize address with text (without structure).
