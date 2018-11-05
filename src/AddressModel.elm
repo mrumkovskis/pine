@@ -77,15 +77,15 @@ init:
   Ask.Tomsg msg ->
   DR.Tomsg msg ->
   String ->
-  (Address -> msg) ->
-  Select.SelectModel msg Address
+  (String -> msg) ->
+  Select.SelectModel msg String
 init uri toMessagemsg toDeferredmsg search toAddressmsg =
   Select.init
     (JM.initList
       "/metadata"
       uri
       "address"
-      decoder
+      (JD.field "address" JD.string)
       (always JE.null)
       toMessagemsg |>
       JM.defaultDeferredSettings toDeferredmsg "20s"
@@ -93,4 +93,4 @@ init uri toMessagemsg toDeferredmsg search toAddressmsg =
     "search"
     search
     toAddressmsg
-    .address
+    identity
