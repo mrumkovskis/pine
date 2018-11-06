@@ -35,6 +35,7 @@ import Html exposing (Attribute)
 import Html.Events exposing (..)
 import Task
 import Http
+import Dict exposing (..)
 
 import Debug exposing (log)
 
@@ -48,31 +49,11 @@ type alias Input msg =
   }
 
 
-{- Set field value to model. Function ir called while user is typing in an input field.
-   Bool argument is True if value is selected like from Select component with
-   Enter key or mouse, False otherwise. Function Returns updated model and command
--}
-type alias Setter msg model inputs = Tomsg msg model inputs -> Bool -> String -> model -> ( Result String model, Cmd msg )
-
-
 {- Get input field text from model. Function is called when value is selected from list or model
    data are refreshed from update or fetch messages. Bool argument depends on EditModel.isEditable field
    so data can be formatted according to display mode.
 -}
-type alias Formatter model = Bool -> model -> String
-
-
-type alias InputUpdater msg inputs = inputs -> Input msg -> inputs
-
-
-type alias InputGetter msg inputs = inputs -> Input msg
-
-
-{- Updates inputs from model. Function is called when model is updated from update or fetch messages.
-   In general calls controllers formatter methods and updates inputs.
-   Bool argument depends on EditModel.isEditable field so data can be formatted according to display mode.
--}
-type alias InputsUpdater controllers model inputs = Bool -> controllers -> model -> inputs
+type alias Formatter model = model -> String
 
 
 type alias SelectInitializer msg =
@@ -84,25 +65,17 @@ type alias SelectInitializer msg =
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
-type Controller msg model controllers =
+type Controller msg model =
   Controller
-    { input: Input msg
-    , modelUpdater: Tomsg msg model controllers -> Input msg -> model -> (model, Cmd msg) -- called on OnSelect, OnFocus _ False
+    { validate: String -> Input msg
+    , updateModel: Tomsg msg model -> Input msg -> model -> (model, Cmd msg) -- called on OnSelect, OnFocus _ False
     , formatter: model -> String  -- tiek izmantots veikstpējas nolūkos updatojot Inputus no modeļa, lai noteiktu vai ir jāsauc inputUpdater funka.
-    , inputUpdater: model -> Input msg -- tiek izsaukts uz JsonModel messagiem, (varbūt optimizācijai kad cmd == Cmd.none?)
+    , updateInput: model -> Input msg -- tiek izsaukts uz JsonModel messagiem, (varbūt optimizācijai kad cmd == Cmd.none?)
     , userInput: String -> Input msg -- tiek izsaukts uz OnMsg, OnSelect
     , selectInitializer: Maybe (SelectInitializer msg) -- tiek izsaukts uz OnFocus _ True
-    , attrs: Tomsg msg model controllers -> controller -> Attributes msg
-    , controllerUpdater: controllers -> Controller msg model controllers -> controllers -- tiek izsaukts vienmēr kad tiek updatoti inputi
+    , attrs: Tomsg msg model -> Controller msg model -> Attributes msg
+    , name: String
     }
-
-type alias Controller msg model inputs =
-  { setter: Setter msg model inputs
-  , formatter: Formatter model
-  , guiUpdater: InputUpdater msg inputs
-  , guiGetter: InputGetter msg inputs
-  , selectInitializer: Maybe (SelectInitializer msg)
-  }
 
 
 {-| Input together with proposed html input element attributes and with
@@ -113,18 +86,12 @@ type alias Attributes msg =
   , attrs: List (Attribute msg)
   }
 
-type alias InputWithAttributes msg =
-  { input: Input msg
-  , mouseSelectAttrs: Int -> List (Attribute msg)
-  , attrs: List (Attribute msg)
-  }
-
 
 {-| Edit model -}
-type alias EditModel msg model controllers =
+type alias EditModel msg model =
   { model: JM.FormModel msg model
-  , controllers: controllers
-  , controllerList: controllers -> List (Controller msg model controllers)
+  , controllers: Dict String (Controller msg model)
+  , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
   , toDeferredmsg: DR.Tomsg msg
   --, validate: Tomsg msg model controllers -> model -> (Result String model, Cmd msg)
@@ -136,49 +103,19 @@ type alias EditModel msg model controllers =
   }
 
 
-type alias EditModel msg model inputs controllers =
-  { model: JM.FormModel msg model
-  , inputs: inputs
-  , controllers: controllers
-  , inputsUpdater: InputsUpdater controllers model inputs
-  , toMessagemsg: Ask.Tomsg msg
-  , toDeferredmsg: DR.Tomsg msg
-  , isSaving: Bool
-  , isDeleting: Bool
-  , isEditable: Bool
-  }
-
-
 {-| Edit model update messages -}
-type Msg msg model controllers
+type Msg msg model
   = UpdateModelMsg Bool (JM.FormMsg msg model)
   | FetchModelMsg (JM.FormMsg msg model)
   | SaveModelMsg (JM.FormMsg msg model)
   | CreateModelMsg (model -> model) (JM.FormMsg msg model)
   | DeleteModelMsg (JM.FormMsg msg model)
   -- select components messages
-  | SelectMsg (Controller msg model controllers) (Select.Msg msg String)
+  | SelectMsg (Controller msg model) (Select.Msg msg String)
   -- input fields event messages
-  | OnMsg (Controller msg model controllers) String
-  | OnFocusMsg (Controller msg model controllers) Bool
-  | OnSelect (Controller msg model controllers) String
-  -- update entire model
-  | EditModelMsg (model -> model)
-  | NewModelMsg JM.SearchParams (model -> model)
-  | HttpModelMsg (Result Http.Error model)
-
-type Msg msg model inputs
-  = UpdateModelMsg Bool (JM.FormMsg msg model)
-  | FetchModelMsg (JM.FormMsg msg model)
-  | SaveModelMsg (JM.FormMsg msg model)
-  | CreateModelMsg (model -> model) (JM.FormMsg msg model)
-  | DeleteModelMsg (JM.FormMsg msg model)
-  -- select components messages
-  | SelectTextMsg (Controller msg model inputs) (Select.Msg msg String)
-  -- input fields event messages
-  | OnMsg (Controller msg model inputs) String
-  | OnFocusMsg (Controller msg model inputs) Bool
-  | OnTextSelect (Controller msg model inputs) String
+  | OnMsg (Controller msg model) String
+  | OnFocusMsg (Controller msg model) Bool
+  | OnSelect (Controller msg model) String
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
@@ -186,21 +123,19 @@ type Msg msg model inputs
 
 
 {-| Edit model message constructor -}
-type alias Tomsg msg model controllers = (Msg msg model controllers -> msg)
-
-type alias Tomsg msg model inputs = (Msg msg model inputs -> msg)
+type alias Tomsg msg model = (Msg msg model -> msg)
 
 
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
 -}
-fetch: Tomsg msg model inputs -> Int -> Cmd msg
+fetch: Tomsg msg model -> Int -> Cmd msg
 fetch toMsg fid =
   JM.fetch (toMsg << FetchModelMsg) <| [ ("id", String.fromInt fid) ]
 
 
 {-| Set model data. After updating inputs, calls [`JsonModel.set`](JsonModel#set)
 -}
-set: Tomsg msg model inputs -> (model -> model) -> Cmd msg
+set: Tomsg msg model -> (model -> model) -> Cmd msg
 set toMsg editFun =
   Task.perform toMsg <| Task.succeed <| EditModelMsg editFun
 
@@ -208,51 +143,51 @@ set toMsg editFun =
 {-| Creates model data, calling [`JsonModel.set`](JsonModel#create).
 After that call function `createFun` on received data.
 -}
-create: Tomsg msg model inputs -> JM.SearchParams -> (model -> model) -> Cmd msg
+create: Tomsg msg model -> JM.SearchParams -> (model -> model) -> Cmd msg
 create toMsg createParams createFun =
   Task.perform toMsg <| Task.succeed <| NewModelMsg createParams createFun
 
 
 {-| Creates model from http request.
 -}
-http: Tomsg msg model inputs -> Http.Request model -> Cmd msg
+http: Tomsg msg model -> Http.Request model -> Cmd msg
 http toMsg req =
   Http.send (toMsg << HttpModelMsg) req
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
 -}
-save: Tomsg msg model inputs -> Cmd msg
+save: Tomsg msg model -> Cmd msg
 save toMsg =
   JM.save (toMsg << SaveModelMsg) []
 
 
 {-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
 -}
-delete: Tomsg msg model inputs -> Int -> Cmd msg
+delete: Tomsg msg model -> Int -> Cmd msg
 delete toMsg did =
   JM.delete (toMsg << DeleteModelMsg) [("id", String.fromInt did)]
 
 
 {-| Gets model id.  Calls [`JsonModel.id`](JsonModel#id) and tries to convert result to `Int`
 -}
-id: EditModel msg model inputs controllers -> Maybe Int
+id: EditModel msg model -> Maybe Int
 id =
   .model >> JM.id >> Maybe.andThen String.toInt
 
 
 {-| Utility function which helps to create setter returning `Cmd.none` -}
-noCmd: (String -> model -> Result String model) -> Tomsg msg model inputs -> Bool -> String -> model -> ( Result String model, Cmd msg )
+noCmd: (String -> model -> Result String model) -> Tomsg msg model -> Bool -> String -> model -> ( Result String model, Cmd msg )
 noCmd simpleSetter toMsg selected value model =
   ( simpleSetter value model, Cmd.none )
 
 
 {- event attributes private function -}
 inputFocusBlurEvents:
-  Tomsg msg model inputs ->
-  (String -> Msg msg model inputs) ->
-  Msg msg model inputs ->
-  Msg msg model inputs ->
+  Tomsg msg model ->
+  (String -> Msg msg model) ->
+  Msg msg model ->
+  Msg msg model ->
   List (Attribute msg)
 inputFocusBlurEvents toMsg inputMsg focusMsg blurMsg =
   [ onInput <| toMsg << inputMsg
@@ -266,7 +201,7 @@ inputFocusBlurEvents toMsg inputMsg focusMsg blurMsg =
 {-| Returns `onInput`, `onFocus`, `onBlur` `Html.Attributes`
 for input associated with the controller.
 -}
-inputEvents: Tomsg msg model inputs -> Controller msg model inputs -> List (Attribute msg)
+inputEvents: Tomsg msg model -> Controller msg model -> List (Attribute msg)
 inputEvents toMsg ctrl =
   inputFocusBlurEvents
     toMsg
@@ -278,49 +213,58 @@ inputEvents toMsg ctrl =
 {-| Returns attributes for [`Select`](Select) management. Generally this is key listener
 reacting on arrow, escape, enter keys.
 -}
-onTextSelectInput: Tomsg msg model inputs -> Controller msg model inputs -> List (Attribute msg)
+onTextSelectInput: Tomsg msg model -> Controller msg model -> List (Attribute msg)
 onTextSelectInput toMsg ctrl =
-  Select.onSelectInput <| toMsg << SelectTextMsg ctrl
+  Select.onSelectInput <| toMsg << SelectMsg ctrl
 
 
 {-| Returns attributes for [`Select`](Select) management. Generally this is mouse down listener
 to enable value selection from list. `Int` parameter indicates selected index.
 -}
-onTextSelectMouse: Tomsg msg model inputs -> Controller msg model inputs -> Int -> List (Attribute msg)
+onTextSelectMouse: Tomsg msg model -> Controller msg model -> Int -> List (Attribute msg)
 onTextSelectMouse toMsg ctrl idx =
-  Select.onMouseSelect (toMsg << SelectTextMsg ctrl) idx
+  Select.onMouseSelect (toMsg << SelectMsg ctrl) idx
 
 
 -- end of select event listeners
 
-updateModel: Tomsg msg model controllers -> List (Controller msg model controllers) -> model -> (model, Cmd msg)
-updateModel toMsg controllers model =
-  List.foldl
-    (\ctrl (mod, cmds) ->
-      if ctrl.formatter model == ctrl.input.input then
-        (mod, cmds)
-      else
-        (ctrl.modelUpdater toMsg ctrl.input model) |>
-        Tuple.mapSecond (\cmd -> cmd :: cmds)
+updateModel: Tomsg msg model -> Dict String (Input msg) -> Dict String (Controller msg model) -> model -> (model, Cmd msg)
+updateModel toMsg inputs controllers model =
+  Dict.foldl
+    (\key inp (mod, cmds) ->
+      Dict.get key controllers |>
+      Maybe.map
+        (\ctrl ->
+          if ctrl.formatter model == inp.input then
+            (mod, cmds)
+          else
+            (ctrl.updateModel toMsg inp model) |>
+            Tuple.mapSecond (\cmd -> cmd :: cmds)
+        ) |>
+      Maybe.withDefault (mod, cmds)
     )
     (model, [])
-    controllers |>
+    inputs |>
   Tuple.mapSecond List.reverse |>
   Tuple.mapSecond Cmd.batch
 
 
 
-updateInputs: List (Controller msg model controllers) -> model -> controllers -> controllers
-updateInputs toMsg controllerList model controllers =
-  List.foldl
-    (\ctrl ctrls ->
-      if ctrl.formatter model == ctrl.input.input then
-        controllers
-      else
-        ctrl.controllerUpdater controllers { ctrl | input = ctrl.inputUpdater model }
+updateInputs: Dict String (Controller msg model) -> model -> Dict String (Input msg) -> Dict String (Input msg)
+updateInputs controllers model inputs =
+  Dict.foldl
+    (\key inp inps ->
+      Dict.get key controllers |>
+      Maybe.map
+        (\ctrl ->
+          if ctrl.formatter model == inp.input then
+            inputs
+          else
+            Dict.insert key (ctrl.updateInput model) inputs
+        )
     )
-    controllers
-    controllerList
+    inputs
+    inputs
 
 
 {-| Model update -}
