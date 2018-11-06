@@ -1,8 +1,9 @@
 module EditModel exposing
-  ( Input, Controller, InputWithAttributes
+  ( Input, Controller, Attributes, ModelUpdater, AttrsGetter, InputValidator
   , EditModel, Msg, Tomsg
-  , fetch, set, create, http, save, delete, id, noCmd
-  , inputEvents, onTextSelectInput, onTextSelectMouse
+  , init, fetch, set, create, http, save, delete
+  , inputEvents, onSelectInput, onSelectMouse
+  , id, input, attrs, noCmd, simpleController, controller
   , update
   )
 
@@ -13,10 +14,10 @@ module EditModel exposing
 @docs fetch, set, create, http, save, delete
 
 # Inuput attributes (input is associated with controller)
-@docs inputEvents, onTextSelectInput, onTextSelectMouse,
+@docs inputEvents, onSelectInput, onSelectMouse
 
 # Utility
-@docs id, noCmd
+@docs id, noCmd, input
 
 # Types
 @docs Controller, EditModel, Input, InputWithAttributes, Msg, Tomsg
@@ -37,16 +38,28 @@ import Task
 import Http
 import Dict exposing (..)
 
-import Debug exposing (log)
+import Debug exposing (toString, log)
 
 
 {-| Represents form input field. Is synchronized with model. -}
 type alias Input msg =
-  { input: String
+  { value: String
   , editing: Bool
   , error: Maybe String
   , select: Maybe (SelectModel msg String)
   }
+
+
+{-| Updates model from `Input` optionally emiting command. -}
+type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
+
+
+{-| Get input element attributes from controller -}
+type alias AttrsGetter msg model = Tomsg msg model -> Controller msg model -> Attributes msg
+
+
+{-| Validates input -}
+type alias InputValidator = String -> Result String String
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -67,14 +80,12 @@ type alias SelectInitializer msg =
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
 type Controller msg model =
   Controller
-    { validate: String -> Input msg
-    , updateModel: Tomsg msg model -> Input msg -> model -> (model, Cmd msg) -- called on OnSelect, OnFocus _ False
-    , formatter: model -> String  -- tiek izmantots veikstpējas nolūkos updatojot Inputus no modeļa, lai noteiktu vai ir jāsauc inputUpdater funka.
-    , updateInput: model -> Input msg -- tiek izsaukts uz JsonModel messagiem, (varbūt optimizācijai kad cmd == Cmd.none?)
-    , userInput: String -> Input msg -- tiek izsaukts uz OnMsg, OnSelect
-    , selectInitializer: Maybe (SelectInitializer msg) -- tiek izsaukts uz OnFocus _ True
-    , attrs: Tomsg msg model -> Controller msg model -> Attributes msg
-    , name: String
+    { name: String
+    , updateModel: ModelUpdater msg model -- called on OnSelect, OnFocus _ False
+    , formatter: Formatter model
+    , attrs: AttrsGetter msg model
+    , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
+    , validateInput: InputValidator -- called on OnMsg, OnSelect
     }
 
 
@@ -94,7 +105,7 @@ type alias EditModel msg model =
   , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
   , toDeferredmsg: DR.Tomsg msg
-  --, validate: Tomsg msg model controllers -> model -> (Result String model, Cmd msg)
+  --, validate: Tomsg msg model -> model -> (Result String model, Cmd msg)
   --, error: Maybe String
   , isSaving: Bool
   , isDeleting: Bool
@@ -115,7 +126,7 @@ type Msg msg model
   -- input fields event messages
   | OnMsg (Controller msg model) String
   | OnFocusMsg (Controller msg model) Bool
-  | OnSelect (Controller msg model) String
+  | OnSelectMsg (Controller msg model) String
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
@@ -124,6 +135,31 @@ type Msg msg model
 
 {-| Edit model message constructor -}
 type alias Tomsg msg model = (Msg msg model -> msg)
+
+
+{-| Initializes model
+-}
+init: JM.FormModel msg model -> List (key, Controller msg model) -> Ask.Tomsg msg -> DR.Tomsg msg -> EditModel msg model
+init model ctrlList toMessagemsg toDeferredmsg =
+  let
+    controllers =
+      ctrlList |>
+      List.map (\(k, Controller c) -> (toString k, Controller { c | name = toString k })) |>
+      Dict.fromList
+
+    inputs =
+      controllers |>
+      Dict.map (\k _ -> Input "" False Nothing Nothing)
+  in
+    EditModel
+      model
+      controllers
+      inputs
+      toMessagemsg
+      toDeferredmsg
+      False
+      False
+      True
 
 
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
@@ -176,10 +212,57 @@ id =
   .model >> JM.id >> Maybe.andThen String.toInt
 
 
-{-| Utility function which helps to create setter returning `Cmd.none` -}
-noCmd: (String -> model -> Result String model) -> Tomsg msg model -> Bool -> String -> model -> ( Result String model, Cmd msg )
-noCmd simpleSetter toMsg selected value model =
-  ( simpleSetter value model, Cmd.none )
+{-| Utility function which helps to create model updater returning `Cmd.none` -}
+noCmd: (String -> model -> model) -> Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
+noCmd simpleSetter _ inp model =
+  ( simpleSetter inp.value model, Cmd.none )
+
+
+{-| Creates simple controller -}
+simpleController: ModelUpdater msg model -> Formatter model -> AttrsGetter msg model -> Controller msg model
+simpleController updateModel formatter attrGetter =
+  Controller
+    { name = ""
+    , updateModel = updateModel
+    , formatter = formatter
+    , attrs = attrGetter
+    , selectInitializer = Nothing
+    , validateInput = Ok
+    }
+
+
+{-| Creates controller -}
+controller:
+  ModelUpdater msg model ->
+  Formatter model ->
+  AttrsGetter msg model ->
+  Maybe (SelectInitializer msg) ->
+  InputValidator ->
+  Controller msg model
+controller updateModel formatter attrGetter selectInitializer validator =
+  Controller
+    { name = ""
+    , updateModel = updateModel
+    , formatter = formatter
+    , attrs = attrGetter
+    , selectInitializer = selectInitializer
+    , validateInput = validator
+    }
+
+
+{-| Gets attributes from model -}
+attrs: Tomsg msg model -> key -> EditModel msg model -> Attributes msg
+attrs toMsg key model =
+  Dict.get (toString key) model.controllers |>
+  Maybe.map (\(Controller ctrl) -> ctrl.attrs toMsg (Controller ctrl)) |>
+  Maybe.withDefault (Attributes (always []) [])
+
+
+{-| Gets input from model
+-}
+input: key -> EditModel msg model -> Maybe (Input msg)
+input key { inputs } =
+  Dict.get (toString key) inputs
 
 
 {- event attributes private function -}
@@ -196,8 +279,6 @@ inputFocusBlurEvents toMsg inputMsg focusMsg blurMsg =
   ]
 
 
-{- Select event listeners -}
-
 {-| Returns `onInput`, `onFocus`, `onBlur` `Html.Attributes`
 for input associated with the controller.
 -}
@@ -213,168 +294,148 @@ inputEvents toMsg ctrl =
 {-| Returns attributes for [`Select`](Select) management. Generally this is key listener
 reacting on arrow, escape, enter keys.
 -}
-onTextSelectInput: Tomsg msg model -> Controller msg model -> List (Attribute msg)
-onTextSelectInput toMsg ctrl =
+onSelectInput: Tomsg msg model -> Controller msg model -> List (Attribute msg)
+onSelectInput toMsg ctrl =
   Select.onSelectInput <| toMsg << SelectMsg ctrl
 
 
 {-| Returns attributes for [`Select`](Select) management. Generally this is mouse down listener
 to enable value selection from list. `Int` parameter indicates selected index.
 -}
-onTextSelectMouse: Tomsg msg model -> Controller msg model -> Int -> List (Attribute msg)
-onTextSelectMouse toMsg ctrl idx =
+onSelectMouse: Tomsg msg model -> Controller msg model -> Int -> List (Attribute msg)
+onSelectMouse toMsg ctrl idx =
   Select.onMouseSelect (toMsg << SelectMsg ctrl) idx
 
 
--- end of select event listeners
-
-updateModel: Tomsg msg model -> Dict String (Input msg) -> Dict String (Controller msg model) -> model -> (model, Cmd msg)
-updateModel toMsg inputs controllers model =
-  Dict.foldl
-    (\key inp (mod, cmds) ->
-      Dict.get key controllers |>
-      Maybe.map
-        (\ctrl ->
-          if ctrl.formatter model == inp.input then
-            (mod, cmds)
-          else
-            (ctrl.updateModel toMsg inp model) |>
-            Tuple.mapSecond (\cmd -> cmd :: cmds)
-        ) |>
-      Maybe.withDefault (mod, cmds)
-    )
-    (model, [])
-    inputs |>
-  Tuple.mapSecond List.reverse |>
-  Tuple.mapSecond Cmd.batch
-
-
-
-updateInputs: Dict String (Controller msg model) -> model -> Dict String (Input msg) -> Dict String (Input msg)
-updateInputs controllers model inputs =
-  Dict.foldl
-    (\key inp inps ->
-      Dict.get key controllers |>
-      Maybe.map
-        (\ctrl ->
-          if ctrl.formatter model == inp.input then
-            inputs
-          else
-            Dict.insert key (ctrl.updateInput model) inputs
-        )
-    )
-    inputs
-    inputs
-
-
 {-| Model update -}
-update: Tomsg msg model inputs -> Msg msg model inputs -> EditModel msg model inputs controllers -> (EditModel msg model inputs controllers, Cmd msg)
+update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
-    apply ctrl input (modelValueResult, cmd) =
-      let
-        fieldGui = ctrl.guiGetter inputs
+    updateModelFromInputs newInputs =
+      Dict.foldl
+        (\key inp (mod, cmds) ->
+          Dict.get key controllers |>
+          Maybe.map
+            (\(Controller ctrl) ->
+              if ctrl.formatter mod == inp.value then
+                (mod, cmds)
+              else
+                (ctrl.updateModel toMsg inp mod) |>
+                Tuple.mapSecond (\cmd -> if cmd == Cmd.none then cmds else cmd :: cmds)
+            ) |>
+          Maybe.withDefault (mod, cmds)
+        )
+        (JM.data model, [])
+        newInputs |>
+      Tuple.mapSecond List.reverse |>
+      Tuple.mapSecond Cmd.batch |>
+      (\(nm, cmd) ->
+        ( { same | inputs = newInputs }
+        , if cmd == Cmd.none then JM.set (toMsg << UpdateModelMsg False) nm else cmd
+        )
+      )
 
-        updateSelectModel =
-          fieldGui.select |> Maybe.map (Select.updateSearch input)
-      in
-        case modelValueResult of
-          Ok value ->
-            ( { same |
-                inputs =
-                  ctrl.guiUpdater
-                    inputs
-                    { fieldGui | input = input, error = Nothing, select = updateSelectModel }
+    updateInput ctrl value =
+      Dict.get ctrl.name inputs |>
+      Maybe.map
+        (\inp ->
+          case ctrl.validateInput value of
+            Ok val ->
+              { inp |
+                value = value
+              , error = Nothing
+              , select = inp.select |> Maybe.map (Select.updateSearch value)
               }
-            , if cmd == Cmd.none then
-                [ JM.set (toMsg << UpdateModelMsg False) value ]
-              else [ cmd ]
-            )
 
-          Err err ->
-            ( { same |
-                inputs = ctrl.guiUpdater inputs { fieldGui | input = input, error = Just err }
-              }
-            , if cmd /= Cmd.none then [ cmd ] else []
-            )
+            Err err ->
+              { inp | value = value, error = Just err }
+        ) |>
+      Maybe.map (\inp -> Dict.insert ctrl.name inp inputs) |>
+      Maybe.withDefault inputs
 
-    applyInput toSelectmsg ctrl value =
+    applyInput toSelectmsg ctrl value = -- OnMsg
       let
-        resVal = ctrl.setter toMsg False value <| JM.data model
+        newInputs = updateInput ctrl value
 
         searchCmd =
-          (ctrl.guiGetter inputs).select |>
+          Dict.get ctrl.name inputs |>
+          Maybe.andThen .select |>
           Maybe.map (always <| Select.search toSelectmsg value) |>
-          Maybe.map List.singleton |>
-          Maybe.withDefault []
+          Maybe.withDefault Cmd.none
       in
-        apply ctrl value resVal|>
-        Tuple.mapSecond (\cmds -> Cmd.batch (cmds ++ searchCmd))
+        ( { same | inputs = newInputs }, searchCmd )
 
-    applySelectedValue ctrl value modelData =
+    setEditing ctrl focus =  -- OnFocus
       let
-        newDataRes = ctrl.setter toMsg True value modelData
-
-        formatter = ctrl.formatter same.isEditable
-
-        input =
-          Tuple.first newDataRes |>
-          Result.map formatter |>
-          Result.withDefault "<error setting value!>"
-      in
-        apply ctrl input newDataRes |>
-        Tuple.mapSecond Cmd.batch
-
-    initSelectBase ctrl initializer =
-      initializer
-        same.toMessagemsg
-        same.toDeferredmsg
-        ((ctrl.guiGetter >> .input) inputs)
-
-    initTextSelect ctrl initializer =
-      (initSelectBase ctrl initializer)
-        (toMsg << OnTextSelect ctrl)
-
-    setEditing ctrl initializer focus =
-      let
-        newModel =
-          let fieldGui = ctrl.guiGetter inputs in
-            { same | inputs = ctrl.guiUpdater inputs { fieldGui | editing = focus } }
-
-        select =
+        select value =
           if focus then
             ctrl.selectInitializer |>
-              Maybe.map (initializer ctrl)
+            Maybe.map
+              (\initializer ->
+                initializer
+                  same.toMessagemsg
+                  same.toDeferredmsg
+                  value
+                  (toMsg << OnSelectMsg (Controller ctrl))
+              )
           else Nothing
-      in
-        Tuple.pair
-          ( updateSelect
-              ctrl
-              newModel
-              select
-          )
-          Cmd.none
 
-    updateSelect ctrl newModel value =
+        onEv inp =
+          { inp | editing = focus, select = select inp.value }
+
+        maybeUpdateModel newInputs =
+          if focus then
+            ( { same | inputs = newInputs }, Cmd.none )
+          else
+            updateModelFromInputs newInputs
+      in
+        Dict.get ctrl.name inputs |>
+        Maybe.map onEv |>
+        Maybe.map (\inp -> Dict.insert ctrl.name inp inputs) |>
+        Maybe.map maybeUpdateModel |>
+        Maybe.withDefault ( same, Cmd.none )
+
+    applySelect ctrl toSelmsg selMsg = -- SelectMsg
       let
-        fieldGui = ctrl.guiGetter newModel.inputs
+        inp = Dict.get ctrl.name inputs
       in
-        { newModel | inputs = ctrl.guiUpdater newModel.inputs { fieldGui | select = value } }
+        inp |>
+        Maybe.andThen .select |>
+        Maybe.map2
+          (\selinp sel ->
+            Select.update toSelmsg selMsg sel |>
+            Tuple.mapFirst (\sm -> { selinp | select = Just sm })
+          )
+          inp |>
+        Maybe.map
+          (Tuple.mapFirst
+            (\selinp -> { same | inputs = Dict.insert ctrl.name selinp inputs })
+          ) |>
+        Maybe.withDefault ( same, Cmd.none )
 
-    applySelect ctrl newModel toSelmsg selMsg =
-      (ctrl.guiGetter newModel.inputs).select |>
-      Maybe.map (Select.update toSelmsg selMsg) |>
-      Maybe.map (Tuple.mapFirst Just) |>
-      Maybe.map (Tuple.mapFirst (updateSelect ctrl newModel)) |>
-      Maybe.withDefault (Tuple.pair newModel Cmd.none)
-
-    updateInputs newModel =
-      same.inputsUpdater same.isEditable controllers <| JM.data newModel
+    updateInputsFromModel newModel =
+      let
+        data = JM.data newModel
+      in
+        Dict.foldl
+          (\key inp inps ->
+            Dict.get key controllers |>
+            Maybe.map
+              (\(Controller ctrl) ->
+                if ctrl.formatter data == inp.value then
+                  inps
+                else
+                  Dict.insert key { inp | value = ctrl.formatter data } inps
+              ) |>
+            Maybe.withDefault inps
+          )
+          inputs
+          inputs
 
     updateModel doInputUpdate newModel =
       { same |
         model = newModel
-      , inputs = if doInputUpdate then updateInputs newModel else same.inputs
+      , inputs = if doInputUpdate then updateInputsFromModel newModel else same.inputs
       }
 
     applyCreateModel newModel =
@@ -384,10 +445,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       if cmd == Cmd.none then set toMsg createFun else cmd
 
     applyModel newModel =
-      { same |
-        model = newModel
-      , inputs = updateInputs newModel
-      }
+      updateModel False newModel
 
     applyFetchModel newModel =
       applyModel newModel
@@ -423,18 +481,18 @@ update toMsg msg ({ model, inputs, controllers } as same) =
             (applyDeleteModel (not <| cmd == Cmd.none) newModel, cmd)
 
       -- Select messages
-      SelectTextMsg ctrl selMsg -> -- field select list messages
-        applySelect ctrl same (toMsg << SelectTextMsg ctrl) selMsg
+      SelectMsg (Controller ctrl) selMsg -> -- field select list messages
+        applySelect ctrl (toMsg << SelectMsg (Controller ctrl)) selMsg
 
       -- user input messages
-      OnMsg ctrl value ->
-        applyInput (toMsg << SelectTextMsg ctrl) ctrl value
+      OnMsg (Controller ctrl) value ->
+        applyInput (toMsg << SelectMsg (Controller ctrl)) ctrl value
 
-      OnFocusMsg ctrl focus ->
-        setEditing ctrl initTextSelect focus
+      OnFocusMsg (Controller ctrl) focus ->
+        setEditing ctrl focus
 
-      OnTextSelect ctrl value -> -- text selected from select component
-        (applySelectedValue ctrl value <| JM.data model)
+      OnSelectMsg (Controller ctrl) value -> -- text selected from select component
+        updateModelFromInputs <| updateInput ctrl value
 
       --edit entire model
       EditModelMsg editFun ->
