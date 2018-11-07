@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, Msg, Tomsg
   , init, fetch, set, create, http, save, delete
   , inputEvents, onSelectInput, onSelectMouse
-  , id, input, noCmd, simpleController, controller
+  , id, inp, noCmd, simpleController, controller
   , update
   )
 
@@ -219,8 +219,8 @@ id =
 
 {-| Utility function which helps to create model updater returning `Cmd.none` -}
 noCmd: (String -> model -> model) -> Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
-noCmd simpleSetter _ inp model =
-  ( simpleSetter inp.value model, Cmd.none )
+noCmd simpleSetter _ input model =
+  ( simpleSetter input.value model, Cmd.none )
 
 
 {-| Creates simple controller -}
@@ -257,8 +257,8 @@ controller updateModel formatter attrGetter selectInitializer validator =
 
 {-| Gets input from model
 -}
-input: key -> EditModel msg model -> Maybe (Input msg)
-input key { inputs } =
+inp: key -> EditModel msg model -> Maybe (Input msg)
+inp key { inputs } =
   Dict.get (toString key) inputs
 
 
@@ -310,14 +310,14 @@ update toMsg msg ({ model, inputs, controllers } as same) =
   let
     updateModelFromInputs newInputs =
       Dict.foldl
-        (\key inp (mod, cmds) ->
+        (\key input (mod, cmds) ->
           Dict.get key controllers |>
           Maybe.map
             (\(Controller ctrl) ->
-              if ctrl.formatter mod == inp.value then
+              if ctrl.formatter mod == input.value then
                 (mod, cmds)
               else
-                (ctrl.updateModel toMsg inp mod) |>
+                (ctrl.updateModel toMsg input mod) |>
                 Tuple.mapSecond (\cmd -> if cmd == Cmd.none then cmds else cmd :: cmds)
             ) |>
           Maybe.withDefault (mod, cmds)
@@ -335,24 +335,24 @@ update toMsg msg ({ model, inputs, controllers } as same) =
     updateInput ctrl value =
       Dict.get ctrl.name inputs |>
       Maybe.map
-        (\inp ->
+        (\input ->
           let
             attrs =
-              ctrl.attrs toMsg inp.value (Controller ctrl)
+              ctrl.attrs toMsg input.value (Controller ctrl)
           in
             case ctrl.validateInput value of
               Ok val ->
-                { inp |
+                { input |
                   value = value
                 , error = Nothing
-                , select = inp.select |> Maybe.map (Select.updateSearch value)
+                , select = input.select |> Maybe.map (Select.updateSearch value)
                 , attrs = attrs
                 }
 
               Err err ->
-                { inp | value = value, error = Just err, attrs = attrs }
+                { input | value = value, error = Just err, attrs = attrs }
         ) |>
-      Maybe.map (\inp -> Dict.insert ctrl.name inp inputs) |>
+      Maybe.map (\input -> Dict.insert ctrl.name input inputs) |>
       Maybe.withDefault inputs
 
     applyInput toSelectmsg ctrl value = -- OnMsg
@@ -382,8 +382,8 @@ update toMsg msg ({ model, inputs, controllers } as same) =
               )
           else Nothing
 
-        onEv inp =
-          { inp | editing = focus, select = select inp.value }
+        onEv input =
+          { input | editing = focus, select = select input.value }
 
         maybeUpdateModel newInputs =
           if focus then
@@ -393,22 +393,22 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       in
         Dict.get ctrl.name inputs |>
         Maybe.map onEv |>
-        Maybe.map (\inp -> Dict.insert ctrl.name inp inputs) |>
+        Maybe.map (\input -> Dict.insert ctrl.name input inputs) |>
         Maybe.map maybeUpdateModel |>
         Maybe.withDefault ( same, Cmd.none )
 
     applySelect ctrl toSelmsg selMsg = -- SelectMsg
       let
-        inp = Dict.get ctrl.name inputs
+        input = Dict.get ctrl.name inputs
       in
-        inp |>
+        input |>
         Maybe.andThen .select |>
         Maybe.map2
           (\selinp sel ->
             Select.update toSelmsg selMsg sel |>
             Tuple.mapFirst (\sm -> { selinp | select = Just sm })
           )
-          inp |>
+          input |>
         Maybe.map
           (Tuple.mapFirst
             (\selinp -> { same | inputs = Dict.insert ctrl.name selinp inputs })
@@ -420,14 +420,14 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         data = JM.data newModel
       in
         Dict.foldl
-          (\key inp inps ->
+          (\key input inps ->
             Dict.get key controllers |>
             Maybe.map
               (\(Controller ctrl) ->
-                if ctrl.formatter data == inp.value then
+                if ctrl.formatter data == input.value then
                   inps
                 else
-                  Dict.insert key { inp | value = ctrl.formatter data } inps
+                  Dict.insert key { input | value = ctrl.formatter data } inps
               ) |>
             Maybe.withDefault inps
           )
