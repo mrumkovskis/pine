@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, Msg, Tomsg
   , init, fetch, set, create, http, save, delete
   , inputEvents, onSelectInput, onSelectMouse
-  , id, input, attrs, noCmd, simpleController, controller
+  , id, input, noCmd, simpleController, controller
   , update
   )
 
@@ -47,6 +47,7 @@ type alias Input msg =
   , editing: Bool
   , error: Maybe String
   , select: Maybe (SelectModel msg String)
+  , attrs: Attributes msg
   }
 
 
@@ -55,7 +56,8 @@ type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (mo
 
 
 {-| Get input element attributes from controller -}
-type alias AttrsGetter msg model = Tomsg msg model -> Controller msg model -> Attributes msg
+type alias AttrsGetter msg model =
+  Tomsg msg model -> String -> Controller msg model -> Attributes msg
 
 
 {-| Validates input -}
@@ -147,9 +149,12 @@ init model ctrlList toMessagemsg toDeferredmsg =
       List.map (\(k, Controller c) -> (toString k, Controller { c | name = toString k })) |>
       Dict.fromList
 
+    emptyAttrs =
+      Attributes (always []) []
+
     inputs =
       controllers |>
-      Dict.map (\k _ -> Input "" False Nothing Nothing)
+      Dict.map (\k _ -> Input "" False Nothing Nothing emptyAttrs)
   in
     EditModel
       model
@@ -250,14 +255,6 @@ controller updateModel formatter attrGetter selectInitializer validator =
     }
 
 
-{-| Gets attributes from model -}
-attrs: Tomsg msg model -> key -> EditModel msg model -> Attributes msg
-attrs toMsg key model =
-  Dict.get (toString key) model.controllers |>
-  Maybe.map (\(Controller ctrl) -> ctrl.attrs toMsg (Controller ctrl)) |>
-  Maybe.withDefault (Attributes (always []) [])
-
-
 {-| Gets input from model
 -}
 input: key -> EditModel msg model -> Maybe (Input msg)
@@ -339,16 +336,21 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       Dict.get ctrl.name inputs |>
       Maybe.map
         (\inp ->
-          case ctrl.validateInput value of
-            Ok val ->
-              { inp |
-                value = value
-              , error = Nothing
-              , select = inp.select |> Maybe.map (Select.updateSearch value)
-              }
+          let
+            attrs =
+              ctrl.attrs toMsg inp.value (Controller ctrl)
+          in
+            case ctrl.validateInput value of
+              Ok val ->
+                { inp |
+                  value = value
+                , error = Nothing
+                , select = inp.select |> Maybe.map (Select.updateSearch value)
+                , attrs = attrs
+                }
 
-            Err err ->
-              { inp | value = value, error = Just err }
+              Err err ->
+                { inp | value = value, error = Just err, attrs = attrs }
         ) |>
       Maybe.map (\inp -> Dict.insert ctrl.name inp inputs) |>
       Maybe.withDefault inputs
