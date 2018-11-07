@@ -1,9 +1,10 @@
 module EditModel exposing
-  ( Input, Controller, Attributes, ModelUpdater, AttrsGetter, InputValidator
+  ( Input, Controller, Attributes, ModelUpdater, AttrsGetter, InputValidator, Formatter, SelectInitializer
   , EditModel, Msg, Tomsg
-  , init, fetch, set, create, http, save, delete
+  , init, setModelUpdater, setFormatter, setAttrsGetter, setSelectInitializer, setInputValidator
+  , fetch, set, create, http, save, delete
   , inputEvents, onSelectInput, onSelectMouse
-  , id, inp, noCmd, simpleController, controller
+  , id, inp, inps, noCmd, simpleController, controller
   , update
   )
 
@@ -167,6 +168,42 @@ init model ctrlList toMessagemsg toDeferredmsg =
       True
 
 
+setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
+setModelUpdater key updater model =
+  updateController key (\(Controller c) -> Controller { c | updateModel = updater }) model
+
+
+setFormatter: key -> Formatter model -> EditModel msg model -> EditModel msg model
+setFormatter key formatter model =
+  updateController key (\(Controller c) -> Controller { c | formatter = formatter }) model
+
+
+setAttrsGetter: key -> AttrsGetter msg model -> EditModel msg model -> EditModel msg model
+setAttrsGetter key getter model =
+  updateController key (\(Controller c) -> Controller { c | attrs = getter }) model
+
+
+setSelectInitializer: key -> Maybe (SelectInitializer msg) -> EditModel msg model -> EditModel msg model
+setSelectInitializer key initializer model =
+  updateController
+    key
+    (\(Controller c) -> Controller { c | selectInitializer = initializer }) model
+
+
+setInputValidator: key -> InputValidator -> EditModel msg model -> EditModel msg model
+setInputValidator key validator model =
+  updateController key (\(Controller c) -> Controller { c | validateInput = validator }) model
+
+
+updateController: key -> (Controller msg model -> Controller msg model) -> EditModel msg model -> EditModel msg model
+updateController key updater model =
+  Dict.get (toString key) model.controllers |>
+  Maybe.map updater |>
+  Maybe.map (\c -> Dict.insert (toString key) c model.controllers) |>
+  Maybe.map (\cs -> { model | controllers = cs}) |>
+  Maybe.withDefault model
+
+
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
 -}
 fetch: Tomsg msg model -> Int -> Cmd msg
@@ -260,6 +297,15 @@ controller updateModel formatter attrGetter selectInitializer validator =
 inp: key -> EditModel msg model -> Maybe (Input msg)
 inp key { inputs } =
   Dict.get (toString key) inputs
+
+
+inps: List keys -> EditModel msg model -> List (Input msg)
+inps keys model =
+  List.foldl
+    (\k r -> inp k model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
+    []
+    keys |>
+  List.reverse
 
 
 {- event attributes private function -}
@@ -420,16 +466,17 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         data = JM.data newModel
       in
         Dict.foldl
-          (\key input inps ->
+          (\key input is ->
             Dict.get key controllers |>
             Maybe.map
               (\(Controller ctrl) ->
-                if ctrl.formatter data == input.value then
-                  inps
-                else
-                  Dict.insert key { input | value = ctrl.formatter data } inps
+                let formattedData = ctrl.formatter data in
+                  if formattedData == input.value then
+                    is
+                  else
+                    Dict.insert key { input | value = formattedData } is
               ) |>
-            Maybe.withDefault inps
+            Maybe.withDefault is
           )
           inputs
           inputs
