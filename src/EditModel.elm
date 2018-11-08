@@ -378,13 +378,13 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         )
       )
 
-    updateInput ctrl value =
-      Dict.get ctrl.name inputs |>
+    updateInput ctrl value newInputs =
+      Dict.get ctrl.name newInputs |>
       Maybe.map
         (\input ->
           let
             attrs =
-              ctrl.attrs toMsg input.value (Controller ctrl)
+              ctrl.attrs toMsg value (Controller ctrl)
           in
             case ctrl.validateInput value of
               Ok val ->
@@ -398,12 +398,12 @@ update toMsg msg ({ model, inputs, controllers } as same) =
               Err err ->
                 { input | value = value, error = Just err, attrs = attrs }
         ) |>
-      Maybe.map (\input -> Dict.insert ctrl.name input inputs) |>
-      Maybe.withDefault inputs
+      Maybe.map (\input -> Dict.insert ctrl.name input newInputs) |>
+      Maybe.withDefault newInputs
 
     applyInput toSelectmsg ctrl value = -- OnMsg
       let
-        newInputs = updateInput ctrl value
+        newInputs = updateInput ctrl value inputs
 
         searchCmd =
           Dict.get ctrl.name inputs |>
@@ -466,17 +466,13 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         data = JM.data newModel
       in
         Dict.foldl
-          (\key input is ->
+          (\key input newInputs ->
             Dict.get key controllers |>
             Maybe.map
               (\(Controller ctrl) ->
-                let formattedData = ctrl.formatter data in
-                  if formattedData == input.value then
-                    is
-                  else
-                    Dict.insert key { input | value = formattedData } is
+                updateInput ctrl (ctrl.formatter data) newInputs
               ) |>
-            Maybe.withDefault is
+            Maybe.withDefault newInputs
           )
           inputs
           inputs
@@ -494,7 +490,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       if cmd == Cmd.none then set toMsg createFun else cmd
 
     applyModel (newModel, cmd) =
-      updateModel (log "update model" (cmd == Cmd.none)) newModel
+      updateModel (cmd == Cmd.none) newModel
 
     applyFetchModel newModelAndCmd =
       applyModel newModelAndCmd
@@ -541,7 +537,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         setEditing ctrl focus
 
       OnSelectMsg (Controller ctrl) value -> -- text selected from select component
-        updateModelFromInputs <| updateInput ctrl value
+        updateModelFromInputs <| updateInput ctrl value inputs
 
       --edit entire model
       EditModelMsg editFun ->
