@@ -493,17 +493,19 @@ update toMsg msg ({ model, inputs, controllers } as same) =
     createCmd createFun cmd =
       if cmd == Cmd.none then set toMsg createFun else cmd
 
-    applyModel newModel =
-      updateModel False newModel
+    applyModel (newModel, cmd) =
+      updateModel (log "update model" (cmd == Cmd.none)) newModel
 
-    applyFetchModel newModel =
-      applyModel newModel
+    applyFetchModel newModelAndCmd =
+      applyModel newModelAndCmd
 
-    applySaveModel isSaving newModel =
-      applyModel newModel |> (\nm -> { nm | isSaving = isSaving })
+    applySaveModel newModelAndCmd =
+      applyModel newModelAndCmd |>
+      (\m -> { m | isSaving = Tuple.second newModelAndCmd /= Cmd.none })
 
-    applyDeleteModel isDeleting newModel =
-      applyModel newModel |> (\nm -> { nm | isDeleting = isDeleting })
+    applyDeleteModel newModelAndCmd =
+      applyModel newModelAndCmd |>
+      (\m -> { m | isDeleting = Tuple.second newModelAndCmd /= Cmd.none })
   in
     case msg of
       -- JM model messages
@@ -513,21 +515,19 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
       FetchModelMsg data ->
         JM.update (toMsg << FetchModelMsg) data model |>
-        Tuple.mapFirst applyFetchModel
+        (\mc -> (applyFetchModel mc, Tuple.second mc))
 
       SaveModelMsg data ->
-        case JM.update (toMsg << SaveModelMsg) data model of
-          (newModel, cmd) ->
-            (applySaveModel (not <| cmd == Cmd.none) newModel, cmd)
+        JM.update (toMsg << SaveModelMsg) data model |>
+        (\mc -> (applySaveModel mc, Tuple.second mc))
 
       CreateModelMsg createFun data ->
         JM.update (toMsg << CreateModelMsg createFun) data model |>
         Tuple.mapBoth applyCreateModel (createCmd createFun)
 
       DeleteModelMsg data ->
-        case JM.update (toMsg << DeleteModelMsg) data model of
-          (newModel, cmd) ->
-            (applyDeleteModel (not <| cmd == Cmd.none) newModel, cmd)
+        JM.update (toMsg << DeleteModelMsg) data model |>
+        (\mc -> (applyDeleteModel mc, Tuple.second mc))
 
       -- Select messages
       SelectMsg (Controller ctrl) selMsg -> -- field select list messages
