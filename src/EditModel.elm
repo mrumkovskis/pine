@@ -370,7 +370,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                     {- if after updating model formatter returns different value do input update
                        so that input is synchronized with model -}
                     , let v = ctrl.formatter m in
-                      if v /= input.value then updateInput ctrl v newInps  else newInps
+                      if v /= input.value then updateInput ctrl v newInps else newInps
                   )
                 )
             ) |>
