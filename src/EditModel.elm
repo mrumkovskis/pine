@@ -356,24 +356,31 @@ update toMsg msg ({ model, inputs, controllers } as same) =
   let
     updateModelFromInputs newInputs =
       Dict.foldl
-        (\key input (mod, cmds) ->
+        (\key input ((mod, cmds), newInps) ->
           Dict.get key controllers |>
           Maybe.map
             (\(Controller ctrl) ->
               if ctrl.formatter mod == input.value then
-                (mod, cmds)
+                ((mod, cmds), newInps)
               else
                 (ctrl.updateModel toMsg input mod) |>
-                Tuple.mapSecond (\cmd -> if cmd == Cmd.none then cmds else cmd :: cmds)
+                Tuple.mapSecond (\cmd -> if cmd == Cmd.none then cmds else cmd :: cmds) |>
+                (\(m, c) ->
+                  ( (m, c)
+                    {- if after updating model formatter returns different value do input update
+                       so that input is synchronized with model -}
+                    , let v = ctrl.formatter m in
+                      if v /= input.value then updateInput ctrl v newInps  else newInps
+                  )
+                )
             ) |>
-          Maybe.withDefault (mod, cmds)
+          Maybe.withDefault ((mod, cmds), newInps)
         )
-        (JM.data model, [])
+        ( ( JM.data model, [] ), newInputs )
         newInputs |>
-      Tuple.mapSecond List.reverse |>
-      Tuple.mapSecond Cmd.batch |>
-      (\(nm, cmd) ->
-        ( { same | inputs = newInputs }
+      Tuple.mapFirst (Tuple.mapSecond (List.reverse >> Cmd.batch)) |>
+      (\((nm, cmd), ni) ->
+        ( { same | inputs = ni }
         , if cmd == Cmd.none then JM.set (toMsg << UpdateModelMsg False) nm else cmd
         )
       )
