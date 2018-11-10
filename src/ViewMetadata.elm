@@ -3,6 +3,7 @@ module ViewMetadata exposing
   , Field
   , Msg (..)
   , fetchMetadata
+  , field
   )
 
 
@@ -13,7 +14,7 @@ module ViewMetadata exposing
 @docs View, Field, Msg
 
 # Commands
-@docs fetchMetadata
+@docs fetchMetadata, field
 -}
 
 import Utils exposing (..)
@@ -42,6 +43,7 @@ type alias Field =
   , nullable: Bool
   , visible: Bool
   , sortable: Bool
+  , enum: Maybe (List String)
   , comments: String
   }
 
@@ -71,6 +73,13 @@ fetchMetadata uri =
           Maybe.withDefault Set.empty
         )
     )
+
+
+field: String -> View -> Maybe Field
+field name view =
+  view.fields |>
+  List.filter (\f -> f.name == name) |>
+  List.head
 
 
 -- decoders
@@ -104,4 +113,9 @@ fieldDecoder =
       (boolFieldDecoder "visible")
       (boolFieldDecoder "sortable") |>
     JD.andThen
-      (flip JD.map <| optionalStringFieldDecoder "comments")
+      (\v ->
+        JD.map2
+          v
+          (JD.maybe <| JD.field "enum" <| JD.list JD.string)
+          (optionalStringFieldDecoder "comments")
+      )

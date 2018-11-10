@@ -2,11 +2,11 @@ module JsonModel exposing
   ( -- types
     Model (..), DataValue (..), Msg, Tomsg, ListModel, ListMsg, DataValueListModel
   , DataValueListMsg, FormModel, FormMsg, DataValueFormModel, DataValueFormMsg
-  , Path (..), SearchParams, Decoder, Encoder
+  , Path (..), SearchParams, Decoder, Encoder, DataFetcher, CountFetcher
   -- initialization, configuration
   , initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder
   , countBaseUri, pageSize, countDecoder, idParam, offsetLimitParams
-  , toDeferredMsg, deferredSettings, defaultDeferredSettings
+  , toDeferredMsg, deferredSettings, defaultDeferredSettings, dataFetcher, countFetcher
   -- data examination
   , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
@@ -16,6 +16,7 @@ module JsonModel exposing
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
+  , httpDataFetcher, httpCountFetcher, enumFetcher
   -- model updater
   , update
   )
@@ -101,6 +102,16 @@ type alias Reader value = String -> Dict String VM.View -> Path -> value -> Data
 type alias DeferredHeader = (String, String)
 
 
+{-| Function which generates DataMsg command -}
+type alias DataFetcher msg value =
+  Tomsg msg value -> Bool -> SearchParams -> Maybe DeferredHeader -> Model msg value -> Cmd msg
+
+
+{-| Function which generates CountMsg command -}
+type alias CountFetcher msg value =
+  Tomsg msg value -> SearchParams -> Maybe DeferredHeader -> Model msg value -> Cmd msg
+
+
 type alias TimeoutDeferredConfig =
   { deferredHeader: DeferredHeader
   , deferredHeaderIfTimeout: String -> Maybe DeferredHeader
@@ -145,6 +156,8 @@ type alias Config msg value =
   , createUri: SearchParams -> Model msg value -> String
   , metadata: Dict String VM.View
   , metadataFetcher: String -> Cmd VM.Msg
+  , dataFetcher: DataFetcher msg value
+  , countFetcher: CountFetcher msg value
   , deferredConfig: Maybe (DeferredConfig msg)
   , countBaseUri: String
   , countUri: SearchParams -> Model msg value -> String
@@ -225,12 +238,12 @@ type Msg msg value
   | DeleteMsg TypeName SearchParams (Result Http.Error String)
   | EditMsg Path DataValue
   | MetadataMsgCmd (Maybe (Cmd msg))
-  | UpdateCmdMsg value
-  | DataCmdMsg Bool SearchParams (Maybe DeferredHeader)
-  | CountCmdMsg SearchParams (Maybe DeferredHeader)
-  | SaveCmdMsg SearchParams
-  | CreateCmdMsg SearchParams
-  | DeleteCmdMsg SearchParams
+  | UpdateCmdMsg Bool value
+  | DataCmdMsg Bool Bool SearchParams (Maybe DeferredHeader)
+  | CountCmdMsg Bool SearchParams (Maybe DeferredHeader)
+  | SaveCmdMsg Bool SearchParams
+  | CreateCmdMsg Bool SearchParams
+  | DeleteCmdMsg Bool SearchParams
 
 
 {-| Json model message constructor -}
@@ -360,6 +373,8 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , createUri = \_ _ -> ""
       , metadata = Dict.empty
       , metadataFetcher = VM.fetchMetadata
+      , dataFetcher = httpDataFetcher
+      , countFetcher = httpCountFetcher
       , deferredConfig = Nothing
       , countBaseUri = ""
       , countDecoder = JD.int
@@ -512,6 +527,8 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId t
       , createUri = createUri
       , metadata = Dict.empty
       , metadataFetcher = VM.fetchMetadata
+      , dataFetcher = httpDataFetcher
+      , countFetcher = httpCountFetcher
       , deferredConfig = Nothing
       , countBaseUri = ""
       , countDecoder = JD.int
@@ -633,6 +650,20 @@ defaultDeferredSettings toDeferredmsg timeout model =
         Nothing
     )
     model
+
+
+{-| Set data fetcher
+-}
+dataFetcher: DataFetcher msg value -> Model msg value -> Model msg value
+dataFetcher fetcher (Model d c) =
+  Model d { c | dataFetcher = fetcher }
+
+
+{-| Set count fetcher
+-}
+countFetcher: CountFetcher msg value -> Model msg value -> Model msg value
+countFetcher fetcher (Model d c) =
+  Model d { c | countFetcher = fetcher }
 
 
 -- Data getter functions
@@ -883,7 +914,7 @@ dataEncoder metadata viewTypeName value =
 -}
 fetch: Tomsg msg value -> SearchParams -> Cmd msg
 fetch toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| DataCmdMsg False searchParams Nothing
+  Task.perform toMsg <| Task.succeed <| DataCmdMsg True False searchParams Nothing
 
 
 {-| Fetch view data from starting from first record. Relevant for [`ListModel`](#ListModel)
@@ -892,7 +923,7 @@ fetch toMsg searchParams =
 -}
 fetchFromStart: Tomsg msg value -> SearchParams -> Cmd msg
 fetchFromStart toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| DataCmdMsg True searchParams Nothing
+  Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams Nothing
 
 
 {-| Fetch view data with deferred header set. See [`DeferredConfig`](#DeferredConfig)
@@ -902,7 +933,7 @@ fetchDeferred toMsg searchParams deferredConfig =
   deferredConfig.timeoutDeferredConfig |>
   Maybe.map
     (\dc ->
-      Task.perform toMsg <| Task.succeed <| DataCmdMsg False searchParams <| Just dc.deferredHeader
+      Task.perform toMsg <| Task.succeed <| DataCmdMsg True False searchParams <| Just dc.deferredHeader
     ) |>
   Maybe.withDefault Cmd.none
 
@@ -915,9 +946,61 @@ fetchDeferredFromStart toMsg searchParams deferredConfig =
   deferredConfig.timeoutDeferredConfig |>
   Maybe.map
     (\dc ->
-      Task.perform toMsg <| Task.succeed <| DataCmdMsg True searchParams <| Just dc.deferredHeader
+      Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams <| Just dc.deferredHeader
     ) |>
   Maybe.withDefault Cmd.none
+
+
+{-| Low level function. Http data fetcher. This can be set as a dataFetcher function in model's configuration -}
+httpDataFetcher: DataFetcher msg value
+httpDataFetcher toMsg restart searchParams deferredHeader ((Model _ modelConf) as model) =
+  Http.send
+    (toMsg << DataMsg modelConf.typeName restart searchParams) <|
+    dataHttpRequest (modelConf.uri restart searchParams model) deferredHeader <|
+      modelConf.decoder modelConf.metadata modelConf.typeName
+
+
+{-| Low level function. Http count fetcher. This can be set as a countFetcher function in model's configuration -}
+httpCountFetcher: CountFetcher msg value
+httpCountFetcher toMsg searchParams deferredHeader ((Model _ modelConf) as model) =
+  Http.send
+    (toMsg << CountMsg modelConf.typeName searchParams) <|
+    dataHttpRequest (modelConf.countUri searchParams model) deferredHeader modelConf.countDecoder
+
+
+{- Private method used in `httpDataFetcher`, `httpCountFetcher` -}
+dataHttpRequest: String -> Maybe DeferredHeader -> JD.Decoder value -> Http.Request value
+dataHttpRequest uri maybeHeader decoder =
+  maybeHeader |>
+    Maybe.map
+      (\(header, value) ->
+        Http.request
+          { method = "GET"
+          , headers =
+              [ Http.header header value
+              ]
+          , url = uri
+          , body = Http.emptyBody
+          , expect = Http.expectJson decoder
+          , timeout = Nothing
+          , withCredentials = False
+          }
+      ) |>
+    Maybe.withDefault (Http.get uri decoder)
+
+
+{-| Fetches mojoz view field definition enum values -}
+enumFetcher: String -> String -> (String -> String) -> DataFetcher msg (List String)
+enumFetcher viewName fieldName mapper toMsg _ _ _ (Model _ modelConf) =
+  let
+    values =
+      Dict.get viewName modelConf.metadata |>
+      Maybe.andThen (VM.field fieldName) |>
+      Maybe.andThen .enum |>
+      Maybe.map (List.map mapper) |>
+      Maybe.withDefault []
+  in
+    Task.perform (toMsg << DataMsg modelConf.typeName True []) <| Task.succeed <| Ok values
 
 
 {-| Fetch record count. Command is available if [`countBaseUri`](#countBaseUri)
@@ -925,7 +1008,7 @@ fetchDeferredFromStart toMsg searchParams deferredConfig =
 -}
 fetchCount: Tomsg msg value -> SearchParams -> Cmd msg
 fetchCount toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| CountCmdMsg searchParams Nothing
+  Task.perform toMsg <| Task.succeed <| CountCmdMsg True searchParams Nothing
 
 
 {-| Fetch record count with deferred header set.
@@ -936,7 +1019,7 @@ fetchCountDeferred toMsg searchParams deferredConfig =
   deferredConfig.timeoutDeferredConfig |>
   Maybe.map
     (\dc ->
-      Task.perform toMsg <| Task.succeed <| CountCmdMsg searchParams <| Just dc.deferredHeader
+      Task.perform toMsg <| Task.succeed <| CountCmdMsg True searchParams <| Just dc.deferredHeader
     ) |>
   Maybe.withDefault Cmd.none
 
@@ -952,7 +1035,7 @@ fetchMetadata toMsg =
 -}
 set: Tomsg msg value -> value -> Cmd msg
 set toMsg value =
-  Task.perform toMsg <| Task.succeed <| UpdateCmdMsg value
+  Task.perform toMsg <| Task.succeed <| UpdateCmdMsg True value
 
 
 {-| Edit `DataValue` model.
@@ -966,21 +1049,21 @@ edit toMsg path value =
 -}
 save: Tomsg msg value -> SearchParams -> Cmd msg
 save toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| SaveCmdMsg searchParams
+  Task.perform toMsg <| Task.succeed <| SaveCmdMsg True searchParams
 
 
 {-| Create model.
 -}
 create: Tomsg msg value -> SearchParams -> Cmd msg
 create toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| CreateCmdMsg searchParams
+  Task.perform toMsg <| Task.succeed <| CreateCmdMsg True searchParams
 
 
 {-| Delete model.
 -}
 delete: Tomsg msg value -> SearchParams -> Cmd msg
 delete toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| DeleteCmdMsg searchParams
+  Task.perform toMsg <| Task.succeed <| DeleteCmdMsg True searchParams
 
 
 {-| Model updater. -}
@@ -1016,32 +1099,14 @@ update toMsg msg (Model modelData modelConf as same) =
     fetchMd andThen =
       Task.perform toMsg <| Task.succeed <| MetadataMsgCmd andThen
 
-    initializeAndCmd cmd =
-      if unInitialized then fetchMd <| Just cmd else cmd
+    initializeAndCmd noInitCmd cmd =
+      if unInitialized then fetchMd <| Just <| noInitCmd () else cmd ()
 
     metadataHttpRequest maybeAndThen typeName =
       let
         mapper = MetadataMsg maybeAndThen >> toMsg
       in
         Cmd.map mapper <| modelConf.metadataFetcher (modelConf.metadataBaseUri ++ "/" ++ typeName)
-
-    viewHttpRequest uri maybeHeader decoder =
-      maybeHeader |>
-        Maybe.map
-          (\(header, value) ->
-            Http.request
-              { method = "GET"
-              , headers =
-                  [ Http.header header value
-                  ]
-              , url = uri
-              , body = Http.emptyBody
-              , expect = Http.expectJson decoder
-              , timeout = Nothing
-              , withCredentials = False
-              }
-          ) |>
-        Maybe.withDefault (Http.get uri decoder)
 
     saveHttpRequest uri method value decoder =
       Http.request
@@ -1214,7 +1279,7 @@ update toMsg msg (Model modelData modelConf as same) =
         maybeSubscribeOrAskDeferred
           (DataMsg name restart searchParams <<
             mapJsonHttpResult (modelConf.decoder modelConf.metadata modelConf.typeName))
-          (DataCmdMsg restart searchParams)
+          (DataCmdMsg True restart searchParams)
           (name, isFetchProgress)
           response.body
           fetchDone
@@ -1223,7 +1288,7 @@ update toMsg msg (Model modelData modelConf as same) =
       CountMsg name searchParams (Err ((Http.BadPayload _ response) as err)) ->
         maybeSubscribeOrAskDeferred
           (CountMsg name searchParams << mapJsonHttpResult modelConf.countDecoder)
-          (CountCmdMsg searchParams)
+          (CountCmdMsg True searchParams)
           (name, isCountProgress)
           response.body
           countDone
@@ -1231,7 +1296,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       DataMsg name restart searchParams (Err ((Http.BadStatus response) as err)) ->
         maybeAskDeferredOrError
-          (DataCmdMsg restart searchParams)
+          (DataCmdMsg True restart searchParams)
           (name, isFetchProgress)
           response.body
           fetchDone
@@ -1239,7 +1304,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       CountMsg name searchParams (Err ((Http.BadStatus response) as err)) ->
         maybeAskDeferredOrError
-          (CountCmdMsg searchParams)
+          (CountCmdMsg True searchParams)
           (name, isCountProgress)
           response.body
           countDone
@@ -1255,7 +1320,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       EditMsg path value ->
         if unInitialized then
-          ( same, initializeAndCmd <| edit toMsg path value )
+          ( same, let cmd = always <| edit toMsg path value in initializeAndCmd cmd cmd )
         else
           let
             good =
@@ -1285,52 +1350,64 @@ update toMsg msg (Model modelData modelConf as same) =
           , metadataHttpRequest maybeAndThen modelConf.typeName
           )
 
-      UpdateCmdMsg value ->
-        if isFetchProgress then
-          queueCmd <| UpdateCmdMsg value
+      UpdateCmdMsg check value ->
+        if check && isFetchProgress then
+          queueCmd <| UpdateCmdMsg True value
         else
           let
             cmd =
-              Task.perform
-                (toMsg << DataMsg modelConf.typeName True modelData.searchParams)
-                (Task.succeed <| Ok value)
-          in
-            ( (same |> withEmptyQueue |> withProgress fetchProgress), initializeAndCmd cmd )
+              always <|
+                Task.perform
+                  (toMsg << DataMsg modelConf.typeName True modelData.searchParams)
+                  (Task.succeed <| Ok value)
 
-      DataCmdMsg restart searchParams deferredHeader ->
-        if isFetchProgress then
-          queueCmd <| DataCmdMsg restart searchParams deferredHeader
+            noInitCmd =
+              always <| Task.perform toMsg <| Task.succeed <| UpdateCmdMsg False value
+          in
+            ( (same |> withEmptyQueue |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+
+      DataCmdMsg check restart searchParams deferredHeader ->
+        if check && isFetchProgress then
+          queueCmd <| DataCmdMsg True restart searchParams deferredHeader
         else
           let
             cmd =
-              Http.send
-                (toMsg << DataMsg modelConf.typeName restart searchParams) <|
-                viewHttpRequest (modelConf.uri restart searchParams same) deferredHeader <|
-                  modelConf.decoder modelConf.metadata modelConf.typeName
+              always <|
+                modelConf.dataFetcher toMsg restart searchParams deferredHeader same
+
+            noInitCmd =
+              always <|
+                Task.perform toMsg <|
+                  Task.succeed <|
+                    DataCmdMsg False restart searchParams deferredHeader
 
             newModel = same |> withEmptyQueue |> withProgress fetchProgress
           in
-            ( newModel, initializeAndCmd cmd )
+            ( newModel, initializeAndCmd noInitCmd cmd)
 
-      CountCmdMsg searchParams deferredHeader ->
+      CountCmdMsg check searchParams deferredHeader ->
         if String.isEmpty modelConf.countBaseUri then
           ( same, Ask.warn modelConf.toMessagemsg "Cannot calculate count, count uri empty" )
-        else if isCountProgress then
-          queueCmd <| CountCmdMsg searchParams deferredHeader
+        else if check && isCountProgress then
+          queueCmd <| CountCmdMsg True searchParams deferredHeader
         else
           let
             cmd =
-              Http.send
-                (toMsg << CountMsg modelConf.typeName searchParams) <|
-                viewHttpRequest (modelConf.countUri searchParams same) deferredHeader modelConf.countDecoder
-          in
-            let
-              newModel = same |> withEmptyQueue |> withProgress countProgress
-            in
-              ( newModel, initializeAndCmd cmd )
+              always <| modelConf.countFetcher toMsg searchParams deferredHeader same
 
-      SaveCmdMsg searchParams ->
-        if isFetchProgress then
+            noInitCmd =
+              always <|
+                Task.perform toMsg <|
+                  Task.succeed <|
+                    CountCmdMsg False searchParams deferredHeader
+          in
+
+          ( same |> withEmptyQueue |> withProgress countProgress
+          , initializeAndCmd noInitCmd cmd
+          )
+
+      SaveCmdMsg check searchParams ->
+        if check && isFetchProgress then
           ( same, Ask.warn modelConf.toMessagemsg "Operation in progress, please try later." )
         else
           let
@@ -1341,37 +1418,49 @@ update toMsg msg (Model modelData modelConf as same) =
             decoder = modelConf.decoder modelConf.metadata modelConf.typeName
 
             cmd =
-              Http.send
-                (toMsg << DataMsg modelConf.typeName False searchParams) <|
-                saveHttpRequest (modelConf.saveUri searchParams same) method value decoder
-          in
-            ( (same |> withProgress fetchProgress), initializeAndCmd cmd )
+              always <|
+                Http.send
+                  (toMsg << DataMsg modelConf.typeName False searchParams) <|
+                  saveHttpRequest (modelConf.saveUri searchParams same) method value decoder
 
-      CreateCmdMsg searchParams ->
-        if isFetchProgress then
+            noInitCmd =
+              always <| Task.perform toMsg <| Task.succeed <| SaveCmdMsg False searchParams
+          in
+            ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+
+      CreateCmdMsg check searchParams ->
+        if check && isFetchProgress then
           ( same, Ask.warn modelConf.toMessagemsg "Operation in progress, please try later.")
         else
           let
             decoder = modelConf.decoder modelConf.metadata modelConf.typeName
 
             cmd =
-              Http.send
-                (toMsg << DataMsg modelConf.typeName False searchParams) <|
-                Http.get (modelConf.createUri searchParams same) decoder
-          in
-            ( (same |> withProgress fetchProgress), initializeAndCmd cmd )
+              always <|
+                Http.send
+                  (toMsg << DataMsg modelConf.typeName False searchParams) <|
+                  Http.get (modelConf.createUri searchParams same) decoder
 
-      DeleteCmdMsg searchParams ->
-        if isFetchProgress then
+            noInitCmd =
+              always <| Task.perform toMsg <| Task.succeed <| CreateCmdMsg False searchParams
+          in
+            ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+
+      DeleteCmdMsg check searchParams ->
+        if check && isFetchProgress then
           ( same, Ask.warn modelConf.toMessagemsg "Operation in progress, please try later." )
         else
           let
             cmd =
-              Http.send
-                (toMsg << DeleteMsg modelConf.typeName searchParams) <|
-                deleteHttpRequest <| modelConf.saveUri searchParams same
+              always <|
+                Http.send
+                  (toMsg << DeleteMsg modelConf.typeName searchParams) <|
+                  deleteHttpRequest <| modelConf.saveUri searchParams same
+
+            noInitCmd =
+              always <| Task.perform toMsg <| Task.succeed <| DeleteCmdMsg False searchParams
           in
-            ( (same |> withProgress fetchProgress), initializeAndCmd cmd )
+            ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
 
 
 {- private function -}
