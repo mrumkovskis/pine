@@ -1,6 +1,6 @@
 module Utils exposing
-  ( zip, at, orElse, httpQuery, matchIdx, strOrEmpty, optField, noBreakSpace,
-    flip, curry, uncurry, httpErrorToString
+  ( zip, at, find, set, orElse, httpQuery, matchIdx, strOrEmpty
+  , optField, noBreakSpace, flip, curry, uncurry, httpErrorToString
   )
 
 
@@ -43,6 +43,31 @@ at: Int -> List a -> Maybe a
 at idx l =
   if idx == 0 then List.head l
   else List.tail l |> Maybe.andThen (at (idx - 1))
+
+
+{-| Find first element index matching condition -}
+find: (a -> Bool) -> List a -> Maybe Int
+find cond list =
+  let
+    f idx l =
+      case l of
+        el :: tail ->
+          if cond el then Just idx else f (idx + 1) tail
+
+        [] -> Nothing
+  in
+    f 0 list
+
+
+{-| Sets element at specified index. If index is out of range list remains unaltered. -}
+set: Int -> a -> List a -> List a
+set idx el list =
+  List.foldl
+    (\e (r, i) -> if i == idx then (el :: r, i + 1) else (e :: r, i + 1))
+    ([], 0)
+    list |>
+  Tuple.first |>
+  List.reverse
 
 
 {-| Returns first `Just` value `Maybe`
