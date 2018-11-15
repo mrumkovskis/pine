@@ -1,9 +1,10 @@
 module EditModel exposing
-  ( Input, Controller, Attributes, ModelUpdater, AttrsGetter, InputValidator, Formatter, SelectInitializer
-  , EditModel, Msg, Tomsg
-  , init, setModelUpdater, setFormatter, setAttrsGetter, setSelectInitializer, setInputValidator
+  ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
+  , InputAttrs, EditModel, Msg, Tomsg
+  , init, setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
-  , inputEvents, onSelectInput, onSelectMouse
+  , basicInpAttrs, basicTaAttrs, inpAttrs, inpAttrsWithMouse, inpKey
+  , inputEvents, onSelectInput, inputSelectEvents, onSelectMouse
   , id, inp, inps, noCmd, simpleController, controller
   , update
   )
@@ -34,6 +35,7 @@ import Select exposing (..)
 import Utils
 
 import Html exposing (Attribute)
+import Html.Attributes as Attrs
 import Html.Events exposing (..)
 import Task
 import Http
@@ -56,11 +58,6 @@ type alias Input msg =
 type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 
 
-{-| Get input element attributes from controller -}
-type alias AttrsGetter msg model =
-  Tomsg msg model -> String -> Controller msg model -> Attributes msg
-
-
 {-| Validates input -}
 type alias InputValidator = String -> Result String String
 
@@ -80,13 +77,23 @@ type alias SelectInitializer msg =
   SelectModel msg String
 
 
+{-| First element of tuple is static attributes, second - input event attributes, the value
+of which can be obtained form functions like `inputEvents` or `onSelectInput`,
+third - value selection from list with mouse click event attributes, the value of which
+can be obtained from function like `onSelectMouse`. -}
+type alias InputAttrs msg model =
+  ( List (Attribute msg)
+  , (Controller msg model -> List (Attribute msg))
+  , (Controller msg model -> Int -> List (Attribute msg))
+  )
+
+
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
 type Controller msg model =
   Controller
     { name: String
     , updateModel: ModelUpdater msg model -- called on OnSelect, OnFocus _ False
     , formatter: Formatter model
-    , attrs: AttrsGetter msg model
     , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
     , validateInput: InputValidator -- called on OnMsg, OnSelect
     }
@@ -178,11 +185,6 @@ setFormatter key formatter model =
   updateController key (\(Controller c) -> Controller { c | formatter = formatter }) model
 
 
-setAttrsGetter: key -> AttrsGetter msg model -> EditModel msg model -> EditModel msg model
-setAttrsGetter key getter model =
-  updateController key (\(Controller c) -> Controller { c | attrs = getter }) model
-
-
 setSelectInitializer: key -> Maybe (SelectInitializer msg) -> EditModel msg model -> EditModel msg model
 setSelectInitializer key initializer model =
   updateController
@@ -261,13 +263,12 @@ noCmd simpleSetter _ input model =
 
 
 {-| Creates simple controller -}
-simpleController: ModelUpdater msg model -> Formatter model -> AttrsGetter msg model -> Controller msg model
-simpleController updateModel formatter attrGetter =
+simpleController: ModelUpdater msg model -> Formatter model -> Controller msg model
+simpleController updateModel formatter =
   Controller
     { name = ""
     , updateModel = updateModel
     , formatter = formatter
-    , attrs = attrGetter
     , selectInitializer = Nothing
     , validateInput = Ok
     }
@@ -277,35 +278,83 @@ simpleController updateModel formatter attrGetter =
 controller:
   ModelUpdater msg model ->
   Formatter model ->
-  AttrsGetter msg model ->
   Maybe (SelectInitializer msg) ->
   InputValidator ->
   Controller msg model
-controller updateModel formatter attrGetter selectInitializer validator =
+controller updateModel formatter selectInitializer validator =
   Controller
     { name = ""
     , updateModel = updateModel
     , formatter = formatter
-    , attrs = attrGetter
     , selectInitializer = selectInitializer
     , validateInput = validator
     }
 
 
-{-| Gets input from model
+{-| Gets input from model for rendering
 -}
-inp: key -> EditModel msg model -> Maybe (Input msg)
-inp key { inputs } =
-  Dict.get (toString key) inputs
+inp: key -> InputAttrs msg model -> EditModel msg model -> Maybe (Input msg)
+inp key (staticAttrs, inputAttrs, mouseSelectAttrs) { controllers, inputs } =
+  let
+    ks = toString key
+  in
+    Dict.get ks controllers |>
+    Maybe.map2
+      (\input ctl ->
+        let
+          attrs =
+            (Attrs.value input.value :: staticAttrs) ++ inputAttrs ctl
+
+          mouseAttrs =
+            mouseSelectAttrs ctl
+        in
+          { input | attrs = Attributes mouseAttrs attrs }
+      )
+      (Dict.get ks inputs)
 
 
-inps: List keys -> EditModel msg model -> List (Input msg)
+{-| Gets inputs from model for rendering
+-}
+inps: List (key, InputAttrs msg model) -> EditModel msg model -> List (Input msg)
 inps keys model =
   List.foldl
-    (\k r -> inp k model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
+    (\(k, ia) r -> inp k ia model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
     []
     keys |>
   List.reverse
+
+
+basicInpAttrs: String -> String -> Int -> List (Attribute msg)
+basicInpAttrs type_ placeholder size =
+  [ Attrs.type_ type_, Attrs.placeholder placeholder, Attrs.size size ]
+
+
+basicTaAttrs: Int -> Int -> List (Attribute msg)
+basicTaAttrs rows cols =
+  [ Attrs.rows rows, Attrs.cols cols ]
+
+
+inpAttrs:
+  List (Attribute msg) ->
+  (Controller msg model -> List (Attribute msg)) ->
+  InputAttrs msg model
+inpAttrs attrs inpEvents =
+  inpAttrsWithMouse
+    attrs inpEvents (\_ _ -> [])
+
+
+inpAttrsWithMouse:
+  List (Attribute msg) ->
+  (Controller msg model -> List (Attribute msg)) ->
+  (Controller msg model -> Int -> List (Attribute msg)) ->
+  InputAttrs msg model
+inpAttrsWithMouse attrs inpEvents mouseSelectEvents =
+  (attrs, inpEvents, mouseSelectEvents)
+
+
+inpKey: key -> InputAttrs msg model -> (key, InputAttrs msg model)
+inpKey key attrs =
+  ( key, attrs )
 
 
 {- event attributes private function -}
@@ -340,6 +389,12 @@ reacting on arrow, escape, enter keys.
 onSelectInput: Tomsg msg model -> Controller msg model -> List (Attribute msg)
 onSelectInput toMsg ctrl =
   Select.onSelectInput <| toMsg << SelectMsg ctrl
+
+
+{-| Returns concatenation of `inputEvents` ++ `onSelectInput` -}
+inputSelectEvents: Tomsg msg model -> Controller msg model -> List (Attribute msg)
+inputSelectEvents toMsg ctrl =
+  inputEvents toMsg ctrl ++ onSelectInput toMsg ctrl
 
 
 {-| Returns attributes for [`Select`](Select) management. Generally this is mouse down listener
@@ -389,21 +444,16 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       Dict.get ctrl.name newInputs |>
       Maybe.map
         (\input ->
-          let
-            attrs =
-              ctrl.attrs toMsg value (Controller ctrl)
-          in
-            case ctrl.validateInput value of
-              Ok val ->
-                { input |
-                  value = value
-                , error = Nothing
-                , select = input.select |> Maybe.map (Select.updateSearch value)
-                , attrs = attrs
-                }
+          case ctrl.validateInput value of
+            Ok val ->
+              { input |
+                value = value
+              , error = Nothing
+              , select = input.select |> Maybe.map (Select.updateSearch value)
+              }
 
-              Err err ->
-                { input | value = value, error = Just err, attrs = attrs }
+            Err err ->
+              { input | value = value, error = Just err }
         ) |>
       Maybe.map (\input -> Dict.insert ctrl.name input newInputs) |>
       Maybe.withDefault newInputs
