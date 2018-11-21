@@ -1,6 +1,6 @@
 module Menu exposing
   ( Menu, Msg
-  , init, urls, activeItem, activateMsg, update
+  , init, items, activeItem, urlRequestmsg, urlChangedmsg, update
   )
 
 
@@ -10,6 +10,8 @@ import Browser exposing (..)
 import Browser.Navigation as Nav
 import Url exposing (..)
 
+import Debug exposing (log)
+
 
 type Menu msg model
   = Menu (MenuInternal msg model)
@@ -17,7 +19,7 @@ type Menu msg model
 
 type alias MenuInternal msg model =
   { key: Nav.Key
-  , urls: List String
+  , items: List (String, String) -- url, name
   , activate: Init msg model
   , action: Action msg model
   , deactivate: String -> model -> model
@@ -37,7 +39,7 @@ type alias Updater msg model = Menu msg model -> model -> model
 
 type Msg msg
   = UrlClickedMsg UrlRequest
-  | UrlChanged Url
+  | UrlChangedMsg Url
   | ActionMsg String msg
 
 
@@ -46,7 +48,7 @@ type alias Tomsg msg = Msg msg -> msg
 
 init:
   Nav.Key ->
-  List String ->
+  List (String, String) ->
   Init msg model -> Action msg model -> (String -> model -> model) ->
   Updater msg model ->
   Menu msg model
@@ -54,8 +56,8 @@ init key mitems activate action deactivate updater =
   Menu <| MenuInternal key mitems activate action deactivate updater Nothing
 
 
-urls: Menu msg model -> List String
-urls (Menu menu) = menu.urls
+items: Menu msg model -> List (String, String)
+items (Menu menu) = menu.items
 
 
 activeItem: Menu msg model -> Maybe String
@@ -69,7 +71,7 @@ urlRequestmsg toMsg =
 
 urlChangedmsg: Tomsg msg -> (Url -> msg)
 urlChangedmsg toMsg =
-  toMsg << UrlChanged
+  toMsg << UrlChangedMsg
 
 
 update: Tomsg msg -> Msg msg -> Menu msg model -> model -> (model, Cmd msg)
@@ -89,9 +91,17 @@ update toMsg msg (Menu ({ activate, action, deactivate, updater } as menu)) mode
       else ( newmod, cmd )
   in
     case msg of
-      ActivateMsg name ->
-        activate (toMsg << ActionMsg name) name model |>
-        (maybeActivateItem name)
+      UrlClickedMsg urlRequest ->
+        case urlRequest of
+          Internal url ->
+            (model, Nav.pushUrl menu.key (Url.toString url))
+
+          External url ->
+            (model, Nav.load url)
+
+      UrlChangedMsg url ->
+        activate (toMsg << ActionMsg url.path) url.path model |>
+        (maybeActivateItem url.path)
 
       ActionMsg name itemmsg ->
         action (toMsg << ActionMsg name) itemmsg model |>
