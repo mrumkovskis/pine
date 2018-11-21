@@ -1,11 +1,14 @@
 module Menu exposing
   ( Menu, Msg
-  , init, items, activeItem, activateMsg, update
+  , init, urls, activeItem, activateMsg, update
   )
 
 
 import Dict exposing (..)
 import Task
+import Browser exposing (..)
+import Browser.Navigation as Nav
+import Url exposing (..)
 
 
 type Menu msg model
@@ -13,7 +16,8 @@ type Menu msg model
 
 
 type alias MenuInternal msg model =
-  { items: List String
+  { key: Nav.Key
+  , urls: List String
   , activate: Init msg model
   , action: Action msg model
   , deactivate: String -> model -> model
@@ -32,7 +36,8 @@ type alias Updater msg model = Menu msg model -> model -> model
 
 
 type Msg msg
-  = ActivateMsg String
+  = UrlClickedMsg UrlRequest
+  | UrlChanged Url
   | ActionMsg String msg
 
 
@@ -40,25 +45,31 @@ type alias Tomsg msg = Msg msg -> msg
 
 
 init:
+  Nav.Key ->
   List String ->
   Init msg model -> Action msg model -> (String -> model -> model) ->
   Updater msg model ->
   Menu msg model
-init mitems activate action deactivate updater =
-  Menu <| MenuInternal mitems activate action deactivate updater Nothing
+init key mitems activate action deactivate updater =
+  Menu <| MenuInternal key mitems activate action deactivate updater Nothing
 
 
-items: Menu msg model -> List String
-items (Menu menu) = menu.items
+urls: Menu msg model -> List String
+urls (Menu menu) = menu.urls
 
 
 activeItem: Menu msg model -> Maybe String
 activeItem (Menu menu) = menu.activeItem
 
 
-activateMsg: Tomsg msg -> String -> msg
-activateMsg toMsg name =
-  toMsg <| ActivateMsg name
+urlRequestmsg: Tomsg msg -> (UrlRequest -> msg)
+urlRequestmsg toMsg =
+  toMsg << UrlClickedMsg
+
+
+urlChangedmsg: Tomsg msg -> (Url -> msg)
+urlChangedmsg toMsg =
+  toMsg << UrlChanged
 
 
 update: Tomsg msg -> Msg msg -> Menu msg model -> model -> (model, Cmd msg)
