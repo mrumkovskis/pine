@@ -90,6 +90,10 @@ type alias Decoder value = Dict String VM.View -> String -> JD.Decoder value
 type alias Encoder value = Dict String VM.View -> String -> value -> JD.Value
 
 
+{-| Error handler -}
+type alias ErrorHandler value = Result Http.Error value -> value
+
+
 type alias Setter msg value = value -> Model msg value -> Model msg value
 
 
