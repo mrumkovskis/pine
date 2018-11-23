@@ -1,6 +1,6 @@
 module Menu exposing
   ( Menu, Msg
-  , init, items, activeItem, urlRequestmsg, urlChangedmsg, update
+  , init, items, activeItem, navKey, urlRequestmsg, urlChangedmsg, update
   )
 
 
@@ -64,6 +64,10 @@ activeItem: Menu msg model -> Maybe String
 activeItem (Menu menu) = menu.activeItem
 
 
+navKey: Menu msg model -> Nav.Key
+navKey (Menu { key }) =
+  key
+
 urlRequestmsg: Tomsg msg -> (UrlRequest -> msg)
 urlRequestmsg toMsg =
   toMsg << UrlClickedMsg
@@ -77,17 +81,17 @@ urlChangedmsg toMsg =
 update: Tomsg msg -> Msg msg -> Menu msg model -> model -> (model, Cmd msg)
 update toMsg msg (Menu ({ activate, action, deactivate, updater } as menu)) model =
   let
-    activateItem newmod name =
-      let newMenu = { menu | activeItem = Just name } in
+    activateItem newmod url =
+      let newMenu = { menu | activeItem = Just url } in
         menu.activeItem |>
-        Maybe.andThen (\oldname -> if oldname == name then Nothing else Just oldname) |>
+        Maybe.andThen (\oldname -> if oldname == url then Nothing else Just oldname) |>
         Maybe.map (\oldname -> deactivate oldname newmod) |>
         Maybe.map (menu.updater <| Menu newMenu) |>
         Maybe.withDefault (menu.updater (Menu newMenu) newmod)
 
-    maybeActivateItem name (newmod, cmd) =
+    maybeActivateItem url (newmod, cmd) =
       if cmd == Cmd.none then
-        ( activateItem newmod name, Cmd.none )
+        ( activateItem newmod url, Cmd.none )
       else ( newmod, cmd )
   in
     case msg of
@@ -103,6 +107,6 @@ update toMsg msg (Menu ({ activate, action, deactivate, updater } as menu)) mode
         activate (toMsg << ActionMsg url.path) url.path model |>
         (maybeActivateItem url.path)
 
-      ActionMsg name itemmsg ->
-        action (toMsg << ActionMsg name) itemmsg model |>
-        (maybeActivateItem name)
+      ActionMsg url itemmsg ->
+        action (toMsg << ActionMsg url) itemmsg model |>
+        (maybeActivateItem url)
