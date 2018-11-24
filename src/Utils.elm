@@ -1,12 +1,12 @@
 module Utils exposing
   ( zip, at, find, set, orElse, httpQuery, matchIdx, strOrEmpty
-  , optField, noBreakSpace, flip, curry, uncurry, httpErrorToString
+  , optField, emptyEncoder, noBreakSpace, flip, curry, uncurry, httpErrorToString
   )
 
 
 {-| Various useful utility methods.
 
-@docs at, httpQuery, matchIdx, noBreakSpace, optField,
+@docs at, httpQuery, matchIdx, noBreakSpace, optField, emptyEncoder
       orElse, strOrEmpty, zip, flip, curry, uncurry, httpErrorToString
 -}
 
@@ -14,6 +14,7 @@ module Utils exposing
 import Http
 import Dict
 import Json.Decode as JD
+import Json.Encode as JE
 import Url.Builder as UB
 
 import Debug exposing (log, toString)
@@ -171,6 +172,12 @@ strOrEmpty =
 optField: String -> JD.Decoder a -> JD.Decoder (Maybe a)
 optField name decoder =
   JD.maybe (JD.field name decoder)
+
+
+{-| Always returns empty json object {} -}
+emptyEncoder: value -> JE.Value
+emptyEncoder =
+  (always <| JE.object [])
 
 
 {-| Flips first two arguments of a function. Removed from elm 0.19

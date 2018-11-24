@@ -91,7 +91,11 @@ type alias Encoder value = Dict String VM.View -> String -> value -> JD.Value
 
 
 {-| Error handler -}
-type alias ErrorHandler value = Result Http.Error value -> value
+type alias ErrorHandler msg value = Result Http.Error value -> ( value, Cmd msg )
+
+
+{-| Transformer -}
+type alias Transformer value = value -> value
 
 
 type alias Setter msg value = value -> Model msg value -> Model msg value
