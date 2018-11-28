@@ -83,6 +83,7 @@ errorOrUnauthorized toMsg err =
     x ->
       error toMsg <| Utils.httpErrorToString x
 
+
 {-| Retrieves message text.
 -}
 text: Msg msg -> String
