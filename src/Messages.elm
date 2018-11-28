@@ -57,11 +57,32 @@ init =
   Messages { messages = Dict.empty }
 
 
-{-| Gets all messages.
+{-| Gets all messages except unauthorized message
 -}
 messages: Messages msg -> List (Ask.Msg msg)
 messages (Messages m) =
-  Dict.values m.messages
+  Dict.values m.messages |>
+  List.filter
+    (\msg ->
+      case msg of
+        Ask.Message Ask.Unauthorized _ -> False
+
+        _ -> True
+    )
+
+
+{-| Gets unauthorized message -}
+unauthorized: Messages msg -> Maybe (Ask.Msg msg)
+unauthorized (Messages m) =
+  Dict.values m.messages |>
+  List.filter
+    (\msg ->
+      case msg of
+        Ask.Message Ask.Unauthorized _ -> True
+
+        _ -> False
+    ) |>
+  List.head
 
 
 {-| Add message.

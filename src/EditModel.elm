@@ -611,6 +611,6 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                   set toMsg (always r)
 
                 Err e ->
-                  Ask.error same.toMessagemsg <| Utils.httpErrorToString e
+                  Ask.errorOrUnauthorized same.toMessagemsg e
         in
           ( same, result )

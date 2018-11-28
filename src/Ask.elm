@@ -1,6 +1,6 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
-  , ask, info, warn, error, text
+  , ask, info, warn, error, unauthorized, errorOrUnauthorized, text
   )
 
 
@@ -9,16 +9,18 @@ module Ask exposing
 @docs MsgType, Msg, Tomsg, ask, info, warn, error, text
 -}
 
+import Utils
 
 import Task
-
+import Http
 
 {-| Message type: Info, Warn, Error
 -}
 type MsgType
   = Info
   | Warn
-  | Error 
+  | Error
+  | Unauthorized
 
 
 {-| Command message - generate info, warn on error message - `Message` or
@@ -57,6 +59,29 @@ warn toMsg message = msgInternal toMsg Warn message
 error: Tomsg msg -> String -> Cmd msg
 error toMsg message = msgInternal toMsg Error message
 
+
+{-| Sends `Unauthorized` message -}
+unauthorized: Tomsg msg -> String -> Cmd msg
+unauthorized toMsg message = msgInternal toMsg Unauthorized message
+
+
+{-| Sends http `Error` or `Unauthorized` on http message -}
+errorOrUnauthorized: Tomsg msg -> Http.Error -> Cmd msg
+errorOrUnauthorized toMsg err =
+  case err of
+    Http.BadStatus resp ->
+      if resp.status.code == 401 then
+        unauthorized
+          toMsg
+          ( if String.isEmpty resp.status.message then
+              "Unauthorized"
+            else resp.status.message
+          )
+      else
+        error toMsg <| Utils.httpErrorToString err
+
+    x ->
+      error toMsg <| Utils.httpErrorToString x
 
 {-| Retrieves message text.
 -}

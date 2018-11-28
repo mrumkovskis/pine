@@ -90,11 +90,7 @@ type alias Decoder value = Dict String VM.View -> String -> JD.Decoder value
 type alias Encoder value = Dict String VM.View -> String -> value -> JD.Value
 
 
-{-| Error handler -}
-type alias ErrorHandler msg value = Result Http.Error value -> ( value, Cmd msg )
-
-
-{-| Transformer -}
+{-| Transformer. Implementation progress... -}
 type alias Transformer value = value -> value
 
 
@@ -1205,20 +1201,11 @@ update toMsg msg (Model modelData modelConf as same) =
       Maybe.withDefault Cmd.none
 
     errorResponse pr err =
-      let
-        errToString =
-          case err of
-            Http.BadStatus { body } -> body
-
-            Http.BadPayload emsg { body } -> emsg
-
-            x -> toString x
-      in
-        log
-          (toString err)
-          ( same |> withProgress pr
-          , Ask.error modelConf.toMessagemsg errToString
-          )
+      log
+        (toString err)
+        ( same |> withProgress pr
+        , Ask.errorOrUnauthorized modelConf.toMessagemsg err
+        )
   in
     case msg of
       MetadataMsg maybeCmd (VM.ViewMetadataMsg (Ok view) children) ->
