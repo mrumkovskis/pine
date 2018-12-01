@@ -100,7 +100,7 @@ update toMsg msg (Menu ({ activate, action, deactivate, updater } as menu)) mode
           Internal url ->
             ( model
             , url.fragment |>
-              Maybe.andThen (\f -> if f == "nogo" then Just () else Nothing ) |>
+              Maybe.andThen (\f -> if f == "nohref" then Just () else Nothing ) |>
               Maybe.map (always Cmd.none) |>
               Maybe.withDefault (Nav.pushUrl menu.key (Url.toString url))
             )
