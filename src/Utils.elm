@@ -214,6 +214,6 @@ httpErrorToString err =
 
     Http.NetworkError -> "Network error occurred"
 
-    Http.BadStatus resp -> toString resp
+    Http.BadStatus resp -> resp.body
 
-    Http.BadPayload msg resp -> msg ++ "; " ++ toString resp
+    Http.BadPayload msg resp -> msg ++ "; " ++ resp.body
