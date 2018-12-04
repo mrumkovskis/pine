@@ -1,7 +1,7 @@
 module DeferredRequests exposing
-  ( DeferredRequest, DeferredStatus (..), Tomsg, Model, Msg
-  , init, update, subscribeCmd, maybeSubscribeCmd, wsSubscriptions
-  , requests, subscriptions
+  ( DeferredRequest, DeferredStatus (..), Tomsg, Model, Msg, Subscription, Config
+  , init, update, subscribeCmd, maybeSubscribeCmd, maybeProcessHttpError
+  , wsSubscriptions, requests, subscriptions
   )
 
 
@@ -23,6 +23,7 @@ module DeferredRequests exposing
 
 
 import Utils exposing (uncurry)
+import Ask
 
 import Json.Decode as JD
 import Dict exposing (Dict)
@@ -58,15 +59,20 @@ type alias Tomsg msg = Msg msg -> msg
 type alias Subscription msg = (Result Http.Error JD.Value) -> msg
 
 
-type alias Config =
+type alias Config msg =
   { deferredResultBaseUri: String
   , wsNotificationUri: String
+  , deferredHeader: String
+  , defaultTimeout: String
+  , isTimeoutErr: String -> Bool
+  , timeoutQuestion: String
+  , toMessagemsg: Ask.Tomsg msg
   }
 
 
 {-| Model
 -}
-type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription msg)) Config
+type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription msg)) (Config msg)
 
 
 {-| Messages. Sent to update deferred request statuses and subscribe to deferred results.
@@ -74,15 +80,18 @@ type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription 
 type Msg msg
   = UpdateMsg String
   | SubscribeMsg String (Subscription msg)
+  | DeferredMsg (Ask.Msg msg)
 
 
 {-| Creates model. First argument specifies base uri where to get ready results
 (real uri appends requests id to the base), second argument is web socket notification
-uri of request execution progress.
+uri of request execution progress. Third is deferred http header name like `x-deferred`.
+Fourth is defaultTimeout like `180s`. Fifth - question to display for user to ask whether redo request with
+deferred header.
 -}
-init: String -> String -> Model msg
-init deferredResultBaseUri wsNotificationUri =
-  Model Dict.empty Dict.empty <| Config deferredResultBaseUri wsNotificationUri
+init: Config msg -> Model msg
+init config =
+  Model Dict.empty Dict.empty config
 
 
 {-| Get active requests. Key is request id.
@@ -119,10 +128,20 @@ maybeSubscribeCmd toMsg subscription deferredResponse =
     (Maybe.map <| subscribeCmd toMsg subscription)
 
 
+maybeProcessHttpError: Tomsg msg -> Ask.Msg msg -> Maybe (Cmd msg)
+maybeProcessHttpError toMsg deferredAsk =
+  case deferredAsk of
+    Ask.Deferred timeout subscription deferredRequestConstructor err ->
+      Just <| Task.perform (toMsg << DeferredMsg) <|
+        Task.succeed <| Ask.Deferred timeout subscription deferredRequestConstructor err
+
+    _ -> Nothing
+
+
 {-| Model update.
 -}
 update: Tomsg msg -> Msg msg -> Model msg -> ( Model msg, Cmd msg )
-update toMsg msg (Model reqs subs conf) =
+update toMsg msg (Model reqs subs conf as model) =
   let
     same = Model reqs subs conf
 
@@ -191,6 +210,40 @@ update toMsg msg (Model reqs subs conf) =
 
       SubscribeMsg id toSubMsg ->
         processSubscription id toSubMsg
+
+      DeferredMsg askMsg ->
+        let
+           realTimeout timeout =
+             if String.isEmpty timeout then conf.defaultTimeout else timeout
+
+           subscribeOrAskOrErr timeout subscription reqConstr resp err =
+             maybeSubscribeCmd toMsg subscription resp |>
+             Maybe.withDefault (askOrErr timeout reqConstr resp err)
+
+           askOrErr timeout reqConstr resp err =
+             if conf.isTimeoutErr resp then
+               Ask.ask conf.toMessagemsg "Timeout occurred. Try deferred request?" <|
+                 Task.perform reqConstr <| Task.succeed (conf.deferredHeader, timeout)
+             else
+               Ask.errorOrUnauthorized conf.toMessagemsg err
+
+        in
+          case askMsg of
+            Ask.Deferred timeout subscription reqConstr err ->
+              case err of
+                Http.BadPayload _ response ->
+                  ( model, subscribeOrAskOrErr timeout subscription reqConstr response.body err )
+
+                Http.BadStatus response ->
+                  ( model, askOrErr timeout reqConstr response.body err )
+
+                error ->
+                  ( model
+                  , Ask.error conf.toMessagemsg <| Utils.httpErrorToString error
+                  )
+
+            _ ->
+              ( model, Cmd.none )
 
 
 {-| Subscription to web socket deferred request notifications.

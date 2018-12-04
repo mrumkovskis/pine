@@ -13,6 +13,7 @@ import Utils
 
 import Task
 import Http
+import Json.Decode as JD
 
 {-| Message type: Info, Warn, Error
 -}
@@ -29,6 +30,11 @@ type MsgType
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg)
+  | Deferred
+      String
+      ((Result Http.Error JD.Value) -> msg)
+      ((String, String) -> msg)
+      Http.Error
 
 
 {-| Message constructor -}
@@ -84,6 +90,18 @@ errorOrUnauthorized toMsg err =
       error toMsg <| Utils.httpErrorToString x
 
 
+{-| Sends Deferred message, which hopefully arrives to `DeferredRequests` -}
+subscribeOrAskDeferredOrError:
+  Tomsg msg ->
+  String ->
+  ((Result Http.Error JD.Value) -> msg) ->
+  ((String, String) -> msg) ->
+  Http.Error ->
+  Cmd msg
+subscribeOrAskDeferredOrError toMsg timeout subscription deferredRequestConstructor err =
+  Task.perform (toMsg << Deferred timeout subscription deferredRequestConstructor) <| Task.succeed err
+
+
 {-| Retrieves message text.
 -}
 text: Msg msg -> String
@@ -92,6 +110,8 @@ text msg =
     Message _ txt -> txt
 
     Question txt _ -> txt
+
+    Deferred _ _ _ _ -> "<deferred request>"
 
 
 msgInternal: Tomsg msg -> MsgType -> String -> Cmd msg
