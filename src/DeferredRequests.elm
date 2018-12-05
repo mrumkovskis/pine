@@ -128,12 +128,13 @@ maybeSubscribeCmd toMsg subscription deferredResponse =
     (Maybe.map <| subscribeCmd toMsg subscription)
 
 
+{-| Typically is called from application main module upon receivend `Ask.Deferred` message -}
 maybeProcessHttpError: Tomsg msg -> Ask.Msg msg -> Maybe (Cmd msg)
 maybeProcessHttpError toMsg deferredAsk =
   case deferredAsk of
-    Ask.Deferred timeout subscription deferredRequestConstructor err ->
+    (Ask.Deferred _ _ _ _ as msg) ->
       Just <| Task.perform (toMsg << DeferredMsg) <|
-        Task.succeed <| Ask.Deferred timeout subscription deferredRequestConstructor err
+        Task.succeed  msg
 
     _ -> Nothing
 
@@ -222,11 +223,16 @@ update toMsg msg (Model reqs subs conf as model) =
 
            askOrErr timeout reqConstr resp err =
              if conf.isTimeoutErr resp then
-               Ask.ask conf.toMessagemsg "Timeout occurred. Try deferred request?" <|
-                 Task.perform reqConstr <| Task.succeed (conf.deferredHeader, timeout)
+               let
+                  timeoutQuestion =
+                    if String.isEmpty conf.timeoutQuestion then
+                      "Timeout occurred. Try deferred request?"
+                    else conf.timeoutQuestion
+               in
+                 Ask.ask conf.toMessagemsg timeoutQuestion <|
+                   Task.perform reqConstr <| Task.succeed (conf.deferredHeader, timeout)
              else
                Ask.errorOrUnauthorized conf.toMessagemsg err
-
         in
           case askMsg of
             Ask.Deferred timeout subscription reqConstr err ->

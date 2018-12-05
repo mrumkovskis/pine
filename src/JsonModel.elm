@@ -1190,6 +1190,9 @@ update toMsg msg (Model modelData modelConf as same) =
 
     maybeErrorResponse pr err = \() -> errorResponse pr err
 
+    --processHttpError integrity progr =
+
+
     queueCmd cmd =
       ( Model modelData { modelConf | queuedCmd = Just cmd }
       , Cmd.none

@@ -1,6 +1,7 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
-  , ask, info, warn, error, unauthorized, errorOrUnauthorized, text
+  , ask, info, warn, error, unauthorized
+  , errorOrUnauthorized, subscribeOrAskDeferredOrError, text
   )
 
 
@@ -31,10 +32,10 @@ type Msg msg
   = Message MsgType String
   | Question String (Cmd msg)
   | Deferred
-      String
-      ((Result Http.Error JD.Value) -> msg)
-      ((String, String) -> msg)
-      Http.Error
+      String --timeout
+      ((Result Http.Error JD.Value) -> msg) -- subscription
+      ((String, String) -> msg) -- request constructor with deferred header
+      Http.Error -- http error to be checked for deferred response or deferred timeout
 
 
 {-| Message constructor -}
@@ -90,7 +91,8 @@ errorOrUnauthorized toMsg err =
       error toMsg <| Utils.httpErrorToString x
 
 
-{-| Sends Deferred message, which hopefully arrives to `DeferredRequests` -}
+{-| Sends Deferred message, which hopefully arrives to `DeferredRequests`.
+Typically is called from `JsonModel` or any module using mojoz metadata based rest service. -}
 subscribeOrAskDeferredOrError:
   Tomsg msg ->
   String ->
