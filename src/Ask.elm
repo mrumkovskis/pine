@@ -31,7 +31,7 @@ type MsgType
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg)
-  | Deferred
+  | Deferred  --TODO refactor and remove
       String --timeout
       ((Result Http.Error JD.Value) -> msg) -- subscription
       ((String, String) -> msg) -- request constructor with deferred header
