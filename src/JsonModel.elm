@@ -1172,7 +1172,7 @@ update toMsg msg (Model modelData modelConf as same) =
         Maybe.map (Tuple.pair (withProgress pr same))
 
     maybeSubscribeOrAskDeferred -- withDefault method is not used because we do not need to print default error every time
-      dataMsgConstr cmdMsgConstr integrity response pr default =
+      dataMsgConstr cmdMsgConstr integrity response pr err =
       case maybeSubscribeDeferred dataMsgConstr integrity response of
         Just resp -> resp
 
@@ -1180,18 +1180,13 @@ update toMsg msg (Model modelData modelConf as same) =
           case maybeAskDeferred cmdMsgConstr integrity response pr of
             Just resp -> resp
 
-            Nothing -> default ()
+            Nothing -> errorResponse pr err
 
-    maybeAskDeferredOrError cmdMsgConstr integrity response pr default =
+    maybeAskDeferredOrError cmdMsgConstr integrity response pr err =
       case maybeAskDeferred cmdMsgConstr integrity response pr of
         Just resp -> resp
 
-        Nothing -> default ()
-
-    maybeErrorResponse pr err = \() -> errorResponse pr err
-
-    --processHttpError integrity progr =
-
+        Nothing -> errorResponse pr err
 
     queueCmd cmd =
       ( Model modelData { modelConf | queuedCmd = Just cmd }
@@ -1281,7 +1276,7 @@ update toMsg msg (Model modelData modelConf as same) =
           (name, isFetchProgress)
           response.body
           fetchDone
-          (maybeErrorResponse fetchDone err)
+          err
 
       CountMsg name searchParams (Err ((Http.BadPayload _ response) as err)) ->
         maybeSubscribeOrAskDeferred
@@ -1290,7 +1285,7 @@ update toMsg msg (Model modelData modelConf as same) =
           (name, isCountProgress)
           response.body
           countDone
-          (maybeErrorResponse countDone err)
+          err
 
       DataMsg name restart searchParams (Err ((Http.BadStatus response) as err)) ->
         maybeAskDeferredOrError
@@ -1298,7 +1293,7 @@ update toMsg msg (Model modelData modelConf as same) =
           (name, isFetchProgress)
           response.body
           fetchDone
-          (maybeErrorResponse fetchDone err)
+          err
 
       CountMsg name searchParams (Err ((Http.BadStatus response) as err)) ->
         maybeAskDeferredOrError
@@ -1306,7 +1301,7 @@ update toMsg msg (Model modelData modelConf as same) =
           (name, isCountProgress)
           response.body
           countDone
-          (maybeErrorResponse countDone err)
+          err
 
       DataMsg _ _ _ (Err err) -> errorResponse fetchDone err
 
