@@ -1,6 +1,7 @@
 module Utils exposing
   ( zip, at, find, set, orElse, httpQuery, matchIdx, strOrEmpty
   , optField, emptyEncoder, noBreakSpace, flip, curry, uncurry, httpErrorToString
+  , searchParams, toList
   )
 
 
@@ -217,3 +218,14 @@ httpErrorToString err =
     Http.BadStatus resp -> resp.body
 
     Http.BadPayload msg resp -> msg ++ "; " ++ resp.body
+
+
+searchParams: List String -> List (a -> Maybe String) -> a -> List (String, String)
+searchParams names getters params =
+  List.map2 (\name getter -> ( name, getter params )) names getters |>
+  List.concatMap (\(n, mv) -> Maybe.map (\v -> [(n, v)]) mv |> Maybe.withDefault [])
+
+
+toList: List (a -> String) -> a -> List String
+toList getters param =
+  List.map (\getter -> getter param) getters
