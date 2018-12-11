@@ -140,7 +140,7 @@ type Msg msg model
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
-  | HttpModelMsg (Result Http.Error model)
+  | HttpModelMsg (Maybe model) (Result Http.Error model)
 
 
 {-| Edit model message constructor -}
@@ -230,9 +230,9 @@ create toMsg createParams createFun =
 
 {-| Creates model from http request.
 -}
-http: Tomsg msg model -> Http.Request model -> Cmd msg
-http toMsg req =
-  Http.send (toMsg << HttpModelMsg) req
+http: Tomsg msg model -> Maybe model -> Http.Request model -> Cmd msg
+http toMsg maybeOnErr req =
+  Http.send (toMsg << HttpModelMsg maybeOnErr) req
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
@@ -603,7 +603,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       NewModelMsg searchParams createFun ->
         ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
 
-      HttpModelMsg httpResult ->
+      HttpModelMsg onErr httpResult ->
         let
             result =
               case httpResult of
@@ -611,6 +611,8 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                   set toMsg (always r)
 
                 Err e ->
-                  Ask.errorOrUnauthorized same.toMessagemsg e
+                  onErr |>
+                  Maybe.map (\r -> set toMsg (always r)) |>
+                  Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
