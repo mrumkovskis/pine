@@ -105,7 +105,7 @@ fieldDecoder =
     JD.map8
       Field
       (stringFieldDecoder "name")
-      (stringFieldDecoder "label")
+      (optionalStringFieldDecoder "label")
       (stringFieldDecoder "type")
       (boolFieldDecoder "isCollection")
       (boolFieldDecoder "isComplexType")
