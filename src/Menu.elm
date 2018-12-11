@@ -1,6 +1,6 @@
 module Menu exposing
   ( Menu, Msg
-  , init, items, activeItem, navKey, urlRequestmsg, urlChangedmsg, update
+  , init, empty, items, activeItem, navKey, urlRequestmsg, urlChangedmsg, update
   )
 
 
@@ -54,6 +54,11 @@ init:
   Menu msg model
 init key mitems activate action deactivate updater =
   Menu <| MenuInternal key mitems activate action deactivate updater Nothing
+
+
+empty: Nav.Key -> Menu msg model
+empty key =
+  init key [] (\_ _ m -> (m, Cmd.none)) (\_ _ m -> (m, Cmd.none)) (\_ m -> m) (\_ m -> m)
 
 
 items: Menu msg model -> List (String, String)
