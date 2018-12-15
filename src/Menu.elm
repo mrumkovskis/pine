@@ -1,6 +1,7 @@
 module Menu exposing
-  ( Menu, Msg
-  , init, empty, items, activeItem, navKey, urlRequestmsg, urlChangedmsg, update
+  ( Menu, Msg, MenuItem
+  , init, empty, items, item, isActive, activeItemUrl
+  , urlRequestmsg, urlChangedmsg, update
   )
 
 
@@ -19,85 +20,100 @@ type Menu msg model
 
 type alias MenuInternal msg model =
   { key: Nav.Key
-  , items: List (String, String) -- url, name
-  , activate: Init msg model
-  , action: Action msg model
-  , deactivate: String -> model -> model
-  , updater: Updater msg model
-  , activeItem: Maybe String
+  , menuItems: List (MenuItem msg model)
+  , updater: msg -> model -> (model, Cmd msg)
+  , menuUpdater: model -> Menu msg model -> model
+  , activeItem: Maybe (MenuItem msg model)
   }
 
 
-type alias Init msg model = (msg -> msg) -> String -> model -> (model, Cmd msg)
+{- menu item fields - url, name, activate function, deactivate function -}
+type MenuItem msg model
+  = MenuItem String String (String -> Cmd msg) (model -> model)
 
 
-type alias Action msg model = (msg -> msg) -> msg -> model -> (model, Cmd msg)
-
-
-type alias Updater msg model = Menu msg model -> model -> model
-
-
-type Msg msg
+type Msg msg model
   = UrlClickedMsg UrlRequest
   | UrlChangedMsg Url
-  | ActionMsg String msg
+  | ActionMsg (MenuItem msg model) msg
 
 
-type alias Tomsg msg = Msg msg -> msg
+type alias Tomsg msg model = Msg msg model -> msg
 
 
 init:
-  Nav.Key ->
-  List (String, String) ->
-  Init msg model -> Action msg model -> (String -> model -> model) ->
-  Updater msg model ->
-  Menu msg model
-init key mitems activate action deactivate updater =
-  Menu <| MenuInternal key mitems activate action deactivate updater Nothing
+  Nav.Key -> List (MenuItem msg model) ->
+  (msg -> model -> (model, Cmd msg)) -> (model -> Menu msg model -> model) -> Menu msg model
+init key mitems updater menuUpdater =
+  Menu <| MenuInternal key mitems updater menuUpdater Nothing
 
 
 empty: Nav.Key -> Menu msg model
 empty key =
-  init key [] (\_ _ m -> (m, Cmd.none)) (\_ _ m -> (m, Cmd.none)) (\_ m -> m) (\_ m -> m)
+  init key [] (\_ m -> (m, Cmd.none)) (\m _ -> m)
 
 
 items: Menu msg model -> List (String, String)
-items (Menu menu) = menu.items
+items (Menu menu) =
+  menu.menuItems |> List.map (\(MenuItem url name _ _) -> (url, name))
 
 
-activeItem: Menu msg model -> Maybe String
-activeItem (Menu menu) = menu.activeItem
+item: String -> String -> (String -> Cmd msg) -> (model -> model) -> MenuItem msg model
+item = MenuItem
 
 
-navKey: Menu msg model -> Nav.Key
-navKey (Menu { key }) =
-  key
+activeItemUrl: Menu msg model -> Maybe String
+activeItemUrl (Menu { activeItem })  =
+  activeItem |> Maybe.map (\(MenuItem url _ _ _) -> url)
 
-urlRequestmsg: Tomsg msg -> (UrlRequest -> msg)
+
+isActive: String -> Menu msg model -> Bool
+isActive murl (Menu menu) =
+  menu.activeItem |>
+  Maybe.map (\(MenuItem url _ _ _) -> murl == url) |>
+  Maybe.withDefault False
+
+
+urlRequestmsg: Tomsg msg model -> (UrlRequest -> msg)
 urlRequestmsg toMsg =
   toMsg << UrlClickedMsg
 
 
-urlChangedmsg: Tomsg msg -> (Url -> msg)
+urlChangedmsg: Tomsg msg model -> (Url -> msg)
 urlChangedmsg toMsg =
   toMsg << UrlChangedMsg
 
 
-update: Tomsg msg -> Msg msg -> Menu msg model -> model -> (model, Cmd msg)
-update toMsg msg (Menu ({ activate, action, deactivate, updater } as menu)) model =
+update: Tomsg msg model -> Msg msg model -> Menu msg model -> model -> (model, Cmd msg)
+update toMsg msg (Menu ({ menuItems, updater, menuUpdater, activeItem } as menu)) model =
   let
-    activateItem newmod url =
-      let newMenu = { menu | activeItem = Just url } in
-        menu.activeItem |>
-        Maybe.andThen (\oldname -> if oldname == url then Nothing else Just oldname) |>
-        Maybe.map (\oldname -> deactivate oldname newmod) |>
-        Maybe.map (menu.updater <| Menu newMenu) |>
-        Maybe.withDefault (menu.updater (Menu newMenu) newmod)
-
-    maybeActivateItem url (newmod, cmd) =
+    maybeActivateItem it (newmod, cmd) =
       if cmd == Cmd.none then
-        ( activateItem newmod url, Cmd.none )
-      else ( newmod, cmd )
+        ( menuUpdater newmod (Menu { menu | activeItem = Just it }) |>
+          (\nm ->
+            activeItem |>
+            Maybe.map
+              (\(MenuItem _ _ _ deactivate as oldit) ->
+                if oldit == it then nm else deactivate nm
+              ) |>
+            Maybe.withDefault nm
+          )
+        , Cmd.none
+        )
+      else ( newmod, Cmd.map (toMsg << ActionMsg it) cmd )
+
+    itemAndParams path =
+      menu.menuItems |>
+      List.filter (\(MenuItem url _ _ _) -> String.startsWith url path) |>
+      List.sortBy ((\(MenuItem url _ _ _) -> url) >> String.length >> negate) |>
+      List.head |>
+      Maybe.map
+        (\(MenuItem url _ _ _ as it) -> ( it, String.dropLeft (String.length url) path ))
+
+    urltostring path url =
+      path ++
+      (url.query |> Maybe.map ((++) "?") |> Maybe.withDefault "") ++
+      (url.fragment |> Maybe.map ((++) "#") |> Maybe.withDefault "")
   in
     case msg of
       UrlClickedMsg urlRequest ->
@@ -114,9 +130,12 @@ update toMsg msg (Menu ({ activate, action, deactivate, updater } as menu)) mode
             (model, Nav.load url)
 
       UrlChangedMsg url ->
-        activate (toMsg << ActionMsg url.path) url.path model |>
-        (maybeActivateItem url.path)
+        itemAndParams url.path |>
+        Maybe.map
+          (\((MenuItem _ _ activate _ as it), params) ->
+            maybeActivateItem it ( model, activate <| urltostring params url )
+          ) |>
+        Maybe.withDefault ( model, Cmd.none )
 
-      ActionMsg url itemmsg ->
-        action (toMsg << ActionMsg url) itemmsg model |>
-        (maybeActivateItem url)
+      ActionMsg it mmsg ->
+        updater mmsg model |> maybeActivateItem it
