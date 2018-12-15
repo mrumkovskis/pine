@@ -1,5 +1,5 @@
 module CmdChain exposing
-  ( Model, Msg, init, exec, update
+  ( Model, Msg, init, exec, update, isDone
   )
 
 
@@ -16,6 +16,7 @@ type alias ModelInternal msg model =
   { updater: msg -> model -> (model, Cmd msg)
   , modelUpdater: model -> Model msg model -> model
   , cmdChain: List (Cmd msg)
+  , done: Bool
   }
 
 
@@ -29,7 +30,11 @@ type alias Tomsg msg = Msg msg -> msg
 
 init: (msg -> model -> (model, Cmd msg)) -> (model -> Model msg model -> model) -> Model msg model
 init updater modelUpdater =
-  Model <| ModelInternal updater modelUpdater []
+  Model <| ModelInternal updater modelUpdater [] False
+
+
+isDone: Model msg model -> Bool
+isDone (Model { done }) = done
 
 
 exec: Tomsg msg -> List (Cmd msg) -> Cmd msg
@@ -44,9 +49,15 @@ update toMsg msg (Model ({ updater, modelUpdater, cmdChain } as cmodel)) model =
   case msg of
     ExecMsg cmds ->
       ( List.tail cmds |>
-        Maybe.map (\rest -> modelUpdater model (Model { cmodel | cmdChain = rest})) |>
-        Maybe.withDefault model
+        Maybe.map (\rest -> { cmodel | cmdChain = rest}) |>
+        Maybe.withDefault cmodel
       , List.head cmds |> Maybe.withDefault Cmd.none
+      ) |>
+      (\r ->
+        Tuple.mapFirst
+          (\m -> modelUpdater model <| Model { m | done = Tuple.second r == Cmd.none }
+          )
+          r
       )
 
     DoNextMsg nmsg ->
