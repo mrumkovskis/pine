@@ -39,9 +39,7 @@ isDone (Model { done }) = done
 
 exec: Tomsg msg -> List (Cmd msg) -> Cmd msg
 exec toMsg cmds =
-  Task.perform
-    (toMsg << ExecMsg) <|
-    Task.succeed <| List.map (Cmd.map (toMsg << DoNextMsg)) cmds
+  Task.perform (toMsg << ExecMsg) <| Task.succeed <| cmds
 
 
 update: Tomsg msg -> Msg msg -> Model msg model -> model -> (model, Cmd msg)
@@ -51,14 +49,11 @@ update toMsg msg (Model ({ updater, modelUpdater, cmdChain } as cmodel)) model =
       ( List.tail cmds |>
         Maybe.map (\rest -> { cmodel | cmdChain = rest}) |>
         Maybe.withDefault cmodel
-      , List.head cmds |> Maybe.withDefault Cmd.none
+      , List.head cmds |>
+        Maybe.map (Cmd.map (toMsg << DoNextMsg)) |>
+        Maybe.withDefault Cmd.none
       ) |>
-      (\r ->
-        Tuple.mapFirst
-          (\m -> modelUpdater model <| Model { m | done = Tuple.second r == Cmd.none }
-          )
-          r
-      )
+      (\(cm, cmd) -> ( modelUpdater model <| Model { cm | done = cmd == Cmd.none }, cmd ))
 
     DoNextMsg nmsg ->
       updater nmsg model |>
