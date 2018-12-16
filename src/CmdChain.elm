@@ -39,7 +39,7 @@ isDone (Model { done }) = done
 
 exec: Tomsg msg -> List (Cmd msg) -> Cmd msg
 exec toMsg cmds =
-  Task.perform (toMsg << ExecMsg) <| Task.succeed <| cmds
+  Task.perform (toMsg << ExecMsg) <| Task.succeed cmds
 
 
 update: Tomsg msg -> Msg msg -> Model msg model -> model -> (model, Cmd msg)
@@ -61,5 +61,5 @@ update toMsg msg (Model ({ updater, modelUpdater, cmdChain } as cmodel)) model =
         (\cmd ->
           if cmd == Cmd.none then
             Task.perform (toMsg << ExecMsg) <| Task.succeed cmdChain
-            else Cmd.map (toMsg << DoNextMsg) cmd
+          else Cmd.map (toMsg << DoNextMsg) cmd
         )
