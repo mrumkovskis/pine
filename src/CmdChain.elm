@@ -1,5 +1,5 @@
 module CmdChain exposing
-  ( Model, Msg, init, exec, update, isDone
+  ( Model, Msg, Tomsg, init, exec, update, isDone
   )
 
 
