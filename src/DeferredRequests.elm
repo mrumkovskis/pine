@@ -1,6 +1,6 @@
 module DeferredRequests exposing
   ( DeferredRequest, DeferredStatus (..), Tomsg, Model, Msg, Subscription, Config
-  , init, update, subscribeCmd, maybeSubscribeCmd, maybeProcessHttpError
+  , init, decoder, update, subscribeCmd, askCmd, subscribeOrAskCmd, onHttpErrorCmd
   , wsSubscriptions, requests, subscriptions
   )
 
@@ -23,7 +23,6 @@ module DeferredRequests exposing
 
 
 import Utils exposing (uncurry)
-import Ask
 
 import Json.Decode as JD
 import Dict exposing (Dict)
@@ -49,6 +48,9 @@ type DeferredStatus
   | EXE
 
 
+type alias DeferredHeader = (String, String)
+
+
 {-| Msg constructor type alias
 -}
 type alias Tomsg msg = Msg msg -> msg
@@ -59,20 +61,22 @@ type alias Tomsg msg = Msg msg -> msg
 type alias Subscription msg = (Result Http.Error JD.Value) -> msg
 
 
-type alias Config msg =
+type alias DeferredQuestion msg = String -> DeferredHeader -> msg
+
+
+type alias Config =
   { deferredResultBaseUri: String
   , wsNotificationUri: String
-  , deferredHeader: String
-  , defaultTimeout: String
+  , deferredHeader: DeferredHeader
   , isTimeoutErr: String -> Bool
   , timeoutQuestion: String
-  , toMessagemsg: Ask.Tomsg msg
+  , decoder: JD.Decoder String
   }
 
 
 {-| Model
 -}
-type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription msg)) (Config msg)
+type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription msg)) Config
 
 
 {-| Messages. Sent to update deferred request statuses and subscribe to deferred results.
@@ -80,7 +84,9 @@ type Model msg = Model (Dict String DeferredRequest) (Dict String (Subscription 
 type Msg msg
   = UpdateMsg String
   | SubscribeMsg String (Subscription msg)
-  | DeferredMsg (Ask.Msg msg)
+  | MaybeSubscribeMsg String (Subscription msg) (Bool -> msg)
+  | MaybeAskMsg String (DeferredQuestion msg) (Bool -> msg)
+  | MaybeSubscribeOrAskMsg String (Subscription msg) (DeferredQuestion msg) (Bool -> msg)
 
 
 {-| Creates model. First argument specifies base uri where to get ready results
@@ -89,9 +95,13 @@ uri of request execution progress. Third is deferred http header name like `x-de
 Fourth is defaultTimeout like `180s`. Fifth - question to display for user to ask whether redo request with
 deferred header.
 -}
-init: Config msg -> Model msg
+init: Config -> Model msg
 init config =
   Model Dict.empty Dict.empty config
+
+
+decoder: JD.Decoder String
+decoder = JD.field "deferred" JD.string
 
 
 {-| Get active requests. Key is request id.
@@ -106,37 +116,40 @@ subscriptions: Model msg -> List String
 subscriptions (Model _ s _) = Dict.keys s
 
 
-{-| Subscribe to deferred result. Subscription message is sent
-when result is ready (OK or ERR).
--}
-subscribeCmd: Tomsg msg -> Subscription msg -> String -> Cmd msg
-subscribeCmd toMsg subscription deferredRequestId =
-  Task.perform toMsg <| Task.succeed <| SubscribeMsg deferredRequestId subscription
-
-
 {-| Maybe subscribe to deferred result. Subscription is successful if
 third argument `deferredResponse` corresponds following json pattern:
 
     `{"deferred":"w4OIXzaWt2437gZ1fqxMsFAHXVA"}`
 -}
-maybeSubscribeCmd: Tomsg msg -> Subscription msg -> String -> Maybe (Cmd msg)
-maybeSubscribeCmd toMsg subscription deferredResponse =
-  let
-    decoder = JD.field "deferred" JD.string
-  in
-    (Result.toMaybe <| JD.decodeString decoder deferredResponse) |>
-    (Maybe.map <| subscribeCmd toMsg subscription)
+subscribeCmd: Tomsg msg -> Subscription msg -> String -> (Bool -> msg) -> Cmd msg
+subscribeCmd toMsg subscription deferredResponse toResmsg =
+  Task.perform toMsg <|
+    Task.succeed <| MaybeSubscribeMsg deferredResponse subscription toResmsg
 
 
-{-| Typically is called from application main module upon receivend `Ask.Deferred` message -}
-maybeProcessHttpError: Tomsg msg -> Ask.Msg msg -> Maybe (Cmd msg)
-maybeProcessHttpError toMsg deferredAsk =
-  case deferredAsk of
-    (Ask.Deferred _ _ _ _ as msg) ->
-      Just <| Task.perform (toMsg << DeferredMsg) <|
-        Task.succeed  msg
+askCmd: Tomsg msg -> String -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
+askCmd toMsg deferredResponse toAskmsg toResmsg =
+  Task.perform toMsg <|
+    Task.succeed <| MaybeAskMsg deferredResponse toAskmsg toResmsg
 
-    _ -> Nothing
+
+subscribeOrAskCmd: Tomsg msg -> Subscription msg -> String -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
+subscribeOrAskCmd toMsg subscription deferredResponse toAskmsg toResmsg =
+  Task.perform toMsg <|
+    Task.succeed <| MaybeSubscribeOrAskMsg deferredResponse subscription toAskmsg toResmsg
+
+
+onHttpErrorCmd: Tomsg msg -> Subscription msg -> Http.Error -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
+onHttpErrorCmd toMsg subscription error toAskmsg toResmsg =
+  case error of
+    Http.BadPayload _ response ->
+      subscribeOrAskCmd toMsg subscription response.body toAskmsg toResmsg
+
+    Http.BadStatus response ->
+      askCmd toMsg response.body toAskmsg toResmsg
+
+    err ->
+      Task.perform toResmsg <| Task.succeed False
 
 
 {-| Model update.
@@ -200,6 +213,35 @@ update toMsg msg (Model reqs subs conf as model) =
       Maybe.withDefault
         ( Model reqs (Dict.insert id toSubMsg subs) conf, Cmd.none ) -- insert subscription
 
+    resultCmd toResmsg res =
+      Task.perform toResmsg <| Task.succeed res
+
+    maybeSubscribeCmd subscr deferredResponse toResmsg =
+      JD.decodeString conf.decoder deferredResponse |>
+      Result.map
+        (\did ->
+          Cmd.batch
+            [ resultCmd toResmsg True
+            , Task.perform toMsg <| Task.succeed <| SubscribeMsg did subscr
+            ]
+        )
+
+    maybeAskCmd deferredResponse toAskmsg toResmsg =
+      if conf.isTimeoutErr deferredResponse then
+        Ok <|
+          Cmd.batch
+            [ resultCmd toResmsg True
+            , Task.perform identity <|
+                Task.succeed <| toAskmsg conf.timeoutQuestion conf.deferredHeader
+            ]
+      else Err <| "Not timeout response: " ++ deferredResponse
+
+    maybeSubscribeOrAsk subscr deferredResponse toAskmsg toResmsg =
+      case maybeSubscribeCmd subscr deferredResponse toResmsg of
+        Ok r -> Ok r
+
+        Err _ ->
+          maybeAskCmd deferredResponse toAskmsg toResmsg
   in
     case msg of
       UpdateMsg json ->
@@ -212,44 +254,23 @@ update toMsg msg (Model reqs subs conf as model) =
       SubscribeMsg id toSubMsg ->
         processSubscription id toSubMsg
 
-      DeferredMsg askMsg ->
-        let
-           realTimeout timeout =
-             if String.isEmpty timeout then conf.defaultTimeout else timeout
+      MaybeSubscribeMsg response subscr toResmsg ->
+        ( same
+        , maybeSubscribeCmd subscr response toResmsg |>
+          Result.withDefault (resultCmd toResmsg False)
+        )
 
-           subscribeOrAskOrErr timeout subscription reqConstr resp err =
-             maybeSubscribeCmd toMsg subscription resp |>
-             Maybe.withDefault (askOrErr timeout reqConstr resp err)
+      MaybeAskMsg response toAskmsg toResmsg ->
+        ( same
+        , maybeAskCmd response toAskmsg toResmsg |>
+          Result.withDefault (resultCmd toResmsg False)
+        )
 
-           askOrErr timeout reqConstr resp err =
-             if conf.isTimeoutErr resp then
-               let
-                  timeoutQuestion =
-                    if String.isEmpty conf.timeoutQuestion then
-                      "Timeout occurred. Try deferred request?"
-                    else conf.timeoutQuestion
-               in
-                 Ask.ask conf.toMessagemsg timeoutQuestion <|
-                   Task.perform reqConstr <| Task.succeed (conf.deferredHeader, timeout)
-             else
-               Ask.errorOrUnauthorized conf.toMessagemsg err
-        in
-          case askMsg of
-            Ask.Deferred timeout subscription reqConstr err ->
-              case err of
-                Http.BadPayload _ response ->
-                  ( model, subscribeOrAskOrErr timeout subscription reqConstr response.body err )
-
-                Http.BadStatus response ->
-                  ( model, askOrErr timeout reqConstr response.body err )
-
-                error ->
-                  ( model
-                  , Ask.error conf.toMessagemsg <| Utils.httpErrorToString error
-                  )
-
-            _ ->
-              ( model, Cmd.none )
+      MaybeSubscribeOrAskMsg response subscr toAskmsg toResmsg ->
+        ( same
+        , maybeSubscribeOrAsk subscr response toAskmsg toResmsg |>
+          Result.withDefault (resultCmd toResmsg False)
+        )
 
 
 {-| Subscription to web socket deferred request notifications.

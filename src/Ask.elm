@@ -1,7 +1,7 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
-  , ask, info, warn, error, unauthorized
-  , errorOrUnauthorized, subscribeOrAskDeferredOrError, text
+  , askmsg, ask, info, warn, error, unauthorized
+  , errorOrUnauthorized, text
   )
 
 
@@ -30,23 +30,23 @@ type MsgType
 -}
 type Msg msg
   = Message MsgType String
-  | Question String (Cmd msg)
-  | Deferred  --TODO refactor and remove
-      String --timeout
-      ((Result Http.Error JD.Value) -> msg) -- subscription
-      ((String, String) -> msg) -- request constructor with deferred header
-      Http.Error -- http error to be checked for deferred response or deferred timeout
+  | Question String (Cmd msg) (Maybe(Cmd msg))
 
 
 {-| Message constructor -}
 type alias Tomsg msg = Msg msg -> msg
 
 
+askmsg: Tomsg msg -> String -> Cmd msg -> Maybe (Cmd msg) -> msg
+askmsg toMsg question cmdYes maybeCmdNo =
+  toMsg <| Question question cmdYes maybeCmdNo
+
+
 {-| Asks `Question`. Question contains command to be performed on positive answer.
 -}
-ask: Tomsg msg -> String -> Cmd msg -> Cmd msg
-ask toMsg question cmd =
-  Task.perform toMsg <| Task.succeed <| Question question cmd
+ask: Tomsg msg -> String -> Cmd msg -> Maybe (Cmd msg) -> Cmd msg
+ask toMsg question cmdYes maybeCmdNo =
+  Task.perform toMsg <| Task.succeed <| Question question cmdYes maybeCmdNo
 
 
 {-| Sends `Info` message
@@ -91,19 +91,6 @@ errorOrUnauthorized toMsg err =
       error toMsg <| Utils.httpErrorToString x
 
 
-{-| Sends Deferred message, which hopefully arrives to `DeferredRequests`.
-Typically is called from `JsonModel` or any module using mojoz metadata based rest service. -}
-subscribeOrAskDeferredOrError:
-  Tomsg msg ->
-  String ->
-  ((Result Http.Error JD.Value) -> msg) ->
-  ((String, String) -> msg) ->
-  Http.Error ->
-  Cmd msg
-subscribeOrAskDeferredOrError toMsg timeout subscription deferredRequestConstructor err =
-  Task.perform (toMsg << Deferred timeout subscription deferredRequestConstructor) <| Task.succeed err
-
-
 {-| Retrieves message text.
 -}
 text: Msg msg -> String
@@ -111,9 +98,7 @@ text msg =
   case msg of
     Message _ txt -> txt
 
-    Question txt _ -> txt
-
-    Deferred _ _ _ _ -> "<deferred request>"
+    Question txt _ _ -> txt
 
 
 msgInternal: Tomsg msg -> MsgType -> String -> Cmd msg

@@ -248,6 +248,8 @@ type Msg msg value
   | SaveCmdMsg Bool SearchParams
   | CreateCmdMsg Bool SearchParams
   | DeleteCmdMsg Bool SearchParams
+  | FinishMsg Progress
+  | DeferredMsg Progress Http.Error Bool
 
 
 {-| Json model message constructor -}
@@ -1147,46 +1149,33 @@ update toMsg msg (Model modelData modelConf as same) =
             )
           )
 
-    maybeSubscribeDeferred dataMsgConstr integrity deferredResponse =
-      (if hasIntegrity integrity then Just deferredResponse else Nothing) |>
-      Maybe.map2
-        ((Utils.flip DR.maybeSubscribeCmd) (toMsg << dataMsgConstr))
-        (Maybe.map .toMsg modelConf.deferredConfig)
-      |> Maybe.andThen identity
-      |> Maybe.map (Tuple.pair same)
+    processDeferredOrError integrity subscription yes err doneProgress =
+      if hasIntegrity integrity then
+        modelConf.deferredConfig |>
+        Maybe.map .toMsg |>
+        Maybe.map
+          (\toDeferredmsg ->
+            ( same
+            , DR.onHttpErrorCmd
+                toDeferredmsg
+                (toMsg << subscription)
+                err
+                (\question defheader ->
+                  let
+                    yescmd =
+                      Task.perform (toMsg << yes) <| Task.succeed <| Just defheader
 
-    maybeAskDeferred cmdMsgConstr integrity response pr =
-      let
-        askCmd toAskMsg header =
-          Ask.ask toAskMsg "Timeout occurred. Try deferred request?" <|
-            Task.perform toMsg <| Task.succeed <| cmdMsgConstr (Just header)
-      in
-        (if hasIntegrity integrity then Just 1 else Nothing) |>
-        Maybe.andThen (always modelConf.deferredConfig) |>
-        Maybe.andThen .timeoutDeferredConfig |>
-        Maybe.andThen
-          (\{ deferredHeaderIfTimeout } ->
-            deferredHeaderIfTimeout response |>
-            Maybe.map (askCmd modelConf.toMessagemsg)
+                    nocmd =
+                      Task.perform (toMsg << FinishMsg) <| Task.succeed fetchDone
+                  in
+                    Ask.askmsg modelConf.toMessagemsg question yescmd <| Just nocmd
+                )
+                (toMsg << DeferredMsg doneProgress err)
+            )
           ) |>
-        Maybe.map (Tuple.pair (withProgress pr same))
-
-    maybeSubscribeOrAskDeferred -- withDefault method is not used because we do not need to print default error every time
-      dataMsgConstr cmdMsgConstr integrity response pr err =
-      case maybeSubscribeDeferred dataMsgConstr integrity response of
-        Just resp -> resp
-
-        Nothing ->
-          case maybeAskDeferred cmdMsgConstr integrity response pr of
-            Just resp -> resp
-
-            Nothing -> errorResponse pr err
-
-    maybeAskDeferredOrError cmdMsgConstr integrity response pr err =
-      case maybeAskDeferred cmdMsgConstr integrity response pr of
-        Just resp -> resp
-
-        Nothing -> errorResponse pr err
+        Maybe.withDefault (errorResponse doneProgress err)
+      else
+        errorResponse doneProgress err
 
     queueCmd cmd =
       ( Model modelData { modelConf | queuedCmd = Just cmd }
@@ -1268,44 +1257,22 @@ update toMsg msg (Model modelData modelConf as same) =
           , maybeUnqueueCmd same
           )
 
-      DataMsg name restart searchParams (Err ((Http.BadPayload _ response) as err)) ->
-        maybeSubscribeOrAskDeferred
+      DataMsg name restart searchParams (Err err) ->
+        processDeferredOrError
+          (name, isFetchProgress)
           (DataMsg name restart searchParams <<
             mapJsonHttpResult (modelConf.decoder modelConf.metadata modelConf.typeName))
           (DataCmdMsg True restart searchParams)
-          (name, isFetchProgress)
-          response.body
-          fetchDone
           err
+          fetchDone
 
-      CountMsg name searchParams (Err ((Http.BadPayload _ response) as err)) ->
-        maybeSubscribeOrAskDeferred
+      CountMsg name searchParams (Err err) ->
+        processDeferredOrError
+          (name, isCountProgress)
           (CountMsg name searchParams << mapJsonHttpResult modelConf.countDecoder)
           (CountCmdMsg True searchParams)
-          (name, isCountProgress)
-          response.body
+          err
           countDone
-          err
-
-      DataMsg name restart searchParams (Err ((Http.BadStatus response) as err)) ->
-        maybeAskDeferredOrError
-          (DataCmdMsg True restart searchParams)
-          (name, isFetchProgress)
-          response.body
-          fetchDone
-          err
-
-      CountMsg name searchParams (Err ((Http.BadStatus response) as err)) ->
-        maybeAskDeferredOrError
-          (CountCmdMsg True searchParams)
-          (name, isCountProgress)
-          response.body
-          countDone
-          err
-
-      DataMsg _ _ _ (Err err) -> errorResponse fetchDone err
-
-      CountMsg _ _ (Err err) -> errorResponse countDone err
 
       DeleteMsg _ _ (Err err) -> errorResponse fetchDone err
 
@@ -1454,6 +1421,15 @@ update toMsg msg (Model modelData modelConf as same) =
               always <| Task.perform toMsg <| Task.succeed <| DeleteCmdMsg False searchParams
           in
             ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+
+      FinishMsg doneProgress ->
+        ( same |> withProgress doneProgress, Cmd.none )
+
+      DeferredMsg doneProgress err success ->
+        if success then
+          ( same, Cmd.none ) -- do nothing since result should arrive from deferred subscription or request with deferred header
+        else
+          errorResponse doneProgress err
 
 
 {- private function -}

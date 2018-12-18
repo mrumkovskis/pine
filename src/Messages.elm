@@ -148,15 +148,25 @@ update toMsg message (Messages msgs) =
       Maybe.andThen
         (\m ->
           case m of
-            Ask.Question _ cmd ->
-              Just <| ( removeMsg msg, cmd ) -- do command associated with Ask message
+            Ask.Question _ cmd _ ->
+              Just <| ( removeMsg msg, cmd ) -- do yes command associated with Ask message
 
             _ -> Nothing
         ) |>
       Maybe.withDefault (Tuple.pair (removeMsg msg) Cmd.none)
 
     No msg ->
-      Tuple.pair (removeMsg msg) Cmd.none
+      msgs.messages |>
+      Dict.get msg |>
+      Maybe.andThen
+        (\m ->
+          case m of
+            Ask.Question _ _ maybeCmd ->
+              Just <| ( removeMsg msg, maybeCmd |> Maybe.withDefault Cmd.none ) -- do no command associated with Ask message
+
+            _ -> Nothing
+        ) |>
+      Maybe.withDefault (Tuple.pair (removeMsg msg) Cmd.none)
 
     Clear ->
       Tuple.pair (newModel Dict.empty) Cmd.none
