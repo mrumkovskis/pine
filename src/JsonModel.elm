@@ -1204,7 +1204,7 @@ update toMsg msg (Model modelData modelConf as same) =
               mapJsonHttpResult
                 (modelConf.decoder modelConf.metadata modelConf.typeName)
           )
-          (DataCmdMsg True restart searchParams)
+          (DataCmdMsg False restart searchParams)
           err
           fetchDone
 
@@ -1214,7 +1214,7 @@ update toMsg msg (Model modelData modelConf as same) =
           (CountMsg name searchParams <<
             mapJsonHttpResult modelConf.countDecoder
           )
-          (CountCmdMsg True searchParams)
+          (CountCmdMsg False searchParams)
           err
           countDone
 
