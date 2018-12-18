@@ -1,7 +1,7 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
   , askmsg, ask, info, warn, error, unauthorized
-  , errorOrUnauthorized, text
+  , askToDeferredmsg, askToCmdChainmsg, errorOrUnauthorized, text
   )
 
 
@@ -11,6 +11,8 @@ module Ask exposing
 -}
 
 import Utils
+import DeferredRequests as DR exposing (Tomsg)
+import CmdChain exposing (Tomsg)
 
 import Task
 import Http
@@ -31,6 +33,8 @@ type MsgType
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg) (Maybe(Cmd msg))
+  | SubscribeToDeferredMsg (DR.Tomsg msg -> msg)
+  | SubscribeToCmdChainMsg (CmdChain.Tomsg msg -> msg)
 
 
 {-| Message constructor -}
@@ -72,6 +76,18 @@ unauthorized: Tomsg msg -> String -> Cmd msg
 unauthorized toMsg message = msgInternal toMsg Unauthorized message
 
 
+{-| Ask for `DeferredRequests.Msg` constructor -}
+askToDeferredmsg: Tomsg msg -> (DR.Tomsg msg -> msg) -> Cmd msg
+askToDeferredmsg toMsg subscription =
+  Task.perform (toMsg << SubscribeToDeferredMsg) <| Task.succeed subscription
+
+
+{-| Ask for `CmdChain.Msg` constructor -}
+askToCmdChainmsg: Tomsg msg -> (CmdChain.Tomsg msg -> msg) -> Cmd msg
+askToCmdChainmsg toMsg subscription =
+  Task.perform (toMsg << SubscribeToCmdChainMsg) <| Task.succeed subscription
+
+
 {-| Sends http `Error` or `Unauthorized` on http message -}
 errorOrUnauthorized: Tomsg msg -> Http.Error -> Cmd msg
 errorOrUnauthorized toMsg err =
@@ -100,6 +116,7 @@ text msg =
 
     Question txt _ _ -> txt
 
+    _ -> ""
 
 msgInternal: Tomsg msg -> MsgType -> String -> Cmd msg
 msgInternal toMsg msgType message =

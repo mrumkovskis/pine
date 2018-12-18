@@ -15,7 +15,6 @@ import Http
 
 import JsonModel as JM
 import Ask
-import DeferredRequests as DR
 import Select
 import Utils
 
@@ -109,14 +108,8 @@ initAddress address =
 {-| Initialize [`Select`](Select)
 backed by [`addresses`](https://github.com/mrumkovskis/addresses) service.
 -}
-init:
-  String ->
-  Ask.Tomsg msg ->
-  DR.Tomsg msg ->
-  String ->
-  (String -> msg) ->
-  Select.SelectModel msg String
-init uri toMessagemsg toDeferredmsg search toAddressmsg =
+init: String -> Ask.Tomsg msg -> String -> (String -> msg) -> Select.SelectModel msg String
+init uri toMessagemsg search toAddressmsg =
   Select.init
     (JM.initList
       "/metadata"
@@ -124,8 +117,7 @@ init uri toMessagemsg toDeferredmsg search toAddressmsg =
       "address"
       (JD.field "address" JD.string)
       (always JE.null)
-      toMessagemsg |>
-      JM.defaultDeferredSettings toDeferredmsg "20s"
+      toMessagemsg
     )
     "search"
     search

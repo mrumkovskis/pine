@@ -6,7 +6,7 @@ module JsonModel exposing
   -- initialization, configuration
   , initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder
   , countBaseUri, pageSize, countDecoder, idParam, offsetLimitParams
-  , toDeferredMsg, deferredSettings, defaultDeferredSettings, dataFetcher, countFetcher
+  , enableDeferred, enableDeferredWithTimeout, dataFetcher, countFetcher
   -- data examination
   , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
@@ -116,15 +116,8 @@ type alias CountFetcher msg value =
   Tomsg msg value -> SearchParams -> Maybe DeferredHeader -> Model msg value -> Cmd msg
 
 
-type alias TimeoutDeferredConfig =
-  { deferredHeader: DeferredHeader
-  , deferredHeaderIfTimeout: String -> Maybe DeferredHeader
-  }
-
-
-type alias DeferredConfig msg =
-  { toMsg: DR.Tomsg msg
-  , timeoutDeferredConfig: Maybe TimeoutDeferredConfig
+type alias DeferredConfig =
+  { timeout: Maybe String
   }
 
 
@@ -162,7 +155,7 @@ type alias Config msg value =
   , metadataFetcher: String -> Cmd VM.Msg
   , dataFetcher: DataFetcher msg value
   , countFetcher: CountFetcher msg value
-  , deferredConfig: Maybe (DeferredConfig msg)
+  , deferredConfig: Maybe DeferredConfig
   , countBaseUri: String
   , countUri: SearchParams -> Model msg value -> String
   , countDecoder: JD.Decoder Int
@@ -248,8 +241,9 @@ type Msg msg value
   | SaveCmdMsg Bool SearchParams
   | CreateCmdMsg Bool SearchParams
   | DeleteCmdMsg Bool SearchParams
-  | FinishMsg Progress
-  | DeferredMsg Progress Http.Error Bool
+  | DoneMsg Progress
+  | DeferredSubscriptionMsg (DR.Tomsg msg -> Cmd msg) (DR.Tomsg msg)
+  | DeferredResponseMsg Progress Http.Error Bool
 
 
 {-| Json model message constructor -}
@@ -592,70 +586,22 @@ offsetLimitParams offset limit (Model d c) =
   Model d { c | offsetParamName = offset, limitParamName = limit }
 
 
-{-| Enable sending messages to [`DeferredRequests`](DeferredRequests)
--}
-toDeferredMsg: DR.Tomsg msg -> Model msg value -> Model msg value
-toDeferredMsg toMsg (Model d c) =
-  Model d
-    { c |
-      deferredConfig =
-        case c.deferredConfig of
-          Just dc -> Just { dc | toMsg = toMsg }
+{-| Configure deferred requests [`DeferredRequests`](DeferredRequests)
 
-          Nothing -> Just <| DeferredConfig toMsg Nothing
-    }
+    enableDeferred (Just "180s") model
+-}
+enableDeferred: Model msg value -> Model msg value
+enableDeferred (Model d c) =
+  Model d { c | deferredConfig = Just <| DeferredConfig Nothing }
 
 
 {-| Configure deferred requests [`DeferredRequests`](DeferredRequests)
 
-    deferredSettings toDeferredMsg ("X-Deferred", "180s") maybeDeferredHeaderOnTimeout model
+    enableDeferred (Just "180s") model
 -}
-deferredSettings:
-  DR.Tomsg msg ->
-  DeferredHeader ->
-  (String -> Maybe DeferredHeader) ->
-  Model msg value ->
-  Model msg value
-deferredSettings toDeferMsg deferredHeader deferredHeaderIfTimeout (Model d c) =
-  let
-    newDefConf =
-      DeferredConfig
-        toDeferMsg
-        (Just <| TimeoutDeferredConfig deferredHeader deferredHeaderIfTimeout)
-  in
-    Model d { c | deferredConfig = Just newDefConf }
-
-
-{-| Helper function for deferred requests [`DeferredRequests`](DeferredRequests).
-
-    defaultDeferredSettings toDeferredmsg timeout model
-
-    maybeDeferredHeaderIfTimeout function is following:
-    (\msg ->
-      if String.contains
-          "ERROR: canceling statement due to user request"
-          msg
-      then
-        Just ("X-Deferred", timeout)
-      else
-        Nothing
-    )
--}
-defaultDeferredSettings: DR.Tomsg msg -> String -> Model msg value -> Model msg value
-defaultDeferredSettings toDeferredmsg timeout model =
-  deferredSettings
-    toDeferredmsg
-    ("X-Deferred", timeout)
-    (\msg ->
-      if String.contains
-          "ERROR: canceling statement due to user request"
-          msg
-      then
-        Just ("X-Deferred", timeout)
-      else
-        Nothing
-    )
-    model
+enableDeferredWithTimeout: String -> Model msg value -> Model msg value
+enableDeferredWithTimeout timeout (Model d c) =
+  Model d { c | deferredConfig = Just <| DeferredConfig <| Just timeout }
 
 
 {-| Set data fetcher
@@ -932,29 +878,19 @@ fetchFromStart toMsg searchParams =
   Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams Nothing
 
 
-{-| Fetch view data with deferred header set. See [`DeferredConfig`](#DeferredConfig)
+{-| Fetch view data with deferred header set.
 -}
-fetchDeferred: Tomsg msg value -> SearchParams -> DeferredConfig msg -> Cmd msg
-fetchDeferred toMsg searchParams deferredConfig =
-  deferredConfig.timeoutDeferredConfig |>
-  Maybe.map
-    (\dc ->
-      Task.perform toMsg <| Task.succeed <| DataCmdMsg True False searchParams <| Just dc.deferredHeader
-    ) |>
-  Maybe.withDefault Cmd.none
+fetchDeferred: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
+fetchDeferred toMsg searchParams deferredHeader =
+  Task.perform toMsg <| Task.succeed <| DataCmdMsg True False searchParams <| Just deferredHeader
 
 
 {-| Fetch view data with deferred header set starting from first record.
-    See [`DeferredConfig`](#DeferredConfig). Relevant for [`ListModel`](#ListModel)
+    Relevant for [`ListModel`](#ListModel)
 -}
-fetchDeferredFromStart: Tomsg msg value -> SearchParams -> DeferredConfig msg -> Cmd msg
-fetchDeferredFromStart toMsg searchParams deferredConfig =
-  deferredConfig.timeoutDeferredConfig |>
-  Maybe.map
-    (\dc ->
-      Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams <| Just dc.deferredHeader
-    ) |>
-  Maybe.withDefault Cmd.none
+fetchDeferredFromStart: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
+fetchDeferredFromStart toMsg searchParams deferredHeader =
+  Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams <| Just deferredHeader
 
 
 {-| Low level function. Http data fetcher. This can be set as a dataFetcher function in model's configuration -}
@@ -1020,14 +956,9 @@ fetchCount toMsg searchParams =
 {-| Fetch record count with deferred header set.
     Command is available if [`countBaseUri`](#countBaseUri) is configured.
 -}
-fetchCountDeferred: Tomsg msg value -> SearchParams -> DeferredConfig msg -> Cmd msg
-fetchCountDeferred toMsg searchParams deferredConfig =
-  deferredConfig.timeoutDeferredConfig |>
-  Maybe.map
-    (\dc ->
-      Task.perform toMsg <| Task.succeed <| CountCmdMsg True searchParams <| Just dc.deferredHeader
-    ) |>
-  Maybe.withDefault Cmd.none
+fetchCountDeferred: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
+fetchCountDeferred toMsg searchParams deferredHeader =
+  Task.perform toMsg <| Task.succeed <| CountCmdMsg True searchParams <| Just deferredHeader
 
 
 {-| Fetch view metadata.
@@ -1149,33 +1080,42 @@ update toMsg msg (Model modelData modelConf as same) =
             )
           )
 
-    processDeferredOrError integrity subscription yes err doneProgress =
-      if hasIntegrity integrity then
-        modelConf.deferredConfig |>
-        Maybe.map .toMsg |>
-        Maybe.map
-          (\toDeferredmsg ->
-            ( same
-            , DR.onHttpErrorCmd
-                toDeferredmsg
-                (toMsg << subscription)
-                err
-                (\question defheader ->
-                  let
-                    yescmd =
-                      Task.perform (toMsg << yes) <| Task.succeed <| Just defheader
+    maybeSubscribeOrAskDeferred integrity subscription yes err progressDone =
+      let
+        processDeferredOrError maybeTimeout toDeferredmsg =
+          DR.onHttpErrorCmd
+            toDeferredmsg
+            (toMsg << subscription)
+            err
+            (\question ((defhn, defhv) as defheader) ->
+              let
+                yescmd =
+                  Task.perform (toMsg << yes) <| Task.succeed <|
+                    ( maybeTimeout |>
+                      Maybe.map (\t -> (defhn, t)) |>
+                      Utils.orElse (Just defheader)
+                    )
 
-                    nocmd =
-                      Task.perform (toMsg << FinishMsg) <| Task.succeed fetchDone
-                  in
-                    Ask.askmsg modelConf.toMessagemsg question yescmd <| Just nocmd
-                )
-                (toMsg << DeferredMsg doneProgress err)
+                nocmd =
+                  Task.perform (toMsg << DoneMsg) <| Task.succeed progressDone
+              in
+                Ask.askmsg modelConf.toMessagemsg question yescmd <| Just nocmd
             )
-          ) |>
-        Maybe.withDefault (errorResponse doneProgress err)
-      else
-        errorResponse doneProgress err
+            (toMsg << DeferredResponseMsg progressDone err)
+      in
+        if hasIntegrity integrity then
+          modelConf.deferredConfig |>
+          Maybe.map
+            (\{ timeout } ->
+              ( same
+              , Ask.askToDeferredmsg
+                  modelConf.toMessagemsg <|
+                  toMsg << (DeferredSubscriptionMsg <| processDeferredOrError timeout)
+              )
+            ) |>
+          Maybe.withDefault (errorResponse progressDone err)
+        else
+          errorResponse progressDone err
 
     queueCmd cmd =
       ( Model modelData { modelConf | queuedCmd = Just cmd }
@@ -1258,18 +1198,22 @@ update toMsg msg (Model modelData modelConf as same) =
           )
 
       DataMsg name restart searchParams (Err err) ->
-        processDeferredOrError
+        maybeSubscribeOrAskDeferred
           (name, isFetchProgress)
-          (DataMsg name restart searchParams <<
-            mapJsonHttpResult (modelConf.decoder modelConf.metadata modelConf.typeName))
+          ( DataMsg name restart searchParams <<
+              mapJsonHttpResult
+                (modelConf.decoder modelConf.metadata modelConf.typeName)
+          )
           (DataCmdMsg True restart searchParams)
           err
           fetchDone
 
       CountMsg name searchParams (Err err) ->
-        processDeferredOrError
+        maybeSubscribeOrAskDeferred
           (name, isCountProgress)
-          (CountMsg name searchParams << mapJsonHttpResult modelConf.countDecoder)
+          (CountMsg name searchParams <<
+            mapJsonHttpResult modelConf.countDecoder
+          )
           (CountCmdMsg True searchParams)
           err
           countDone
@@ -1422,14 +1366,19 @@ update toMsg msg (Model modelData modelConf as same) =
           in
             ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
 
-      FinishMsg doneProgress ->
+      DoneMsg doneProgress ->
         ( same |> withProgress doneProgress, Cmd.none )
 
-      DeferredMsg doneProgress err success ->
+      DeferredSubscriptionMsg subscriptionCmd toDeferredmsg ->
+        ( same
+        , subscriptionCmd toDeferredmsg
+        )
+
+      DeferredResponseMsg doneProgressOnError err success ->
         if success then
           ( same, Cmd.none ) -- do nothing since result should arrive from deferred subscription or request with deferred header
         else
-          errorResponse doneProgress err
+          errorResponse doneProgressOnError err
 
 
 {- private function -}

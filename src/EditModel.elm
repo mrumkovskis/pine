@@ -30,7 +30,6 @@ module EditModel exposing
 
 import JsonModel as JM
 import Ask
-import DeferredRequests as DR
 import Select exposing (..)
 import Utils
 
@@ -71,7 +70,6 @@ type alias Formatter model = model -> String
 
 type alias SelectInitializer msg =
   Ask.Tomsg msg ->
-  DR.Tomsg msg ->
   String ->
   (String -> msg) ->
   SelectModel msg String
@@ -114,7 +112,6 @@ type alias EditModel msg model =
   , controllers: Dict String (Controller msg model)
   , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
-  , toDeferredmsg: DR.Tomsg msg
   --, validate: Tomsg msg model -> model -> (Result String model, Cmd msg)
   --, error: Maybe String
   , isSaving: Bool
@@ -149,8 +146,8 @@ type alias Tomsg msg model = (Msg msg model -> msg)
 
 {-| Initializes model
 -}
-init: JM.FormModel msg model -> List (key, Controller msg model) -> Ask.Tomsg msg -> DR.Tomsg msg -> EditModel msg model
-init model ctrlList toMessagemsg toDeferredmsg =
+init: JM.FormModel msg model -> List (key, Controller msg model) -> Ask.Tomsg msg  -> EditModel msg model
+init model ctrlList toMessagemsg =
   let
     controllers =
       ctrlList |>
@@ -169,7 +166,6 @@ init model ctrlList toMessagemsg toDeferredmsg =
       controllers
       inputs
       toMessagemsg
-      toDeferredmsg
       False
       False
       True
@@ -479,7 +475,6 @@ update toMsg msg ({ model, inputs, controllers } as same) =
               (\initializer ->
                 initializer
                   same.toMessagemsg
-                  same.toDeferredmsg
                   value
                   (toMsg << OnSelectMsg (Controller ctrl))
               )
