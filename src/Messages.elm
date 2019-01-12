@@ -1,6 +1,7 @@
 module Messages exposing
   ( Msg (..), Messages
-  , init, messages, add, remove, yes, no, clear, update
+  , init, messages
+  , add, remove, yes, no, clear, flags, update
   )
 
 
@@ -28,42 +29,44 @@ import Task
 
 {-| Messages storage
 -}
-type Messages msg =
-  Messages (MsgInternal msg)
+type Messages msg flags =
+  Messages (MsgInternal msg flags)
 
 
-type alias MsgInternal msg =
-  { messages: Dict String (Ask.Msg msg)
+type alias MsgInternal msg flags =
+  { messages: Dict String (Ask.Msg msg, flags)
+  , initFlags: flags
   }
 
 
 {-| Model update messages.
 -}
-type Msg msg
+type Msg msg flags
   = Add (Ask.Msg msg)
   | Remove String
   | Yes String
   | No String
+  | Flags String flags
   | Clear
 
 
-type alias Tomsg msg = (Msg msg -> msg)
+type alias Tomsg msg flags = (Msg msg flags -> msg)
 
 
 {-| Initialize empty message storage.
 -}
-init: Messages msg
-init =
-  Messages { messages = Dict.empty }
+init: flags -> Messages msg flags
+init initFlags =
+  Messages { messages = Dict.empty, initFlags = initFlags }
 
 
 {-| Gets all messages except unauthorized message
 -}
-messages: Messages msg -> List (Ask.Msg msg)
+messages: Messages msg flags -> List (Ask.Msg msg, flags)
 messages (Messages m) =
   Dict.values m.messages |>
   List.filter
-    (\msg ->
+    (\(msg, _) ->
       case msg of
         Ask.Message Ask.Unauthorized _ -> False
 
@@ -72,11 +75,11 @@ messages (Messages m) =
 
 
 {-| Gets unauthorized message -}
-unauthorized: Messages msg -> Maybe (Ask.Msg msg)
+unauthorized: Messages msg flags -> Maybe (Ask.Msg msg, flags)
 unauthorized (Messages m) =
   Dict.values m.messages |>
   List.filter
-    (\msg ->
+    (\(msg, _) ->
       case msg of
         Ask.Message Ask.Unauthorized _ -> True
 
@@ -87,14 +90,14 @@ unauthorized (Messages m) =
 
 {-| Add message.
 -}
-add: Tomsg msg -> Ask.Msg msg -> Cmd msg
+add: Tomsg msg flags -> Ask.Msg msg -> Cmd msg
 add toMsg msg =
   Task.perform (toMsg << Add) <| Task.succeed msg
 
 
 {-| Remove message.
 -}
-remove: Tomsg msg -> String -> Cmd msg
+remove: Tomsg msg flags -> String -> Cmd msg
 remove toMsg msg =
   msgInternal toMsg Remove msg
 
@@ -102,32 +105,38 @@ remove toMsg msg =
 {-| Answer yes to [`Question`](Ask#Msg) message.
 This triggers associated command execution.
 -}
-yes: Tomsg msg -> String -> Cmd msg
+yes: Tomsg msg flags -> String -> Cmd msg
 yes toMsg msg =
   msgInternal toMsg Yes msg
 
 
 {-| Answer no to [`Question`](Ask#Msg) message.
 -}
-no: Tomsg msg -> String -> Cmd msg
+no: Tomsg msg flags -> String -> Cmd msg
 no toMsg msg =
   msgInternal toMsg No msg
 
 
 {-| Remove all messages
 -}
-clear: Tomsg msg -> Cmd msg
+clear: Tomsg msg flags -> Cmd msg
 clear toMsg =
   Task.perform toMsg <| Task.succeed Clear
 
 
-msgInternal: Tomsg msg -> (String -> Msg msg) -> String -> Cmd msg
+{-| Updates messages flags -}
+flags: Tomsg msg flags -> String -> flags -> Cmd msg
+flags toMsg msg msgflags =
+  Task.perform (toMsg << Flags msg) <| Task.succeed msgflags
+
+
+msgInternal: Tomsg msg flags -> (String -> Msg msg flags) -> String -> Cmd msg
 msgInternal toMsg stringTomsg msg =
   Task.perform (toMsg << stringTomsg) <| Task.succeed msg
 
 
 {-| Model update -}
-update: Tomsg msg -> Msg msg -> Messages msg -> (Messages msg, Cmd msg)
+update: Tomsg msg flags -> Msg msg flags -> Messages msg flags -> (Messages msg flags, Cmd msg)
 update toMsg message (Messages msgs) =
   let
     newModel newMessages = Messages { msgs | messages = newMessages }
@@ -136,7 +145,7 @@ update toMsg message (Messages msgs) =
   in case message of
     Add msg ->
       Tuple.pair
-        (newModel <| Dict.insert (Ask.text msg) msg msgs.messages)
+        (newModel <| Dict.insert (Ask.text msg) (msg, msgs.initFlags) msgs.messages)
         Cmd.none
 
     Remove msg ->
@@ -146,7 +155,7 @@ update toMsg message (Messages msgs) =
       msgs.messages |>
       Dict.get msg |>
       Maybe.andThen
-        (\m ->
+        (\(m, _) ->
           case m of
             Ask.Question _ cmd _ ->
               Just <| ( removeMsg msg, cmd ) -- do yes command associated with Ask message
@@ -159,7 +168,7 @@ update toMsg message (Messages msgs) =
       msgs.messages |>
       Dict.get msg |>
       Maybe.andThen
-        (\m ->
+        (\(m, _) ->
           case m of
             Ask.Question _ _ maybeCmd ->
               Just <| ( removeMsg msg, maybeCmd |> Maybe.withDefault Cmd.none ) -- do no command associated with Ask message
@@ -167,6 +176,11 @@ update toMsg message (Messages msgs) =
             _ -> Nothing
         ) |>
       Maybe.withDefault (Tuple.pair (removeMsg msg) Cmd.none)
+
+    Flags msg msgflags ->
+      ( newModel <| Dict.update msg (Maybe.map (\(m, _) -> (m, msgflags))) msgs.messages
+      , Cmd.none
+      )
 
     Clear ->
       Tuple.pair (newModel Dict.empty) Cmd.none
