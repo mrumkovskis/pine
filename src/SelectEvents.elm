@@ -34,4 +34,7 @@ onNavigation toMsg =
 
     decoder = keyCode |> JD.andThen mapper |> JD.map toMsg
   in
-    on "keydown" decoder
+    -- on "keydown" decoder, use preventDefaultOn to stop form submission
+    preventDefaultOn
+      "keydown"
+      (JD.map (\k -> (k, True)) decoder)
