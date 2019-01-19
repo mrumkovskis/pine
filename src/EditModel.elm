@@ -287,7 +287,8 @@ controller updateModel formatter selectInitializer validator =
     }
 
 
-{-| Gets input from model for rendering
+{-| Gets input from model for rendering. Function furnishes input with attributes
+    using `InputAttrs`
 -}
 inp: key -> InputAttrs msg model -> EditModel msg model -> Maybe (Input msg)
 inp key (staticAttrs, inputAttrs, mouseSelectAttrs) { controllers, inputs } =
