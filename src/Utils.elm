@@ -1,7 +1,7 @@
 module Utils exposing
   ( zip, at, find, set, orElse, httpQuery, matchIdx, strOrEmpty
   , optField, emptyEncoder, noBreakSpace, flip, curry, uncurry, httpErrorToString
-  , searchParams, toList
+  , searchParams, toList, styles
   )
 
 
@@ -17,6 +17,8 @@ import Dict
 import Json.Decode as JD
 import Json.Encode as JE
 import Url.Builder as UB
+import Html
+import Html.Attributes as Attributes
 
 import Debug exposing (log, toString)
 
@@ -229,3 +231,8 @@ searchParams names getters params =
 toList: List (a -> String) -> a -> List String
 toList getters param =
   List.map (\getter -> getter param) getters
+
+
+styles: List (String, String) -> List (Html.Attribute msg)
+styles list =
+  list |> List.map (\(k, v) -> Attributes.style k v)
