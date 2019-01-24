@@ -11,6 +11,7 @@ module JsonModel exposing
   , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
   , conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
+  , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   -- utility functions
   , dataDecoder, pathDecoder, isInitialized, notInitialized, ready
   -- commands
@@ -718,11 +719,44 @@ visibleFieldNames typeName model =
 String parameter may indicated child structure.
 -}
 fieldNames: Bool -> String -> Model msg value -> List String
-fieldNames all typeName (Model _ { metadata }) =
+fieldNames all typeName model =
+  mdStringValue all typeName .name model
+
+
+{-| Returns column labels from metadata
+-}
+columnLabels: Model msg value -> List String
+columnLabels (Model _ c as model) = fieldLabels True c.typeName model
+
+
+{-| Returns visible column labels from metdata
+-}
+visibleColumnLabels: Model msg value -> List String
+visibleColumnLabels (Model _ c as model) = visibleFieldLabels c.typeName model
+
+
+{-| Returns visible field labels from metadata indicated by string parameter
+(child structure may be specified)
+-}
+visibleFieldLabels: String -> Model msg value -> List String
+visibleFieldLabels typeName model =
+  fieldLabels False typeName model
+
+
+{-| If bool parameter is True return all field labels else only visible.
+String parameter may indicated child structure.
+-}
+fieldLabels: Bool -> String -> Model msg value -> List String
+fieldLabels all typeName model =
+  mdStringValue all typeName .label model
+
+
+mdStringValue: Bool -> String -> (VM.Field -> String) -> Model msg value -> List String
+mdStringValue all typeName valFun (Model _ { metadata }) =
   Dict.get typeName metadata |>
   Maybe.map .fields |>
   Maybe.map (List.filter (.visible >> (||) all)) |>
-  Maybe.map (List.map .label) |>
+  Maybe.map (List.map valFun) |>
   Maybe.withDefault []
 
 
