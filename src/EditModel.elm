@@ -406,36 +406,19 @@ onSelectMouse toMsg ctrl idx =
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
-    updateModelFromInputs newInputs =
-      Dict.foldl
-        (\key input ((mod, cmds), newInps) ->
-          Dict.get key controllers |>
-          Maybe.map
-            (\(Controller ctrl) ->
-              if ctrl.formatter mod == input.value then
-                ((mod, cmds), newInps)
-              else
-                (ctrl.updateModel toMsg input mod) |>
-                Tuple.mapSecond (\cmd -> if cmd == Cmd.none then cmds else cmd :: cmds) |>
-                (\(m, c) ->
-                  ( (m, c)
-                    {- if after updating model formatter returns different value do input update
-                       so that input is synchronized with model -}
-                    , let v = ctrl.formatter m in
-                      if v /= input.value then updateInput ctrl v newInps else newInps
-                  )
-                )
-            ) |>
-          Maybe.withDefault ((mod, cmds), newInps)
-        )
-        ( ( JM.data model, [] ), newInputs )
-        newInputs |>
-      Tuple.mapFirst (Tuple.mapSecond (List.reverse >> Cmd.batch)) |>
-      (\((nm, cmd), ni) ->
-        ( { same | inputs = ni }
-        , if cmd == Cmd.none then JM.set (toMsg << UpdateModelMsg False) nm else cmd
-        )
-      )
+    updateModelFromInput newInputs ctrl input =
+      let
+        mod = JM.data model
+      in
+        if ctrl.formatter mod == input.value then
+          ( same, Cmd.none )
+        else
+          ctrl.updateModel toMsg input mod |>
+          (\(nm, cmd) ->
+            ( { same | inputs = updateInputsFromModel nm newInputs } --update inputs if updater has changed other fields
+            , if cmd == Cmd.none then JM.set (toMsg << UpdateModelMsg False) nm else cmd
+            )
+          )
 
     updateInput ctrl value newInputs =
       Dict.get ctrl.name newInputs |>
@@ -452,20 +435,17 @@ update toMsg msg ({ model, inputs, controllers } as same) =
             Err err ->
               { input | value = value, error = Just err }
         ) |>
-      Maybe.map (\input -> Dict.insert ctrl.name input newInputs) |>
-      Maybe.withDefault newInputs
+      Maybe.map (\input -> (Dict.insert ctrl.name input newInputs, Just input)) |>
+      Maybe.withDefault ( newInputs, Nothing)
 
     applyInput toSelectmsg ctrl value = -- OnMsg
-      let
-        newInputs = updateInput ctrl value inputs
-
-        searchCmd =
-          Dict.get ctrl.name inputs |>
-          Maybe.andThen .select |>
-          Maybe.map (always <| Select.search toSelectmsg value) |>
+      updateInput ctrl value inputs |>
+      Tuple.mapBoth
+        (\newInputs -> { same | inputs = newInputs })
+        ( Maybe.andThen .select >>
+          Maybe.map (always <| Select.search toSelectmsg value) >>
           Maybe.withDefault Cmd.none
-      in
-        ( { same | inputs = newInputs }, searchCmd )
+        )
 
     setEditing ctrl focus =  -- OnFocus
       let
@@ -484,16 +464,15 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         onEv input =
           { input | editing = focus, select = select input.value }
 
-        maybeUpdateModel newInputs =
+        maybeUpdateModel newInputs input =
           if focus then
             ( { same | inputs = newInputs }, Cmd.none )
           else
-            updateModelFromInputs newInputs
+            updateModelFromInput newInputs ctrl input
       in
         Dict.get ctrl.name inputs |>
         Maybe.map onEv |>
-        Maybe.map (\input -> Dict.insert ctrl.name input inputs) |>
-        Maybe.map maybeUpdateModel |>
+        Maybe.map (\input -> maybeUpdateModel (Dict.insert ctrl.name input inputs) input) |>
         Maybe.withDefault ( same, Cmd.none )
 
     applySelect ctrl toSelmsg selMsg = -- SelectMsg
@@ -514,26 +493,26 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           ) |>
         Maybe.withDefault ( same, Cmd.none )
 
-    updateInputsFromModel newModel =
-      let
-        data = JM.data newModel
-      in
-        Dict.foldl
-          (\key input newInputs ->
-            Dict.get key controllers |>
-            Maybe.map
-              (\(Controller ctrl) ->
-                updateInput ctrl (ctrl.formatter data) newInputs
-              ) |>
-            Maybe.withDefault newInputs
-          )
-          inputs
-          inputs
+    updateInputsFromModel newModel newInputs =
+      Dict.foldl
+        (\key input foldedinps ->
+          Dict.get key controllers |>
+          Maybe.map
+            (\(Controller ctrl) ->
+              updateInput ctrl (ctrl.formatter newModel) foldedinps |> Tuple.first
+            ) |>
+          Maybe.withDefault foldedinps
+        )
+        newInputs
+        newInputs
 
     updateModel doInputUpdate newModel =
       { same |
         model = newModel
-      , inputs = if doInputUpdate then updateInputsFromModel newModel else same.inputs
+      , inputs =
+          if doInputUpdate then
+            updateInputsFromModel (JM.data newModel) same.inputs
+          else same.inputs
       }
 
     applyCreateModel newModel =
@@ -590,7 +569,12 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         setEditing ctrl focus
 
       OnSelectMsg (Controller ctrl) value -> -- text selected from select component
-        updateModelFromInputs <| updateInput ctrl value inputs
+        updateInput ctrl value inputs |>
+        (\(newInputs, maybeInp) ->
+          maybeInp |>
+          Maybe.map (updateModelFromInput newInputs ctrl) |>
+          Maybe.withDefault ( same, Cmd.none )
+        )
 
       --edit entire model
       EditModelMsg editFun ->
