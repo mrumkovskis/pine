@@ -35,14 +35,13 @@ type Messages msg flags =
 
 type alias MsgInternal msg flags =
   { messages: Dict String (Ask.Msg msg, flags)
-  , initFlags: flags
   }
 
 
 {-| Model update messages.
 -}
 type Msg msg flags
-  = Add (Ask.Msg msg)
+  = Add (Ask.Msg msg) flags
   | Remove String
   | Yes String
   | No String
@@ -55,9 +54,9 @@ type alias Tomsg msg flags = (Msg msg flags -> msg)
 
 {-| Initialize empty message storage.
 -}
-init: flags -> Messages msg flags
-init initFlags =
-  Messages { messages = Dict.empty, initFlags = initFlags }
+init: Messages msg flags
+init =
+  Messages { messages = Dict.empty }
 
 
 {-| Gets all messages except unauthorized message
@@ -90,9 +89,9 @@ unauthorized (Messages m) =
 
 {-| Add message.
 -}
-add: Tomsg msg flags -> Ask.Msg msg -> Cmd msg
-add toMsg msg =
-  Task.perform (toMsg << Add) <| Task.succeed msg
+add: Tomsg msg flags -> Ask.Msg msg -> flags -> Cmd msg
+add toMsg msg msgflags =
+  Task.perform (toMsg << Add msg) <| Task.succeed msgflags
 
 
 {-| Remove message.
@@ -143,9 +142,9 @@ update toMsg message (Messages msgs) =
 
     removeMsg msg = newModel <| Dict.remove msg msgs.messages
   in case message of
-    Add msg ->
+    Add msg msgflags ->
       Tuple.pair
-        (newModel <| Dict.insert (Ask.text msg) (msg, msgs.initFlags) msgs.messages)
+        (newModel <| Dict.insert (Ask.text msg) (msg, msgflags) msgs.messages)
         Cmd.none
 
     Remove msg ->
