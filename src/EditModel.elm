@@ -411,7 +411,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         mod = JM.data model
       in
         if ctrl.formatter mod == input.value then
-          ( same, Cmd.none )
+          ( { same | inputs = newInputs }, Cmd.none )
         else
           ctrl.updateModel toMsg input mod |>
           (\(nm, cmd) ->
