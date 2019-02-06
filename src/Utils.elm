@@ -32,8 +32,6 @@ zip list1 list2 =
   let
     z l1 l2 r =
       case (l1, l2) of
-        ([], []) -> List.reverse r
-
         (e1 :: t1, e2 :: t2) -> z t1 t2 <| (e1, e2) :: r
 
         _ -> List.reverse r
