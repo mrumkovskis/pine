@@ -36,7 +36,7 @@ zip list1 list2 =
 
         (e1 :: t1, e2 :: t2) -> z t1 t2 <| (e1, e2) :: r
 
-        _ -> r
+        _ -> List.reverse r
   in
     z list1 list2 []
 
