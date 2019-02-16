@@ -1,7 +1,8 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
   , askmsg, ask, info, warn, error, unauthorized
-  , askToDeferredmsg, askToCmdChainmsg, errorOrUnauthorized, text
+  , askToDeferredmsg, askToCmdChainmsg, askToScrollEventsmsg
+  , errorOrUnauthorized, text
   )
 
 
@@ -13,6 +14,7 @@ module Ask exposing
 import Utils
 import DeferredRequests as DR exposing (Tomsg)
 import CmdChain exposing (Tomsg)
+import ScrollEvents as SE exposing (Tomsg)
 
 import Task
 import Http
@@ -35,6 +37,7 @@ type Msg msg
   | Question String (Cmd msg) (Maybe(Cmd msg))
   | SubscribeToDeferredMsg (DR.Tomsg msg -> msg)
   | SubscribeToCmdChainMsg (CmdChain.Tomsg msg -> msg)
+  | SubscribeToScrollEventsMsg (SE.Tomsg msg -> msg)
 
 
 {-| Message constructor -}
@@ -86,6 +89,11 @@ askToDeferredmsg toMsg subscription =
 askToCmdChainmsg: Tomsg msg -> (CmdChain.Tomsg msg -> msg) -> Cmd msg
 askToCmdChainmsg toMsg subscription =
   Task.perform (toMsg << SubscribeToCmdChainMsg) <| Task.succeed subscription
+
+
+askToScrollEventsmsg: Tomsg msg -> (SE.Tomsg msg -> msg) -> Cmd msg
+askToScrollEventsmsg toMsg subscription =
+  Task.perform (toMsg << SubscribeToScrollEventsMsg) <| Task.succeed subscription
 
 
 {-| Sends http `Error` or `Unauthorized` on http message -}
