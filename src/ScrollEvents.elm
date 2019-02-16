@@ -155,6 +155,7 @@ update toMsg msg (Model ({ stickToElId, visibilitySubscriptions, stickSubscripti
     NoOp maybeErr ->
       ( same, Cmd.none )
 
+
 subscriptions: Tomsg msg -> Model msg -> Sub msg
 subscriptions toMsg (Model { visibilitySubscriptions, stickSubscriptions }) =
   if Dict.isEmpty visibilitySubscriptions && Dict.isEmpty stickSubscriptions then
