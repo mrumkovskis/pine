@@ -95,12 +95,12 @@ update toMsg msg (Model ({ stickToElId, visibilitySubscriptions, stickSubscripti
                     (\ res ->
                       case res of
                         [ stickToPos, pos ] ->
-                          (stickToPos.element, pos.element, pos.viewport) |>
-                          (\(upper, lower, viewport) ->
+                          (stickToPos.element, stickToPos.viewport, pos.element) |>
+                          (\(upper, sviewport, lower) ->
                             if lower.y < upper.y + upper.height then
                               submsg id <|
                                 Just
-                                  { top = upper.height -- + upper.y - viewport.y (performance problems)
+                                  { top = upper.height + upper.y - sviewport.y
                                   , left = lower.x
                                   }
                             else
