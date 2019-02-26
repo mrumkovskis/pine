@@ -37,7 +37,7 @@ type alias SelectModel msg value =
 type Msg msg value
   = Navigate SE.Msg
   | Search String
-  | SetActive Bool Int
+  | SetActiveAndSelect Int
   | Select
   | ModelMsg (JM.ListMsg msg value)
 
@@ -76,7 +76,7 @@ onSelectInput toMsg = [ SE.onNavigation (toMsg << Navigate) ]
 {-| Mouse down listener on list item specified with idx parameter.
 -}
 onMouseSelect: Tomsg msg value -> Int -> List (Attribute msg)
-onMouseSelect toMsg idx = [ onMouseDown (toMsg <| SetActive True idx) ]
+onMouseSelect toMsg idx = [ onMouseDown (toMsg <| SetActiveAndSelect idx) ]
 
 
 {-| Search command.
@@ -148,9 +148,9 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
             [(same.searchParamName, text)] ++ same.additionalParams
         )
 
-      SetActive select idx ->
+      SetActiveAndSelect idx ->
         ( { same | activeIdx = Just idx }
-        , if select then selectCmd idx else Cmd.none
+        , Task.perform toMsg <| Task.succeed Select
         )
 
       Select ->
