@@ -12,6 +12,7 @@ module JsonModel exposing
   -- metadata examination
   , conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
+  , field
   -- utility functions
   , dataDecoder, pathDecoder, isInitialized, notInitialized, ready
   -- commands
@@ -749,6 +750,15 @@ String parameter may indicated child structure.
 fieldLabels: Bool -> String -> Model msg value -> List String
 fieldLabels all typeName model =
   mdStringValue all typeName .label model
+
+
+{-| Returns metadata field by name from view specified by `typeName` parameter -}
+field: String -> String -> Model msg value -> Maybe VM.Field
+field typeName fieldName (Model _ c) =
+  c.metadata |>
+  Dict.get typeName |>
+  Maybe.map .fields |>
+  Maybe.andThen (Utils.find (.name >> (==) fieldName))
 
 
 mdStringValue: Bool -> String -> (VM.Field -> String) -> Model msg value -> List String

@@ -49,6 +49,11 @@ type alias Input msg =
   , editing: Bool
   , error: Maybe String
   , select: Maybe (SelectModel msg String)
+  , label: String
+  , type_: String
+  , required: Bool
+  , length: Maybe Int
+  , decimalPlaces: Maybe Int
   , attrs: Attributes msg
   }
 
@@ -159,7 +164,7 @@ init model ctrlList toMessagemsg =
 
     inputs =
       controllers |>
-      Dict.map (\k _ -> Input "" False Nothing Nothing emptyAttrs)
+      Dict.map (\k _ -> Input "" False Nothing Nothing "" "text" False Nothing Nothing emptyAttrs)
   in
     EditModel
       model
