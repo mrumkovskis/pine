@@ -1,5 +1,5 @@
 module Utils exposing
-  ( zip, at, find, set, orElse, httpQuery, matchIdx, strOrEmpty
+  ( zip, at, find, findIdx, set, orElse, httpQuery, matchIdx, strOrEmpty
   , optField, emptyEncoder, noBreakSpace, flip, curry, uncurry, httpErrorToString
   , searchParams, toList, styles
   )
@@ -47,9 +47,19 @@ at idx l =
   else List.tail l |> Maybe.andThen (at (idx - 1))
 
 
-{-| Find first element index matching condition -}
-find: (a -> Bool) -> List a -> Maybe Int
+{-| Find first element matching condition -}
+find: (a -> Bool) -> List a -> Maybe a
 find cond list =
+  case list of
+    el :: tail ->
+      if cond el then Just el else find cond tail
+
+    [] -> Nothing
+
+
+{-| Find first element index matching condition -}
+findIdx: (a -> Bool) -> List a -> Maybe Int
+findIdx cond list =
   let
     f idx l =
       case l of
