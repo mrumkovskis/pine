@@ -1,10 +1,8 @@
 module EditModel exposing
   ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , InputAttrs, EditModel, Msg, Tomsg
+  , EditModel, Msg, Tomsg
   , init, setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
-  , basicInpAttrs, basicTaAttrs, inpAttrs, inpAttrsWithMouse, inpKey
-  , inputEvents, onSelectInput, inputSelectEvents, onSelectMouse
   , id, inp, inps, noCmd, simpleController, controller
   , update
   )
@@ -78,17 +76,6 @@ type alias SelectInitializer msg =
   String ->
   (String -> msg) ->
   SelectModel msg String
-
-
-{-| First element of tuple is static attributes, second - input event attributes, the value
-of which can be obtained form functions like `inputEvents` or `onSelectInput`,
-third - value selection from list with mouse click event attributes, the value of which
-can be obtained from function like `onSelectMouse`. -}
-type alias InputAttrs msg model =
-  ( List (Attribute msg)
-  , (Controller msg model -> List (Attribute msg))
-  , (Controller msg model -> Int -> List (Attribute msg))
-  )
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
@@ -295,8 +282,8 @@ controller updateModel formatter selectInitializer validator =
 {-| Gets input from model for rendering. Function furnishes input with attributes
     using `InputAttrs`
 -}
-inp: key -> InputAttrs msg model -> EditModel msg model -> Maybe (Input msg)
-inp key (staticAttrs, inputAttrs, mouseSelectAttrs) { controllers, inputs } =
+inp: key -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> Maybe (Input msg)
+inp key toMsg staticAttrs { controllers, inputs } =
   let
     ks = toString key
   in
@@ -304,107 +291,41 @@ inp key (staticAttrs, inputAttrs, mouseSelectAttrs) { controllers, inputs } =
     Maybe.map2
       (\input ctl ->
         let
-          attrs =
-            (Attrs.value input.value :: staticAttrs) ++ inputAttrs ctl
+          inputEventAttrs =
+            [ onInput <| toMsg << OnMsg ctl
+            , onFocus <| toMsg <| OnFocusMsg ctl True
+            , onBlur <| toMsg <| OnFocusMsg ctl False
+            ]
 
-          mouseAttrs =
-            mouseSelectAttrs ctl
+          selectEventAttrs =
+            input.select |>
+            Maybe.map
+              ( always
+                  ( Select.onSelectInput <| toMsg << SelectMsg ctl
+                  , Select.onMouseSelect <| toMsg << SelectMsg ctl
+                  )
+              ) |>
+            Maybe.withDefault ([], always [])
+
+          attrs =
+            (Attrs.value input.value :: staticAttrs) ++
+            inputEventAttrs ++
+            Tuple.first selectEventAttrs
         in
-          { input | attrs = Attributes mouseAttrs attrs }
+          { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs }
       )
       (Dict.get ks inputs)
 
 
 {-| Gets inputs from model for rendering
 -}
-inps: List (key, InputAttrs msg model) -> EditModel msg model -> List (Input msg)
-inps keys model =
+inps: List (key, List (Attribute msg)) -> Tomsg msg model -> EditModel msg model -> List (Input msg)
+inps keys toMsg model =
   List.foldl
-    (\(k, ia) r -> inp k ia model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
+    (\(k, ia) r -> inp k toMsg ia model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
     []
     keys |>
   List.reverse
-
-
-basicInpAttrs: String -> String -> Int -> List (Attribute msg)
-basicInpAttrs type_ placeholder size =
-  [ Attrs.type_ type_, Attrs.placeholder placeholder, Attrs.size size ]
-
-
-basicTaAttrs: Int -> Int -> List (Attribute msg)
-basicTaAttrs rows cols =
-  [ Attrs.rows rows, Attrs.cols cols ]
-
-
-inpAttrs:
-  List (Attribute msg) ->
-  (Controller msg model -> List (Attribute msg)) ->
-  InputAttrs msg model
-inpAttrs attrs inpEvents =
-  inpAttrsWithMouse
-    attrs inpEvents (\_ _ -> [])
-
-
-inpAttrsWithMouse:
-  List (Attribute msg) ->
-  (Controller msg model -> List (Attribute msg)) ->
-  (Controller msg model -> Int -> List (Attribute msg)) ->
-  InputAttrs msg model
-inpAttrsWithMouse attrs inpEvents mouseSelectEvents =
-  (attrs, inpEvents, mouseSelectEvents)
-
-
-inpKey: key -> InputAttrs msg model -> (key, InputAttrs msg model)
-inpKey key attrs =
-  ( key, attrs )
-
-
-{- event attributes private function -}
-inputFocusBlurEvents:
-  Tomsg msg model ->
-  (String -> Msg msg model) ->
-  Msg msg model ->
-  Msg msg model ->
-  List (Attribute msg)
-inputFocusBlurEvents toMsg inputMsg focusMsg blurMsg =
-  [ onInput <| toMsg << inputMsg
-  , onFocus <| toMsg focusMsg
-  , onBlur <| toMsg blurMsg
-  ]
-
-
-{-| Returns `onInput`, `onFocus`, `onBlur` `Html.Attributes`
-for input associated with the controller.
--}
-inputEvents: Tomsg msg model -> Controller msg model -> List (Attribute msg)
-inputEvents toMsg ctrl =
-  inputFocusBlurEvents
-    toMsg
-    (OnMsg ctrl)
-    (OnFocusMsg ctrl True)
-    (OnFocusMsg ctrl False)
-
-
-{-| Returns attributes for [`Select`](Select) management. Generally this is key listener
-reacting on arrow, escape, enter keys.
--}
-onSelectInput: Tomsg msg model -> Controller msg model -> List (Attribute msg)
-onSelectInput toMsg ctrl =
-  Select.onSelectInput <| toMsg << SelectMsg ctrl
-
-
-{-| Returns concatenation of `inputEvents` ++ `onSelectInput` -}
-inputSelectEvents: Tomsg msg model -> Controller msg model -> List (Attribute msg)
-inputSelectEvents toMsg ctrl =
-  inputEvents toMsg ctrl ++ onSelectInput toMsg ctrl
-
-
-{-| Returns attributes for [`Select`](Select) management. Generally this is mouse down listener
-to enable value selection from list. `Int` parameter indicates selected index.
--}
-onSelectMouse: Tomsg msg model -> Controller msg model -> Int -> List (Attribute msg)
-onSelectMouse toMsg ctrl idx =
-  Select.onMouseSelect (toMsg << SelectMsg ctrl) idx
 
 
 {-| Model update -}
