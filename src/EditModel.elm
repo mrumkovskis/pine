@@ -72,9 +72,9 @@ type alias Formatter model = model -> String
 
 
 type alias SelectInitializer msg =
-  Ask.Tomsg msg ->
-  String ->
-  (String -> msg) ->
+  Ask.Tomsg msg -> -- toMessagemsg
+  String -> -- search string
+  (String -> msg) -> -- select msg
   SelectModel msg String
 
 
@@ -390,7 +390,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         onEv input =
           { input | editing = focus, select = select input.value }
 
-        maybeUpdateModel newInputs input =
+        focusOrUpdateModel newInputs input =
           if focus then
             ( { same | inputs = newInputs }, Cmd.none )
           else
@@ -398,7 +398,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       in
         Dict.get ctrl.name inputs |>
         Maybe.map onEv |>
-        Maybe.map (\input -> maybeUpdateModel (Dict.insert ctrl.name input inputs) input) |>
+        Maybe.map (\input -> focusOrUpdateModel (Dict.insert ctrl.name input inputs) input) |>
         Maybe.withDefault ( same, Cmd.none )
 
     applySelect ctrl toSelmsg selMsg = -- SelectMsg
