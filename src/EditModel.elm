@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, Msg, Tomsg
   , init, setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
-  , id, inp, inps, noCmd, simpleController, controller
+  , id, data, inp, inps, noCmd, simpleController, controller, inputMsg
   , update
   )
 
@@ -72,10 +72,11 @@ type alias Formatter model = model -> String
 
 
 type alias SelectInitializer msg =
+  Select.Tomsg msg String -> -- toSelectmsg
   Ask.Tomsg msg -> -- toMessagemsg
   String -> -- search string
   (String -> msg) -> -- select msg
-  SelectModel msg String
+  (SelectModel msg String, Cmd msg)
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
@@ -244,6 +245,13 @@ id =
   .model >> JM.id >> Maybe.andThen String.toInt
 
 
+{-| Gets model data.
+-}
+data: EditModel msg model -> model
+data { model } =
+  JM.data model
+
+
 {-| Utility function which helps to create model updater returning `Cmd.none` -}
 noCmd: (String -> model -> model) -> Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 noCmd simpleSetter _ input model =
@@ -328,6 +336,14 @@ inps keys toMsg model =
   List.reverse
 
 
+{-| Produces input message. This can be used for updating model on events like `onCheck` or `onClick`
+-}
+inputMsg: key -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
+inputMsg key toMsg { controllers } =
+  Dict.get (toString key) controllers |>
+  Maybe.map (\ctrl -> toMsg << OnMsg ctrl)
+
+
 {-| Model update -}
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
@@ -375,30 +391,34 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
     setEditing ctrl focus =  -- OnFocus
       let
-        select value =
+        processFocusSelect input =
           if focus then
             ctrl.selectInitializer |>
             Maybe.map
               (\initializer ->
                 initializer
+                  (toMsg << SelectMsg (Controller ctrl))
                   same.toMessagemsg
-                  value
+                  input.value
                   (toMsg << OnSelectMsg (Controller ctrl))
-              )
-          else Nothing
+              ) |>
+            Maybe.map
+              (Tuple.mapFirst (\sel -> { input | editing = True, select = Just sel })) |>
+            Maybe.withDefault ({ input | editing = True, select = Nothing }, Cmd.none)
+          else ({ input | editing = False, select = Nothing }, Cmd.none)
 
-        onEv input =
-          { input | editing = focus, select = select input.value }
-
-        focusOrUpdateModel newInputs input =
+        focusOrUpdateModel newInputs input selCmd =
           if focus then
-            ( { same | inputs = newInputs }, Cmd.none )
+            ( { same | inputs = newInputs }, selCmd )
           else
             updateModelFromInput newInputs ctrl input
       in
         Dict.get ctrl.name inputs |>
-        Maybe.map onEv |>
-        Maybe.map (\input -> focusOrUpdateModel (Dict.insert ctrl.name input inputs) input) |>
+        Maybe.map processFocusSelect |>
+        Maybe.map
+          (\(input, selCmd) ->
+            focusOrUpdateModel (Dict.insert ctrl.name input inputs) input selCmd
+          ) |>
         Maybe.withDefault ( same, Cmd.none )
 
     applySelect ctrl toSelmsg selMsg = -- SelectMsg
@@ -463,24 +483,24 @@ update toMsg msg ({ model, inputs, controllers } as same) =
   in
     case msg of
       -- JM model messages
-      UpdateModelMsg doInputUpdate data ->
-        JM.update (toMsg << UpdateModelMsg doInputUpdate) data model |>
+      UpdateModelMsg doInputUpdate value ->
+        JM.update (toMsg << UpdateModelMsg doInputUpdate) value model |>
         Tuple.mapFirst (updateModel doInputUpdate)
 
-      FetchModelMsg data ->
-        JM.update (toMsg << FetchModelMsg) data model |>
+      FetchModelMsg value ->
+        JM.update (toMsg << FetchModelMsg) value model |>
         (\mc -> (applyFetchModel mc, Tuple.second mc))
 
-      SaveModelMsg data ->
-        JM.update (toMsg << SaveModelMsg) data model |>
+      SaveModelMsg value ->
+        JM.update (toMsg << SaveModelMsg) value model |>
         (\mc -> (applySaveModel mc, Tuple.second mc))
 
-      CreateModelMsg createFun data ->
-        JM.update (toMsg << CreateModelMsg createFun) data model |>
+      CreateModelMsg createFun value ->
+        JM.update (toMsg << CreateModelMsg createFun) value model |>
         Tuple.mapBoth applyCreateModel (createCmd createFun)
 
-      DeleteModelMsg data ->
-        JM.update (toMsg << DeleteModelMsg) data model |>
+      DeleteModelMsg value ->
+        JM.update (toMsg << DeleteModelMsg) value model |>
         (\mc -> (applyDeleteModel mc, Tuple.second mc))
 
       -- Select messages

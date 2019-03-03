@@ -1,5 +1,5 @@
 module Select exposing
-  ( SelectModel, Msg, init, additionalParams, updateSearch
+  ( SelectModel, Msg, Tomsg, init, additionalParams, updateSearch
   , onSelectInput, onMouseSelect, search, update
   )
 
