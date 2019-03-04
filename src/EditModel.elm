@@ -485,7 +485,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       -- JM model messages
       UpdateModelMsg doInputUpdate value ->
         JM.update (toMsg << UpdateModelMsg doInputUpdate) value model |>
-        Tuple.mapFirst (updateModel doInputUpdate)
+        (\(jm, cmd) -> (updateModel (cmd == Cmd.none && doInputUpdate) jm, cmd)) -- update inputs at the end
 
       FetchModelMsg value ->
         JM.update (toMsg << FetchModelMsg) value model |>
