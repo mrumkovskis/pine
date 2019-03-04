@@ -336,12 +336,12 @@ inps keys toMsg model =
   List.reverse
 
 
-{-| Produces input message. This can be used for updating model on events like `onCheck` or `onClick`
+{-| Produces `OnSelectMsg` input message. This can be used on input events like `onCheck` or `onClick`
 -}
 inputMsg: key -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
 inputMsg key toMsg { controllers } =
   Dict.get (toString key) controllers |>
-  Maybe.map (\ctrl -> toMsg << OnMsg ctrl)
+  Maybe.map (\ctrl -> toMsg << OnSelectMsg ctrl)
 
 
 {-| Model update -}
@@ -378,7 +378,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
               { input | value = value, error = Just err }
         ) |>
       Maybe.map (\input -> (Dict.insert ctrl.name input newInputs, Just input)) |>
-      Maybe.withDefault ( newInputs, Nothing)
+      Maybe.withDefault (newInputs, Nothing)
 
     applyInput toSelectmsg ctrl value = -- OnMsg
       updateInput ctrl value inputs |>
