@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, Msg, Tomsg
   , init, setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
-  , id, data, inp, inps, noCmd, simpleController, controller, inputMsg
+  , id, data, inp, inps, simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg
   , update
   )
 
@@ -252,22 +252,33 @@ data { model } =
   JM.data model
 
 
-{-| Utility function which helps to create model updater returning `Cmd.none` -}
-noCmd: (String -> model -> model) -> Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
-noCmd simpleSetter _ input model =
-  ( simpleSetter input.value model, Cmd.none )
-
-
 {-| Creates simple controller -}
-simpleController: ModelUpdater msg model -> Formatter model -> Controller msg model
-simpleController updateModel formatter =
+simpleCtrl: (String -> model -> model) -> Formatter model -> Controller msg model
+simpleCtrl updateModel formatter =
   Controller
     { name = ""
-    , updateModel = updateModel
+    , updateModel = \_ input mod -> (updateModel input.value mod, Cmd.none)
     , formatter = formatter
     , selectInitializer = Nothing
     , validateInput = Ok
     }
+
+
+{-| Creates simple controller with select list -}
+simpleSelectCtrl: (String -> model -> model) -> Formatter model -> SelectInitializer msg -> Controller msg model
+simpleSelectCtrl updateModel formatter selectInitializer =
+  Controller
+    { name = ""
+    , updateModel = \_ input mod -> (updateModel input.value mod, Cmd.none)
+    , formatter = formatter
+    , selectInitializer = Just selectInitializer
+    , validateInput = Ok
+    }
+
+
+noCmdUpdater: (String -> model -> model) -> ModelUpdater msg model
+noCmdUpdater updater =
+  \_ input mod -> (updater input.value mod, Cmd.none)
 
 
 {-| Creates controller -}
