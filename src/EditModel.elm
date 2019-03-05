@@ -257,7 +257,7 @@ simpleCtrl: (String -> model -> model) -> Formatter model -> Controller msg mode
 simpleCtrl updateModel formatter =
   Controller
     { name = ""
-    , updateModel = \_ input mod -> (updateModel input.value mod, Cmd.none)
+    , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Nothing
     , validateInput = Ok
@@ -269,7 +269,7 @@ simpleSelectCtrl: (String -> model -> model) -> Formatter model -> SelectInitial
 simpleSelectCtrl updateModel formatter selectInitializer =
   Controller
     { name = ""
-    , updateModel = \_ input mod -> (updateModel input.value mod, Cmd.none)
+    , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Just selectInitializer
     , validateInput = Ok
