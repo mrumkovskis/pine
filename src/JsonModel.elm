@@ -921,6 +921,70 @@ dataEncoder fieldGetter metadata viewTypeName value =
     Maybe.withDefault JE.null
 
 
+searchParsFromJson: JsonFormModel msg -> SearchParams
+searchParsFromJson (Model _ { metadata, typeName } as m) =
+  let
+    decodeField fieldType fieldVal =
+      case fieldType of
+        "long" ->
+          JD.decodeValue JD.int fieldVal |> Result.toMaybe |> Maybe.map String.fromInt
+
+        "int" ->
+          JD.decodeValue JD.int fieldVal |> Result.toMaybe |> Maybe.map String.fromInt
+
+        "decimal" ->
+          JD.decodeValue JD.float fieldVal |> Result.toMaybe |> Maybe.map String.fromFloat
+
+        "string" ->
+          JD.decodeValue JD.string fieldVal |> Result.toMaybe
+
+        "date" ->
+          JD.decodeValue JD.string fieldVal |> Result.toMaybe
+
+        "dateTime" ->
+          JD.decodeValue JD.string fieldVal |> Result.toMaybe
+
+        "bool" ->
+          JD.decodeValue JD.bool fieldVal |>
+          Result.toMaybe |>
+          Maybe.map (\b -> if b then "true" else "false")
+
+        x ->
+          JD.decodeValue JD.string fieldVal |> Result.toMaybe
+
+    par fld val res =
+      case val of
+        FieldValue json ->
+          decodeField fld.typeName json |>
+          Maybe.map (\v -> (fld.name, v) :: res) |>
+          Maybe.withDefault res
+
+        RecordValue vals ->
+          List.foldl (par fld) res vals
+
+    pars res vals viewmd =
+      case vals of
+        FieldValue json ->
+          res
+
+        RecordValue jsons ->
+          Utils.zip viewmd.filter jsons |>
+          List.foldl
+            (\(f, v) vs ->
+              if f.isComplexType then
+                Dict.get f.typeName metadata |>
+                Maybe.map (pars vs v) |>
+                Maybe.withDefault vs
+              else
+                par f v vs
+            )
+            res
+  in
+    Dict.get typeName metadata |>
+    Maybe.map (pars [] (data m)) |>
+    Maybe.withDefault []
+
+
 -- commands
 
 {-| Fetch view data.
