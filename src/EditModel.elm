@@ -327,8 +327,8 @@ inp key toMsg staticAttrs { controllers, inputs } =
             Maybe.withDefault ([], always [])
 
           attrs =
-            (Attrs.value input.value :: staticAttrs) ++
             inputEventAttrs ++
+            (Attrs.value input.value :: staticAttrs) ++
             Tuple.first selectEventAttrs
         in
           { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs }
