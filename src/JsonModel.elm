@@ -1,10 +1,10 @@
 module JsonModel exposing
   ( -- types
-    Model (..), DataValue (..), Msg, Tomsg, ListModel, ListMsg, DataValueListModel
-  , DataValueListMsg, FormModel, FormMsg, DataValueFormModel, DataValueFormMsg
+    Model (..), JsonValue (..), Msg, Tomsg, ListModel, ListMsg, JsonListModel
+  , JsonListMsg, FormModel, FormMsg, JsonFormModel, JsonFormMsg
   , Path (..), SearchParams, Decoder, Encoder, DataFetcher, CountFetcher
   -- initialization, configuration
-  , initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder
+  , initJsonList, initList, initJsonForm, initJsonQueryForm, initForm, listDecoder, formDecoder
   , countBaseUri, pageSize, countDecoder, idParam, offsetLimitParams
   , enableDeferred, enableDeferredWithTimeout, dataFetcher, countFetcher
   -- data examination
@@ -12,7 +12,7 @@ module JsonModel exposing
   -- metadata examination
   , conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
-  , field
+  , field, filterField
   -- utility functions
   , dataDecoder, pathDecoder, isInitialized, notInitialized, ready
   -- commands
@@ -34,13 +34,13 @@ Service data are form [`JsonModel.FormModel`](JsonModel#FormModel) or
 list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 
 # Types
-@docs DataValue, DataValueFormModel, DataValueFormMsg, DataValueListModel,
-      DataValueListMsg, Decoder, Encoder, FormModel,
+@docs JsonValue, JsonFormModel, JsonFormMsg, JsonListModel,
+      JsonListMsg, Decoder, Encoder, FormModel,
       FormMsg, ListModel, ListMsg, Model, Msg, Path,
       SearchParams, Tomsg
 
 # Initialization, configuration
-@docs initDataValueList, initList, initDataValueForm, initForm, listDecoder, formDecoder, countBaseUri,
+@docs initJsonList, initList, initJsonForm, initForm, listDecoder, formDecoder, countBaseUri,
       pageSize, countDecoder, idParam, offsetLimitParams,
       toDeferredMsg, deferredSettings, defaultDeferredSettings
 
@@ -92,17 +92,13 @@ type alias Decoder value = Dict String VM.View -> String -> JD.Decoder value
 type alias Encoder value = Dict String VM.View -> String -> value -> JD.Value
 
 
-{-| Transformer. Implementation progress... -}
-type alias Transformer value = value -> value
-
-
 type alias Setter msg value = value -> Model msg value -> Model msg value
 
 
-type alias Editor value = String -> Dict String VM.View -> Path -> DataValue -> value -> value
+type alias JsonEditor value = String -> Dict String VM.View -> Path -> JsonValue -> value -> value
 
 
-type alias Reader value = String -> Dict String VM.View -> Path -> value -> DataValue
+type alias JsonReader value = String -> Dict String VM.View -> Path -> value -> JsonValue
 
 
 type alias DeferredHeader = (String, String)
@@ -145,8 +141,8 @@ type alias Config msg value =
   , decoder: Decoder value
   , encoder: Encoder value
   , setter: Setter msg value
-  , editor: Editor value
-  , reader: Reader value
+  , editor: JsonEditor value
+  , reader: JsonReader value
   , emptyData: Data value
   , metadataBaseUri: String
   , dataBaseUri: String
@@ -181,18 +177,18 @@ type Model msg value = Model (Data value) (Config msg value)
 type alias ListModel msg value = Model msg (List value)
 
 
-{-| Json model based on `DataValue` list. This model comes with encoder, decoder and
+{-| Json model based on `JsonValue` list. This model comes with encoder, decoder and
 can be partialy edited. See [`edit`](#edit)
 -}
-type alias DataValueListModel msg = ListModel msg DataValue
+type alias JsonListModel msg = ListModel msg JsonValue
 
 
 {-| Message for [`ListModel`](#ListModel) -}
 type alias ListMsg msg value = Msg msg (List value)
 
 
-{-| Message for [`DataValueListModel`](#DataValueListModel) -}
-type alias DataValueListMsg msg = ListMsg msg DataValue
+{-| Message for [`JsonListModel`](#JsonListModel) -}
+type alias JsonListMsg msg = ListMsg msg JsonValue
 
 
 --form types
@@ -200,25 +196,25 @@ type alias DataValueListMsg msg = ListMsg msg DataValue
 type alias FormModel msg value = Model msg value
 
 
-{-| Json model based on `DataValue`. This comes with encoder, decoder and can be partialy
+{-| Json model based on `JsonValue`. This comes with encoder, decoder and can be partialy
 edited. See [`edit`](#edit)
 -}
-type alias DataValueFormModel msg = FormModel msg DataValue
+type alias JsonFormModel msg = FormModel msg JsonValue
 
 
 {-| Message for [`FormModel`](#FormModel) -}
 type alias FormMsg msg value = Msg msg value
 
 
-{-| Message for [`DataValueFormModel`](#DataValueFormModel) -}
-type alias DataValueFormMsg msg = FormMsg msg DataValue
+{-| Message for [`JsonFormModel`](#JsonFormModel) -}
+type alias JsonFormMsg msg = FormMsg msg JsonValue
 
 
-{-| Data for dynamic models.
+{-| Data for dynamic Json models.
 -}
-type DataValue
+type JsonValue
   = FieldValue JD.Value
-  | RecordValue (List DataValue)
+  | RecordValue (List JsonValue)
 
 
 {-| Path to field in dynamic model data.
@@ -235,7 +231,7 @@ type Msg msg value
   | DataMsg TypeName Bool SearchParams (Result Http.Error value)
   | CountMsg TypeName SearchParams (Result Http.Error Int)
   | DeleteMsg TypeName SearchParams (Result Http.Error String)
-  | EditMsg Path DataValue
+  | EditMsg Path JsonValue
   | MetadataMsgCmd (Maybe (Cmd msg))
   | UpdateCmdMsg Bool value
   | DataCmdMsg Bool Bool SearchParams (Maybe DeferredHeader)
@@ -254,23 +250,23 @@ type alias Tomsg msg value = Msg msg value -> msg
 
 -- initialization & configruation
 
-{-| Initialize [`DataValue`](JsonModel.DataValue) based list model.
+{-| Initialize [`JsonValue`](JsonModel.JsonValue) based list model.
 
-      initDataValueList "/metadata" "/data" "my-view" AskMsg
+      initJsonList "/metadata" "/data" "my-view" AskMsg
 -}
-initDataValueList: String -> String -> String -> Ask.Tomsg msg -> DataValueListModel msg
-initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
+initJsonList: String -> String -> String -> Ask.Tomsg msg -> JsonListModel msg
+initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    decoder metadata deTypeName = JD.list <| dataDecoder metadata deTypeName
+    decoder metadata deTypeName = JD.list <| dataDecoder .fields  metadata deTypeName
 
     encoder metadata eTypeName value =
       value |>
-      JE.list (dataEncoder metadata eTypeName)
+      JE.list (dataEncoder .fields metadata eTypeName)
 
     editor eTypeName metadata path value edata =
       let
         result =
-          case recordEditor eTypeName metadata path value <| RecordValue edata of
+          case recordEditor .fields eTypeName metadata path value <| RecordValue edata of
             RecordValue rows -> rows
 
             _ -> edata
@@ -283,7 +279,7 @@ initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
           Name _ _ -> edata -- list editing path cannot start with name
 
     reader rTypeName metadata path value =
-      let read = fieldValue rTypeName metadata path <| RecordValue value
+      let read = fieldValue .fields rTypeName metadata path <| RecordValue value
       in case path of
         End -> RecordValue value
 
@@ -291,7 +287,7 @@ initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
 
         Name _ _ -> RecordValue [] -- list reading cannot start with name
 
-    dataValueModel (Model md mc) =
+    jsonModel (Model md mc) =
       Model md
         { mc |
           decoder = decoder
@@ -300,13 +296,13 @@ initDataValueList metadataBaseUri dataBaseUri typeName toMessagemsg =
         , reader = reader
         }
   in
-    dataValueModel <|
+    jsonModel <|
       initList
         metadataBaseUri
         dataBaseUri
         typeName
-        (dataDecoder Dict.empty "")
-        (dataEncoder Dict.empty "")
+        (dataDecoder .fields Dict.empty "")
+        (dataEncoder .fields Dict.empty "")
         toMessagemsg
 
 
@@ -391,21 +387,35 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       }
 
 
-{-| Initialize [`DataValue`](JsonModel.DataValue) based form model.
+{-| Initialize [`JsonValue`](JsonModel.JsonValue) based form model.
 
-      initDataValueForm "/metadata" "/data" "my-view" AskMsg
+      initJsonForm "/metadata" "/data" "my-view" AskMsg
 -}
-initDataValueForm: String -> String -> String -> Ask.Tomsg msg -> DataValueFormModel msg
-initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
-  let
-    decoder metadata deTypeName = dataDecoder metadata deTypeName
+initJsonForm: String -> String -> String -> Ask.Tomsg msg -> JsonFormModel msg
+initJsonForm =
+  initJsonValueForm .fields
 
-    encoder metadata eTypeName value = dataEncoder metadata eTypeName value
+
+{-| Initialize [`JsonValue`](JsonModel.JsonValue) based query form model.
+
+      initJsonForm "/metadata" "/data" "my-view" AskMsg
+-}
+initJsonQueryForm: String -> String -> String -> Ask.Tomsg msg -> JsonFormModel msg
+initJsonQueryForm =
+  initJsonValueForm .filter
+
+
+initJsonValueForm: (VM.View -> List VM.Field) -> String -> String -> String -> Ask.Tomsg msg -> JsonFormModel msg
+initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg =
+  let
+    decoder metadata deTypeName = dataDecoder fieldGetter metadata deTypeName
+
+    encoder metadata eTypeName value = dataEncoder fieldGetter metadata eTypeName value
 
     editor eTypeName metadata path value edata =
       let
         result =
-          case recordEditor eTypeName metadata path value edata of
+          case recordEditor fieldGetter eTypeName metadata path value edata of
             RecordValue fields -> RecordValue fields
 
             _ -> edata
@@ -418,7 +428,7 @@ initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
           Idx _ _ -> edata -- form editing path cannot start with index
 
     reader rTypeName metadata path value =
-      let read = fieldValue rTypeName metadata path value
+      let read = fieldValue fieldGetter rTypeName metadata path value
       in case path of
         End -> value
 
@@ -435,7 +445,7 @@ initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
 
         x -> Nothing
 
-    dataValueModel (Model md mc) =
+    jsonModel (Model md mc) =
       Model md
        { mc |
          decoder = decoder
@@ -444,13 +454,13 @@ initDataValueForm metadataBaseUri dataBaseUri typeName toMessagemsg =
        , reader = reader
        }
   in
-    dataValueModel <|
+    jsonModel <|
       initForm
         metadataBaseUri
         dataBaseUri
         typeName
-        (dataDecoder Dict.empty "")
-        (dataEncoder Dict.empty "")
+        (dataDecoder fieldGetter Dict.empty "")
+        (dataEncoder fieldGetter Dict.empty "")
         (RecordValue [])
         formId
         toMessagemsg
@@ -519,8 +529,8 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId t
       , decoder = \_ _ -> decoder
       , encoder = \_ _ value -> encoder value
       , setter = setter
-      , editor = \_ _ _ _ value -> value -- not implemented (only for DataValue model)
-      , reader = \_ _ _ _ -> RecordValue [] -- not implemented (only for DataValue model)
+      , editor = \_ _ _ _ value -> value -- not implemented (only for Json... model)
+      , reader = \_ _ _ _ -> RecordValue [] -- not implemented (only for Json... model)
       , emptyData = emptyFormData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -672,7 +682,7 @@ id ((Model _ c) as model) =
 
 {-| Return search params -}
 searchPars: Model msg value -> SearchParams
-searchPars (Model { searchParams} _) = searchParams
+searchPars (Model { searchParams } _) = searchParams
 
 
 {-| True if metadata are not empty and metadata fetch is not progress
@@ -752,12 +762,21 @@ fieldLabels all typeName model =
   mdStringValue all typeName .label model
 
 
-{-| Returns metadata field by name from view specified by `typeName` parameter -}
-field: String -> String -> Model msg value -> Maybe VM.Field
-field typeName fieldName (Model _ c) =
+{-| Returns metadata field by name from main view -}
+field: String -> Model msg value -> Maybe VM.Field
+field fieldName (Model _ c) =
   c.metadata |>
-  Dict.get typeName |>
+  Dict.get c.typeName |>
   Maybe.map .fields |>
+  Maybe.andThen (Utils.find (.name >> (==) fieldName))
+
+
+{-| Returns metadata field by name from main view -}
+filterField: String -> Model msg value -> Maybe VM.Field
+filterField fieldName (Model _ c) =
+  c.metadata |>
+  Dict.get c.typeName |>
+  Maybe.map .filter |>
   Maybe.andThen (Utils.find (.name >> (==) fieldName))
 
 
@@ -778,12 +797,12 @@ conf (Model _ c) = c
 
 -- utility functions
 
-{-| Decoder for [`DataValue`](#DataValue)
+{-| Decoder for [`JsonValue`](#JsonValue)
 
     dataDecoder metadata viewTypeName
 -}
-dataDecoder: Dict String VM.View -> String -> JD.Decoder DataValue
-dataDecoder metadata viewTypeName =
+dataDecoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JD.Decoder JsonValue
+dataDecoder fieldGetter metadata viewTypeName =
   let
     fail name = JD.fail <| "Metadata not found for type: " ++ name
 
@@ -799,7 +818,7 @@ dataDecoder metadata viewTypeName =
         JD.map RecordValue
       else
         Dict.get fieldmd.typeName metadata |>
-        Maybe.map dataValueListDecoder |>
+        Maybe.map jsonListDecoder |>
         Maybe.map (\ld -> JD.map RecordValue ld) |>
         Maybe.withDefault (fail fieldmd.typeName)
 
@@ -813,10 +832,10 @@ dataDecoder metadata viewTypeName =
               JD.field fieldmd.name (JD.lazy (\_ -> fieldDecoder fieldmd)) |>
               JD.andThen (\df -> fieldsDecoder tail <| df :: decodedFields)
       in
-        JD.oneOf [ fieldsDecoder viewmd.fields [], JD.null [] ] |>
+        JD.oneOf [ fieldsDecoder (fieldGetter viewmd) [], JD.null [] ] |>
         JD.map RecordValue
 
-    dataValueListDecoder viewmd = JD.oneOf [ JD.list (recordDecoder viewmd), JD.null [] ]
+    jsonListDecoder viewmd = JD.oneOf [ JD.list (recordDecoder viewmd), JD.null [] ]
   in
     Dict.get viewTypeName metadata |>
     Maybe.map recordDecoder |>
@@ -849,12 +868,12 @@ pathDecoder =
       )
 
 
-{-| Encoder for [`DataValue`](#DataValue)
+{-| Encoder for [`JsonValue`](#JsonValue)
 
     dataEncoder metadata viewTypeName value
 -}
-dataEncoder: Dict String VM.View -> String -> DataValue -> JD.Value
-dataEncoder metadata viewTypeName value =
+dataEncoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JsonValue -> JD.Value
+dataEncoder fieldGetter metadata viewTypeName value =
   let
     encodeField fv = case fv of
       FieldValue v -> v
@@ -863,7 +882,7 @@ dataEncoder metadata viewTypeName value =
 
     encodeRecord rv vmd = case rv of
       RecordValue values ->
-        Utils.zip vmd.fields values |>
+        Utils.zip (fieldGetter vmd) values |>
         List.map
           (\(fmd, fv) ->
             ( fmd.name
@@ -1019,9 +1038,9 @@ set toMsg value =
   Task.perform toMsg <| Task.succeed <| UpdateCmdMsg True value
 
 
-{-| Edit `DataValue` model.
+{-| Edit `JsonValue` model.
 -}
-edit: Tomsg msg value -> Path -> DataValue -> Cmd msg
+edit: Tomsg msg value -> Path -> JsonValue -> Cmd msg
 edit toMsg path value =
   Task.perform toMsg <| Task.succeed <| EditMsg path value
 
@@ -1187,7 +1206,7 @@ update toMsg msg (Model modelData modelConf as same) =
           let
             newMetadata =
               Set.toList children |>
-              List.map (\n -> (n, VM.View "" [])) |>
+              List.map (\n -> (n, VM.View "" [] [])) |>
               Dict.fromList |>
               Dict.union (Dict.insert view.typeName view modelConf.metadata)
             newModel = Model modelData { modelConf | metadata = newMetadata }
@@ -1426,8 +1445,8 @@ update toMsg msg (Model modelData modelConf as same) =
 
 
 {- private function -}
-recordEditor: String -> Dict String VM.View -> Path -> DataValue -> DataValue -> DataValue
-recordEditor typeName metadata path value model =
+recordEditor: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue -> JsonValue
+recordEditor fieldGetter typeName metadata path value model =
   let
     vmd fmd default =
       if fmd.isComplexType then
@@ -1464,7 +1483,7 @@ recordEditor typeName metadata path value model =
           case tdata of
             RecordValue values ->
               RecordValue
-                ( Utils.zip viewmd.fields values |>
+                ( Utils.zip (fieldGetter viewmd) values |>
                   List.map
                     (\(f, val) -> -- find field transformer must be applied to
                       if f.name == name then transform rest val (vmd f viewmd) else val
@@ -1498,15 +1517,15 @@ recordEditor typeName metadata path value model =
 
 
 {- private function -}
-fieldValue: String -> Dict String VM.View -> Path -> DataValue -> DataValue
-fieldValue typeName metadata fieldPath value =
+fieldValue: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue
+fieldValue fieldGetter typeName metadata fieldPath value =
   let
     reader path result viewmd =
       case path of
         Name name rest ->
           case result of
             RecordValue values ->
-              Utils.zip values viewmd.fields |>
+              Utils.zip values (fieldGetter viewmd) |>
               List.filter (\(_, f) -> f.name == name) |>
               List.head |>
               Maybe.andThen
