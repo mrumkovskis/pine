@@ -542,14 +542,14 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
       HttpModelMsg onErr httpResult ->
         let
-            result =
-              case httpResult of
-                Ok r ->
-                  set toMsg (always r)
+          result =
+            case httpResult of
+              Ok r ->
+                set toMsg (always r)
 
-                Err e ->
-                  onErr |>
-                  Maybe.map (\r -> set toMsg (always r)) |>
-                  Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
+              Err e ->
+                onErr |>
+                Maybe.map (\r -> set toMsg (always r)) |>
+                Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
