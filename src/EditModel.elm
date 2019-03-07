@@ -27,6 +27,7 @@ module EditModel exposing
 
 
 import JsonModel as JM
+import ViewMetadata as VM
 import Ask
 import Select exposing (..)
 import Utils
@@ -116,7 +117,8 @@ type alias EditModel msg model =
 
 {-| Edit model update messages -}
 type Msg msg model
-  = UpdateModelMsg Bool (JM.FormMsg msg model)
+  = InitModelMsg (EditModel msg model -> EditModel msg model) (JM.FormMsg msg model)
+  | UpdateModelMsg Bool (JM.FormMsg msg model)
   | FetchModelMsg (JM.FormMsg msg model)
   | SaveModelMsg (JM.FormMsg msg model)
   | CreateModelMsg (model -> model) (JM.FormMsg msg model)
@@ -139,7 +141,7 @@ type alias Tomsg msg model = (Msg msg model -> msg)
 
 {-| Initializes model
 -}
-init: JM.FormModel msg model -> List (key, Controller msg model) -> Ask.Tomsg msg  -> EditModel msg model
+init: JM.FormModel msg model -> List (key, Controller msg model) -> Ask.Tomsg msg -> EditModel msg model
 init model ctrlList toMessagemsg =
   let
     controllers =
@@ -162,6 +164,24 @@ init model ctrlList toMessagemsg =
       False
       False
       True
+
+
+initJsonFormInternal: (VM.View -> List VM.Field) -> Tomsg msg JM.JsonValue -> String -> String -> String -> Ask.Tomsg msg -> (EditModel msg JM.JsonValue, Cmd msg)
+initJsonFormInternal fieldGetter toMsg metadataBaseUri dataBaseUri typeName toMessagemsg =
+  let
+    initFun em =
+      em
+  in
+    ( EditModel
+        (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
+        Dict.empty
+        Dict.empty
+        toMessagemsg
+        False
+        False
+        True
+    , JM.fetchMetadata <| toMsg << (InitModelMsg initFun)
+    )
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
@@ -553,3 +573,12 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
+
+      InitModelMsg initFun jsonmsg ->
+        JM.update (toMsg << InitModelMsg initFun) jsonmsg same.model |>
+        (\(jm, cmd) ->
+          let
+            nm = { same | model = jm}
+          in
+            if cmd == Cmd.none then (initFun nm, Cmd.none) else (nm, cmd)
+        )

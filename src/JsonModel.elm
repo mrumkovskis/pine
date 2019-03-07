@@ -4,15 +4,15 @@ module JsonModel exposing
   , JsonListMsg, FormModel, FormMsg, JsonFormModel, JsonFormMsg
   , Path (..), SearchParams, Decoder, Encoder, DataFetcher, CountFetcher
   -- initialization, configuration
-  , initJsonList, initList, initJsonForm, initJsonQueryForm, initForm, listDecoder, formDecoder
-  , countBaseUri, pageSize, countDecoder, idParam, offsetLimitParams
-  , enableDeferred, enableDeferredWithTimeout, dataFetcher, countFetcher
+  , initJsonList, initList, initJsonForm, initJsonQueryForm, initJsonValueForm, initForm, initQueryForm
+  , listDecoder, formDecoder, countBaseUri, pageSize, countDecoder, idParam
+  , offsetLimitParams , enableDeferred, enableDeferredWithTimeout, dataFetcher, countFetcher
   -- data examination
   , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
   , conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
-  , field, filterField
+  , field
   -- utility functions
   , dataDecoder, pathDecoder, isInitialized, notInitialized, ready
   , searchParsFromJson, searchParJsonDecoder
@@ -151,6 +151,7 @@ type alias Config msg value =
   , saveUri: SearchParams -> Model msg value -> String
   , createUri: SearchParams -> Model msg value -> String
   , metadata: Dict String VM.View
+  , fieldGetter: VM.View -> List VM.Field
   , metadataFetcher: String -> Cmd VM.Msg
   , dataFetcher: DataFetcher msg value
   , countFetcher: CountFetcher msg value
@@ -258,7 +259,7 @@ type alias Tomsg msg value = Msg msg value -> msg
 initJsonList: String -> String -> String -> Ask.Tomsg msg -> JsonListModel msg
 initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    decoder metadata deTypeName = JD.list <| dataDecoder .fields  metadata deTypeName
+    decoder metadata deTypeName = JD.list <| dataDecoder .fields metadata deTypeName
 
     encoder metadata eTypeName value =
       value |>
@@ -371,6 +372,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , saveUri = \_ _ -> ""
       , createUri = \_ _ -> ""
       , metadata = Dict.empty
+      , fieldGetter = .fields
       , metadataFetcher = VM.fetchMetadata
       , dataFetcher = httpDataFetcher
       , countFetcher = httpCountFetcher
@@ -456,7 +458,8 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
        }
   in
     jsonModel <|
-      initForm
+      initFormInternal
+        fieldGetter
         metadataBaseUri
         dataBaseUri
         typeName
@@ -467,8 +470,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
         toMessagemsg
 
 
-{-| Initialize `value` based form model.
-
+{-| Initialize `value` based form model on metadata fields.
       initForm "/metadata" "/data" "my-view" decoder encoder initValue idFunction AskMsg
 -}
 initForm:
@@ -477,7 +479,30 @@ initForm:
   value -> (FormModel msg value -> Maybe String) ->
   Ask.Tomsg msg ->
   FormModel msg value
-initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId toMessagemsg =
+initForm =
+  initFormInternal .fields
+
+{-| Initialize `value` based form model on metadata filter fields.
+      initForm "/metadata" "/data" "my-view" decoder encoder initValue idFunction AskMsg
+-}
+initQueryForm:
+  String -> String -> String ->
+  JD.Decoder value -> (value -> JD.Value) ->
+  value -> (FormModel msg value -> Maybe String) ->
+  Ask.Tomsg msg ->
+  FormModel msg value
+initQueryForm =
+  initFormInternal .filter
+
+
+initFormInternal:
+  (VM.View -> List VM.Field) ->
+  String -> String -> String ->
+  JD.Decoder value -> (value -> JD.Value) ->
+  value -> (FormModel msg value -> Maybe String) ->
+  Ask.Tomsg msg ->
+  FormModel msg value
+initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encoder initValue formId toMessagemsg =
   let
     setter newdata (Model md mc) =
       Model
@@ -539,6 +564,7 @@ initForm metadataBaseUri dataBaseUri typeName decoder encoder initValue formId t
       , saveUri = saveUri
       , createUri = createUri
       , metadata = Dict.empty
+      , fieldGetter = fieldGetter
       , metadataFetcher = VM.fetchMetadata
       , dataFetcher = httpDataFetcher
       , countFetcher = httpCountFetcher
@@ -765,26 +791,17 @@ fieldLabels all typeName model =
 
 {-| Returns metadata field by name from main view -}
 field: String -> Model msg value -> Maybe VM.Field
-field fieldName (Model _ c) =
-  c.metadata |>
-  Dict.get c.typeName |>
-  Maybe.map .fields |>
-  Maybe.andThen (Utils.find (.name >> (==) fieldName))
-
-
-{-| Returns metadata field by name from main view -}
-filterField: String -> Model msg value -> Maybe VM.Field
-filterField fieldName (Model _ c) =
-  c.metadata |>
-  Dict.get c.typeName |>
-  Maybe.map .filter |>
+field fieldName (Model _ { metadata, typeName, fieldGetter }) =
+  metadata |>
+  Dict.get typeName |>
+  Maybe.map fieldGetter |>
   Maybe.andThen (Utils.find (.name >> (==) fieldName))
 
 
 mdStringValue: Bool -> String -> (VM.Field -> String) -> Model msg value -> List String
-mdStringValue all typeName valFun (Model _ { metadata }) =
+mdStringValue all typeName valFun (Model _ { metadata, fieldGetter }) =
   Dict.get typeName metadata |>
-  Maybe.map .fields |>
+  Maybe.map fieldGetter |>
   Maybe.map (List.filter (.visible >> (||) all)) |>
   Maybe.map (List.map valFun) |>
   Maybe.withDefault []
