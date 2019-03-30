@@ -14,8 +14,8 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , dataDecoder, pathDecoder, isInitialized, notInitialized, ready
-  , searchParsFromJson, searchParJsonDecoder
+  , rowToList, dataDecoder, pathDecoder, isInitialized, notInitialized
+  , ready, searchParsFromJson, searchParJsonDecoder
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
@@ -812,8 +812,41 @@ mdStringValue all typeName valFun (Model _ { metadata, fieldGetter }) =
 conf: Model msg value -> Config msg value
 conf (Model _ c) = c
 
-
 -- utility functions
+
+{-| Return list representation of `JsonValue` list model row -}
+rowToList: JsonValue -> List String
+rowToList row =
+  let
+    decoder =
+      JD.oneOf
+        [ JD.string
+        , JD.int |> JD.map String.fromInt
+        , JD.float |> JD.map String.fromFloat
+        , JD.null ""
+        , JD.bool |> JD.map toString
+        ]
+
+    decval val =
+      JD.decodeValue decoder val |>
+      Result.withDefault ""
+  in
+    case row of
+      FieldValue v ->
+        [ decval v ]
+
+      RecordValue r ->
+        r |>
+        List.map
+          (\v ->
+            case v of
+              FieldValue fv ->
+                decval fv
+
+              RecordValue rv ->
+                toString rv
+          )
+
 
 {-| Decoder for [`JsonValue`](#JsonValue)
 

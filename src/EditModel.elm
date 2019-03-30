@@ -38,6 +38,8 @@ import Html.Events exposing (..)
 import Task
 import Http
 import Dict exposing (..)
+import Json.Encode as JE
+import Json.Decode as JD
 
 import Debug exposing (toString, log)
 
@@ -53,7 +55,9 @@ type alias Input msg =
   , required: Bool
   , length: Maybe Int
   , decimalPlaces: Maybe Int
+  , isCollection: Bool
   , attrs: Attributes msg
+  , idx: Int -- index of input in metadata fields list, used for JsonValue model
   }
 
 
@@ -154,7 +158,7 @@ init model ctrlList toMessagemsg =
 
     inputs =
       controllers |>
-      Dict.map (\k _ -> Input "" False Nothing Nothing "" "text" False Nothing Nothing emptyAttrs)
+      Dict.map (\k _ -> Input "" False Nothing Nothing "" "text" False Nothing Nothing False emptyAttrs -1)
   in
     EditModel
       model
@@ -182,6 +186,45 @@ initJsonFormInternal fieldGetter toMsg metadataBaseUri dataBaseUri typeName toMe
         True
     , JM.fetchMetadata <| toMsg << (InitModelMsg initFun)
     )
+
+
+jsonFormUpdater: Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
+jsonFormUpdater toMsg input model =
+  let
+    enc t v =
+      case t of
+        "string" ->
+          JM.FieldValue <| JE.string v
+
+        "int" ->
+          JM.FieldValue
+            ( String.toInt v |> Maybe.map JE.int |> Maybe.withDefault JE.null )
+
+        "long" ->
+          JM.FieldValue
+            ( String.toInt v |> Maybe.map JE.int |> Maybe.withDefault JE.null )
+
+        "float" ->
+          JM.FieldValue
+            ( String.toFloat v |> Maybe.map JE.float |> Maybe.withDefault JE.null )
+
+        "double" ->
+          JM.FieldValue
+            ( String.toFloat v |> Maybe.map JE.float |> Maybe.withDefault JE.null )
+
+        "decimal" ->
+          JM.FieldValue
+            ( String.toFloat v |> Maybe.map JE.float |> Maybe.withDefault JE.null )
+
+        "boolean" ->
+          JM.FieldValue
+            ( JE.bool <| v == "True" )
+
+        _ ->
+          JM.FieldValue <| JE.string v
+  in
+    --if input.idx /= -1 then
+    (model, Cmd.none)
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
