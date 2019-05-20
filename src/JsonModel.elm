@@ -846,6 +846,7 @@ jsonRowToList row =
           )
 
 
+{-| Returns `JsonValue` -}
 jsonValue: Path -> Model msg value -> JsonValue
 jsonValue path (Model _ { typeName, metadata, reader } as m) =
   data m |> reader typeName metadata path
