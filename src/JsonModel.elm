@@ -14,7 +14,7 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , rowToList, dataDecoder, pathDecoder, isInitialized, notInitialized
+  , rowToList, jsonDataDecoder, pathDecoder, isInitialized, notInitialized
   , ready, searchParsFromJson, searchParJsonDecoder
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
@@ -56,7 +56,7 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 @docs conf, columnNames, visibleColumnNames, fieldNames, visibleFieldNames
 
 # Utility functions
-@docs isInitialized, notInitialized, ready, dataDecoder, pathDecoder
+@docs isInitialized, notInitialized, ready, jsonDataDecoder, pathDecoder
 
 # Model update
 @docs update
@@ -259,11 +259,11 @@ type alias Tomsg msg value = Msg msg value -> msg
 initJsonList: String -> String -> String -> Ask.Tomsg msg -> JsonListModel msg
 initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    decoder metadata deTypeName = JD.list <| dataDecoder .fields metadata deTypeName
+    decoder metadata deTypeName = JD.list <| jsonDataDecoder .fields metadata deTypeName
 
     encoder metadata eTypeName value =
       value |>
-      JE.list (dataEncoder .fields metadata eTypeName)
+      JE.list (jsonDataEncoder .fields metadata eTypeName)
 
     editor eTypeName metadata path value edata =
       let
@@ -303,8 +303,8 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
         metadataBaseUri
         dataBaseUri
         typeName
-        (dataDecoder .fields Dict.empty "")
-        (dataEncoder .fields Dict.empty "")
+        (jsonDataDecoder .fields Dict.empty "")
+        (jsonDataEncoder .fields Dict.empty "")
         toMessagemsg
 
 
@@ -411,9 +411,9 @@ initJsonQueryForm =
 initJsonValueForm: (VM.View -> List VM.Field) -> String -> String -> String -> Ask.Tomsg msg -> JsonFormModel msg
 initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    decoder metadata deTypeName = dataDecoder fieldGetter metadata deTypeName
+    decoder metadata deTypeName = jsonDataDecoder fieldGetter metadata deTypeName
 
-    encoder metadata eTypeName value = dataEncoder fieldGetter metadata eTypeName value
+    encoder metadata eTypeName value = jsonDataEncoder fieldGetter metadata eTypeName value
 
     editor eTypeName metadata path value edata =
       let
@@ -463,8 +463,8 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
         metadataBaseUri
         dataBaseUri
         typeName
-        (dataDecoder fieldGetter Dict.empty "")
-        (dataEncoder fieldGetter Dict.empty "")
+        (jsonDataDecoder fieldGetter Dict.empty "")
+        (jsonDataEncoder fieldGetter Dict.empty "")
         (RecordValue [])
         formId
         toMessagemsg
@@ -850,10 +850,10 @@ rowToList row =
 
 {-| Decoder for [`JsonValue`](#JsonValue)
 
-    dataDecoder metadata viewTypeName
+    jsonDataDecoder metadata viewTypeName
 -}
-dataDecoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JD.Decoder JsonValue
-dataDecoder fieldGetter metadata viewTypeName =
+jsonDataDecoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JD.Decoder JsonValue
+jsonDataDecoder fieldGetter metadata viewTypeName =
   let
     fail name = JD.fail <| "Metadata not found for type: " ++ name
 
@@ -921,10 +921,10 @@ pathDecoder =
 
 {-| Encoder for [`JsonValue`](#JsonValue)
 
-    dataEncoder metadata viewTypeName value
+    jsonDataEncoder metadata viewTypeName value
 -}
-dataEncoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JsonValue -> JD.Value
-dataEncoder fieldGetter metadata viewTypeName value =
+jsonDataEncoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JsonValue -> JD.Value
+jsonDataEncoder fieldGetter metadata viewTypeName value =
   let
     encodeField fv = case fv of
       FieldValue v -> v
