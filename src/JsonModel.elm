@@ -14,8 +14,8 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , rowToList, jsonDataDecoder, pathDecoder, isInitialized, notInitialized
-  , ready, searchParsFromJson, searchParJsonDecoder
+  , jsonRowToList, jsonValue, jsonDataDecoder, pathDecoder, isInitialized, notInitialized
+  , ready, jsonValueDecoder, jsonValueEncoder, searchParsFromJson
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
@@ -268,7 +268,7 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
     editor eTypeName metadata path value edata =
       let
         result =
-          case recordEditor .fields eTypeName metadata path value <| RecordValue edata of
+          case jsonEditor .fields eTypeName metadata path value <| RecordValue edata of
             RecordValue rows -> rows
 
             _ -> edata
@@ -281,11 +281,10 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
           Name _ _ -> edata -- list editing path cannot start with name
 
     reader rTypeName metadata path value =
-      let read = fieldValue .fields rTypeName metadata path <| RecordValue value
-      in case path of
+      case path of
         End -> RecordValue value
 
-        Idx _ _ -> read
+        Idx _ _ -> jsonReader .fields rTypeName metadata path <| RecordValue value
 
         Name _ _ -> RecordValue [] -- list reading cannot start with name
 
@@ -418,7 +417,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
     editor eTypeName metadata path value edata =
       let
         result =
-          case recordEditor fieldGetter eTypeName metadata path value edata of
+          case jsonEditor fieldGetter eTypeName metadata path value edata of
             RecordValue fields -> RecordValue fields
 
             _ -> edata
@@ -431,11 +430,10 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
           Idx _ _ -> edata -- form editing path cannot start with index
 
     reader rTypeName metadata path value =
-      let read = fieldValue fieldGetter rTypeName metadata path value
-      in case path of
+      case path of
         End -> value
 
-        Name _ _ -> read
+        Name _ _ -> jsonReader fieldGetter rTypeName metadata path value
 
         Idx _ _ -> RecordValue [] -- form reading cannot start with index
 
@@ -815,8 +813,8 @@ conf (Model _ c) = c
 -- utility functions
 
 {-| Return list representation of `JsonValue` list model row -}
-rowToList: JsonValue -> List String
-rowToList row =
+jsonRowToList: JsonValue -> List String
+jsonRowToList row =
   let
     decoder =
       JD.oneOf
@@ -846,6 +844,11 @@ rowToList row =
               RecordValue rv ->
                 toString rv
           )
+
+
+jsonValue: Path -> Model msg value -> JsonValue
+jsonValue path (Model _ { typeName, metadata, reader } as m) =
+  data m |> reader typeName metadata path
 
 
 {-| Decoder for [`JsonValue`](#JsonValue)
@@ -972,13 +975,55 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
     Maybe.withDefault JE.null
 
 
-searchParsFromJson: (String -> JD.Value -> Maybe String) -> JsonFormModel msg -> SearchParams
-searchParsFromJson decoder (Model _ { metadata, typeName } as m) =
+jsonValueDecoder: String -> JD.Decoder String
+jsonValueDecoder jsonType =
+  case jsonType of
+    "string" ->
+      JD.maybe JD.string
+      |> JD.map (Maybe.withDefault "")
+
+    "number" ->
+      JD.maybe JD.float
+      |> JD.map (Maybe.map String.fromFloat)
+      |> JD.map (Maybe.withDefault "")
+
+    "boolean" ->
+      JD.maybe JD.bool
+      |> JD.map (Maybe.map toString)
+      |> JD.map (Maybe.withDefault "")
+
+    x ->
+      JD.fail ("Unknown json type: " ++ x)
+
+
+jsonValueEncoder: String -> String -> Maybe JD.Value
+jsonValueEncoder jsonType value =
+  let
+    enc v =
+      case jsonType of
+        "string" ->
+          Just <| JE.string v
+
+        "number" ->
+          String.toFloat v |> Maybe.map JE.float
+
+        "boolean" ->
+          Just <| JE.bool (String.toLower v |> (\x -> x == "true"))
+
+        x ->
+          Just JE.null
+  in
+    if String.isEmpty value then Just JE.null else enc value
+
+
+searchParsFromJson: JsonFormModel msg -> SearchParams
+searchParsFromJson (Model _ { metadata, typeName } as m) =
   let
     par fld val res =
       case val of
         FieldValue json ->
-          decoder fld.typeName json |>
+          JD.decodeValue (jsonValueDecoder fld.jsonType) json |>
+          Result.toMaybe |>
           Maybe.map (\v -> (fld.name, v) :: res) |>
           Maybe.withDefault res
 
@@ -1006,36 +1051,6 @@ searchParsFromJson decoder (Model _ { metadata, typeName } as m) =
     Dict.get typeName metadata |>
     Maybe.map (pars [] (data m)) |>
     Maybe.withDefault []
-
-
-searchParJsonDecoder: String -> JD.Value -> Maybe String
-searchParJsonDecoder fieldType val =
-  case fieldType of
-    "long" ->
-      JD.decodeValue JD.int val |> Result.toMaybe |> Maybe.map String.fromInt
-
-    "int" ->
-      JD.decodeValue JD.int val |> Result.toMaybe |> Maybe.map String.fromInt
-
-    "decimal" ->
-      JD.decodeValue JD.float val |> Result.toMaybe |> Maybe.map String.fromFloat
-
-    "string" ->
-      JD.decodeValue JD.string val |> Result.toMaybe
-
-    "date" ->
-      JD.decodeValue JD.string val |> Result.toMaybe
-
-    "dateTime" ->
-      JD.decodeValue JD.string val |> Result.toMaybe
-
-    "bool" ->
-      JD.decodeValue JD.bool val |>
-      Result.toMaybe |>
-      Maybe.map (\b -> if b then "true" else "false")
-
-    x ->
-      Nothing
 
 
 -- commands
@@ -1562,8 +1577,8 @@ update toMsg msg (Model modelData modelConf as same) =
 
 
 {- private function -}
-recordEditor: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue -> JsonValue
-recordEditor fieldGetter typeName metadata path value model =
+jsonEditor: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue -> JsonValue
+jsonEditor fieldGetter typeName metadata path value model =
   let
     vmd fmd default =
       if fmd.isComplexType then
@@ -1634,8 +1649,8 @@ recordEditor fieldGetter typeName metadata path value model =
 
 
 {- private function -}
-fieldValue: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue
-fieldValue fieldGetter typeName metadata fieldPath value =
+jsonReader: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue
+jsonReader fieldGetter typeName metadata fieldPath value =
   let
     reader path result viewmd =
       case path of
