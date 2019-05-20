@@ -39,6 +39,7 @@ type alias Field =
   { name: String
   , label: String
   , typeName: String
+  , jsonType: String
   , nullable: Bool
   , required: Bool
   , visible: Bool
@@ -93,15 +94,16 @@ fetchMetadata uri =
         (stringFieldDecoder "name")
         (optionalStringFieldDecoder "label")
         (stringFieldDecoder "type")
+        (stringFieldDecoder "jsonType")
         (boolFieldDecoder "nullable")
         (boolFieldDecoder "required")
         (boolFieldDecoder "visible")
-        (boolFieldDecoder "sortable")
-        (JD.maybe <| JD.field "enum" <| JD.list JD.string) |>
+        (boolFieldDecoder "sortable") |>
       JD.andThen
         (\v ->
-          JD.map7
+          JD.map8
             v
+            (JD.maybe <| JD.field "enum" <| JD.list JD.string)
             (optionalIntFieldDecoder "length")
             (optionalIntFieldDecoder "totalDigits")
             (optionalIntFieldDecoder "fractionDigits")
@@ -117,15 +119,16 @@ fetchMetadata uri =
         (stringFieldDecoder "name")
         (optionalStringFieldDecoder "label")
         (stringFieldDecoder "type")
+        (stringFieldDecoder "jsonType")
         (boolFieldDecoder "nullable")
         (boolFieldDecoder "required")
         (JD.succeed True)
-        (JD.succeed False)
-        (JD.maybe <| JD.field "enum" <| JD.list JD.string) |>
+        (JD.succeed False) |>
       JD.andThen
         (\v ->
-          JD.map7
+          JD.map8
             v
+            (JD.maybe <| JD.field "enum" <| JD.list JD.string)
             (JD.succeed Nothing)
             (JD.succeed Nothing)
             (JD.succeed Nothing)
