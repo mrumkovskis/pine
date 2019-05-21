@@ -61,6 +61,10 @@ type alias Input msg =
   }
 
 
+type alias ModelInitializer msg model =
+  JM.FormModel msg model -> Maybe (Dict String (Controller msg model), Dict String (Input msg))
+
+
 {-| Updates model from `Input` optionally emiting command. -}
 type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 
@@ -107,6 +111,7 @@ type alias Attributes msg =
 {-| Edit model -}
 type alias EditModel msg model =
   { model: JM.FormModel msg model
+  , initializer: ModelInitializer msg model
   , controllers: Dict String (Controller msg model)
   , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
@@ -121,8 +126,7 @@ type alias EditModel msg model =
 
 {-| Edit model update messages -}
 type Msg msg model
-  = InitModelMsg (EditModel msg model -> EditModel msg model) (JM.FormMsg msg model)
-  | UpdateModelMsg Bool (JM.FormMsg msg model)
+  = UpdateModelMsg Bool (JM.FormMsg msg model)
   | FetchModelMsg (JM.FormMsg msg model)
   | SaveModelMsg (JM.FormMsg msg model)
   | CreateModelMsg (model -> model) (JM.FormMsg msg model)
@@ -162,6 +166,7 @@ init model ctrlList toMessagemsg =
   in
     EditModel
       model
+      (always Nothing)
       controllers
       inputs
       toMessagemsg
@@ -170,61 +175,20 @@ init model ctrlList toMessagemsg =
       True
 
 
-initJsonFormInternal: (VM.View -> List VM.Field) -> Tomsg msg JM.JsonValue -> String -> String -> String -> Ask.Tomsg msg -> (EditModel msg JM.JsonValue, Cmd msg)
+initJsonFormInternal: (VM.View -> List VM.Field) -> Tomsg msg JM.JsonValue -> String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
 initJsonFormInternal fieldGetter toMsg metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    initFun em =
-      em
+    initializer formModel = Nothing
   in
-    ( EditModel
-        (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
-        Dict.empty
-        Dict.empty
-        toMessagemsg
-        False
-        False
-        True
-    , JM.fetchMetadata <| toMsg << (InitModelMsg initFun)
-    )
-
-
-jsonFormUpdater: Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
-jsonFormUpdater toMsg input model =
-  let
-    enc t v =
-      case t of
-        "string" ->
-          JM.FieldValue <| JE.string v
-
-        "int" ->
-          JM.FieldValue
-            ( String.toInt v |> Maybe.map JE.int |> Maybe.withDefault JE.null )
-
-        "long" ->
-          JM.FieldValue
-            ( String.toInt v |> Maybe.map JE.int |> Maybe.withDefault JE.null )
-
-        "float" ->
-          JM.FieldValue
-            ( String.toFloat v |> Maybe.map JE.float |> Maybe.withDefault JE.null )
-
-        "double" ->
-          JM.FieldValue
-            ( String.toFloat v |> Maybe.map JE.float |> Maybe.withDefault JE.null )
-
-        "decimal" ->
-          JM.FieldValue
-            ( String.toFloat v |> Maybe.map JE.float |> Maybe.withDefault JE.null )
-
-        "boolean" ->
-          JM.FieldValue
-            ( JE.bool <| v == "True" )
-
-        _ ->
-          JM.FieldValue <| JE.string v
-  in
-    --if input.idx /= -1 then
-    (model, Cmd.none)
+    EditModel
+      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
+      initializer
+      Dict.empty
+      Dict.empty
+      toMessagemsg
+      False
+      False
+      True
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
@@ -616,12 +580,3 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
-
-      InitModelMsg initFun jsonmsg ->
-        JM.update (toMsg << InitModelMsg initFun) jsonmsg same.model |>
-        (\(jm, cmd) ->
-          let
-            nm = { same | model = jm}
-          in
-            if cmd == Cmd.none then (initFun nm, Cmd.none) else (nm, cmd)
-        )
