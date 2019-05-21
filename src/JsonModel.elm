@@ -15,7 +15,7 @@ module JsonModel exposing
   , field
   -- utility functions
   , jsonRowToList, jsonValue, jsonDataDecoder, pathDecoder, isInitialized, notInitialized
-  , ready, jsonValueDecoder, jsonValueEncoder, searchParsFromJson
+  , ready, jsonValueDecoder, jsonValueEncoder, searchParsFromJson, reversePath, flattenJsonForm
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
@@ -898,29 +898,101 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
 
 
 {-| Decoder of json array of strings and ints, i.e. ["department-name", 2, "employee-name"]
+    or just "department-name" or just idx like - 1
 -}
 pathDecoder: JD.Decoder Path
 pathDecoder =
   let
-    pathElementDecoder =
-      JD.oneOf
-        [ JD.string |> JD.map ((Utils.flip Name) End)
-        , JD.int |> JD.map ((Utils.flip Idx) End)
-        ]
-  in
-    JD.list pathElementDecoder |>
-    JD.map
-      (List.foldr
-        (\el path ->
-          case el of
-            Name n _ -> Name n path
+    nameDec = JD.string |> JD.map ((Utils.flip Name) End)
 
-            Idx i _ -> Idx i path
+    idxDec = JD.int |> JD.map ((Utils.flip Idx) End)
 
-            End -> End
-        )
-        End
+    pathElementDecoder = JD.oneOf [ nameDec, idxDec ]
+
+    pathDec =
+      JD.list pathElementDecoder |>
+      JD.map
+        (List.foldr
+          (\el path ->
+            case el of
+              Name n _ -> Name n path
+
+              Idx i _ -> Idx i path
+
+              End -> End
+          )
+          End
       )
+  in
+    JD.oneOf [ nameDec, pathDec, idxDec ]
+
+
+reversePath: Path -> Path
+reversePath path =
+  let
+    reverse np p =
+      case p of
+        End -> np
+
+        Name n rest -> reverse (Name n np) rest
+
+        Idx i rest as ie -> reverse (Idx i np) rest
+  in
+    reverse End path
+
+
+flattenJsonForm: (VM.View -> List VM.Field) -> JsonFormModel msg -> List (Path, VM.Field, JsonValue)
+flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
+  let
+    flatten viewmd path jsonData result =
+      case jsonData of
+        RecordValue values ->
+          Utils.zip (fieldGetter viewmd) values |>
+          List.foldl
+            (\(f, v) res ->
+              let
+                fpath = Name f.name path
+              in
+                if f.isComplexType then
+                  Dict.get f.typeName metadata |>
+                  Maybe.map
+                    (\vmd ->
+                      if f.isCollection then
+                        case v of
+                          RecordValue rows ->
+                            List.foldl
+                              (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
+                              (res, 0)
+                              rows |>
+                            Tuple.first
+
+                          _ -> res --unexpected match, structure not according to metadata
+                      else
+                        flatten vmd fpath v res
+                    ) |>
+                  Maybe.withDefault res
+                else
+                  if f.isCollection then
+                    case v of
+                      RecordValue rows ->
+                        List.foldl
+                          (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
+                          (res, 0)
+                          rows |>
+                        Tuple.first
+
+                      _ -> res --unexpected match, structure not according to metadata
+                  else
+                    (fpath, f, v) :: res
+            )
+            result
+
+        _ -> result -- unexpected match, structure not according to metadata
+  in
+    Dict.get typeName metadata |>
+    Maybe.map(\md -> flatten md End (data m) []) |>
+    Maybe.map (List.foldl (\(p, f, v) nres -> (reversePath p, f, v) :: nres) []) |>
+    Maybe.withDefault []
 
 
 {-| Encoder for [`JsonValue`](#JsonValue)
