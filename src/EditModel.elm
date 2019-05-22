@@ -178,7 +178,7 @@ init model ctrlList toMessagemsg =
 initJsonFormInternal: (VM.View -> List VM.Field) -> Tomsg msg JM.JsonValue -> String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
 initJsonFormInternal fieldGetter toMsg metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    initializer formModel = Nothing
+    initializer fm = Nothing
   in
     EditModel
       (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
@@ -189,6 +189,68 @@ initJsonFormInternal fieldGetter toMsg metadataBaseUri dataBaseUri typeName toMe
       False
       False
       True
+
+
+jsonFormInitializer:(VM.View -> List VM.Field) -> JM.JsonFormModel msg -> (Dict String (Controller msg JM.JsonValue), Dict String (Input msg))
+jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel) =
+  JM.flattenJsonForm fieldGetter formModel |>
+  List.indexedMap
+    (\i (path, field, value) ->
+      let
+        key = JM.pathEncoder (JM.Name "x" JM.End) |> JE.encode 0
+
+        val = case value of
+          JM.FieldValue v ->
+            JD.decodeValue (JM.jsonValueDecoder field.jsonType) v |>
+            Result.withDefault ""
+
+          JM.RecordValue x -> toString x
+
+        input =
+          Input val False Nothing Nothing field.label field.typeName field.required
+            field.length field.fractionDigits field.isCollection
+            (Attributes (always []) []) i
+
+        ctrl =
+          let
+            updater toMsg cinp model =
+              let
+                miv =
+                  JM.jsonValueEncoder field.jsonType cinp.value |>
+                  Maybe.map JM.FieldValue
+              in
+                miv |>
+                Maybe.map (\iv -> ( model, JM.edit (toMsg << UpdateModelMsg False) path iv )) |>
+                Maybe.withDefault ( model, Cmd.none )
+
+            formatter model =
+              JM.jsonReader fieldGetter typeName metadata path model |>
+              (\jv -> case jv of
+                JM.FieldValue v ->
+                  JD.decodeValue (JM.jsonValueDecoder field.jsonType) v |>
+                  Result.withDefault ""
+
+                x -> toString x
+              )
+
+            validator iv =
+              case field.jsonType of
+                "number" ->
+                   Ok iv
+                _ -> Ok iv
+          in
+            Controller
+              { name = key
+              , updateModel = updater
+              , formatter = formatter
+              , selectInitializer = Nothing
+              , validateInput = validator
+              }
+      in
+        ((key, ctrl), (key, input))
+    ) |>
+    List.unzip |>
+    Tuple.mapBoth Dict.fromList Dict.fromList
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model

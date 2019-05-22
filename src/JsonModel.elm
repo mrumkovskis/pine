@@ -15,7 +15,7 @@ module JsonModel exposing
   , field
   -- utility functions
   , jsonDataDecoder, jsonValueDecoder, jsonValueEncoder
-  , jsonValue, jsonList, searchParsFromJson, flattenJsonForm
+  , jsonValue, jsonList, jsonEditor, jsonReader, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath
   , isInitialized, notInitialized, ready
   -- commands
@@ -1685,7 +1685,6 @@ update toMsg msg (Model modelData modelConf as same) =
           errorResponse doneProgressOnError err
 
 
-{- private function -}
 jsonEditor: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue -> JsonValue
 jsonEditor fieldGetter typeName metadata path value model =
   let
@@ -1757,7 +1756,6 @@ jsonEditor fieldGetter typeName metadata path value model =
     Maybe.withDefault model
 
 
-{- private function -}
 jsonReader: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue
 jsonReader fieldGetter typeName metadata fieldPath value =
   let
