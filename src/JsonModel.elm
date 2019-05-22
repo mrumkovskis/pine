@@ -14,9 +14,10 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonRowToList, jsonValue, jsonDataDecoder, pathDecoder, pathEncoder, isInitialized
-  , notInitialized, ready, jsonValueDecoder, jsonValueEncoder, searchParsFromJson
-  , reversePath, flattenJsonForm
+  , jsonDataDecoder, jsonValueDecoder, jsonValueEncoder
+  , jsonValue, jsonList, searchParsFromJson, flattenJsonForm
+  , pathDecoder, pathEncoder, reversePath
+  , isInitialized, notInitialized, ready
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
@@ -813,45 +814,6 @@ conf (Model _ c) = c
 
 -- utility functions
 
-{-| Return list representation of `JsonValue` list model row -}
-jsonRowToList: JsonValue -> List String
-jsonRowToList row =
-  let
-    decoder =
-      JD.oneOf
-        [ JD.string
-        , JD.int |> JD.map String.fromInt
-        , JD.float |> JD.map String.fromFloat
-        , JD.null ""
-        , JD.bool |> JD.map toString
-        ]
-
-    decval val =
-      JD.decodeValue decoder val |>
-      Result.withDefault ""
-  in
-    case row of
-      FieldValue v ->
-        [ decval v ]
-
-      RecordValue r ->
-        r |>
-        List.map
-          (\v ->
-            case v of
-              FieldValue fv ->
-                decval fv
-
-              RecordValue rv ->
-                toString rv
-          )
-
-
-{-| Returns `JsonValue` -}
-jsonValue: Path -> Model msg value -> JsonValue
-jsonValue path (Model _ { typeName, metadata, reader } as m) =
-  data m |> reader typeName metadata path
-
 
 {-| Decoder for [`JsonValue`](#JsonValue)
 
@@ -896,122 +858,6 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
     Dict.get viewTypeName metadata |>
     Maybe.map recordDecoder |>
     Maybe.withDefault (fail viewTypeName)
-
-
-{-| Decoder of json array of strings and ints, i.e. ["department-name", 2, "employee-name"]
-    or just "department-name" or just idx like - 1
--}
-pathDecoder: JD.Decoder Path
-pathDecoder =
-  let
-    nameDec = JD.string |> JD.map ((Utils.flip Name) End)
-
-    idxDec = JD.int |> JD.map ((Utils.flip Idx) End)
-
-    pathElementDecoder = JD.oneOf [ nameDec, idxDec ]
-
-    pathDec =
-      JD.list pathElementDecoder |>
-      JD.map
-        (List.foldr
-          (\el path ->
-            case el of
-              Name n _ -> Name n path
-
-              Idx i _ -> Idx i path
-
-              End -> End
-          )
-          End
-      )
-  in
-    JD.oneOf [ nameDec, pathDec, idxDec ]
-
-
-pathEncoder: Path -> JD.Value
-pathEncoder path =
-  let
-    encode res p =
-      case p of
-        Name n rest ->
-          JE.string n :: encode res rest
-
-        Idx i rest ->
-          JE.int i :: encode res rest
-
-        End -> res
-  in case encode [] path of
-    [ val ] -> val
-
-    x -> JE.list identity x
-
-
-reversePath: Path -> Path
-reversePath path =
-  let
-    reverse np p =
-      case p of
-        End -> np
-
-        Name n rest -> reverse (Name n np) rest
-
-        Idx i rest as ie -> reverse (Idx i np) rest
-  in
-    reverse End path
-
-
-flattenJsonForm: (VM.View -> List VM.Field) -> JsonFormModel msg -> List (Path, VM.Field, JsonValue)
-flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
-  let
-    flatten viewmd path jsonData result =
-      case jsonData of
-        RecordValue values ->
-          Utils.zip (fieldGetter viewmd) values |>
-          List.foldl
-            (\(f, v) res ->
-              let
-                fpath = Name f.name path
-              in
-                if f.isComplexType then
-                  Dict.get f.typeName metadata |>
-                  Maybe.map
-                    (\vmd ->
-                      if f.isCollection then
-                        case v of
-                          RecordValue rows ->
-                            List.foldl
-                              (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
-                              (res, 0)
-                              rows |>
-                            Tuple.first
-
-                          _ -> res --unexpected match, structure not according to metadata
-                      else
-                        flatten vmd fpath v res
-                    ) |>
-                  Maybe.withDefault res
-                else
-                  if f.isCollection then
-                    case v of
-                      RecordValue rows ->
-                        List.foldl
-                          (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
-                          (res, 0)
-                          rows |>
-                        Tuple.first
-
-                      _ -> res --unexpected match, structure not according to metadata
-                  else
-                    (fpath, f, v) :: res
-            )
-            result
-
-        _ -> result -- unexpected match, structure not according to metadata
-  in
-    Dict.get typeName metadata |>
-    Maybe.map(\md -> flatten md End (data m) []) |>
-    Maybe.map (List.foldl (\(p, f, v) nres -> (reversePath p, f, v) :: nres) []) |>
-    Maybe.withDefault []
 
 
 {-| Encoder for [`JsonValue`](#JsonValue)
@@ -1085,7 +931,7 @@ jsonValueDecoder jsonType =
       |> JD.map (Maybe.withDefault "")
 
     x ->
-      JD.fail ("Unknown json type: " ++ x)
+      JD.fail ("<unknown json type: " ++ x ++ " >")
 
 
 jsonValueEncoder: String -> String -> Maybe JD.Value
@@ -1106,6 +952,115 @@ jsonValueEncoder jsonType value =
           Just JE.null
   in
     if String.isEmpty value then Just JE.null else enc value
+
+
+{-| Returns `JsonValue` -}
+jsonValue: Path -> Model msg value -> JsonValue
+jsonValue path (Model _ { typeName, metadata, reader } as m) =
+  data m |> reader typeName metadata path
+
+
+jsonList: JsonListModel msg -> List (List String)
+jsonList (Model _ {typeName, metadata} as m) =
+  let
+    decVal f v =
+      case JD.decodeValue (jsonValueDecoder f.jsonType) v of
+        Ok jv -> jv
+
+        Err err -> JD.errorToString err
+
+    decRow vmd row =
+      Utils.zip vmd.fields row |>
+      List.map
+        (\(f, fv) -> case fv of
+          FieldValue v ->
+            decVal f v
+
+          RecordValue rows ->
+            if not f.isComplexType then
+              rows |>
+              List.map
+                (\rjv ->
+                  case rjv of
+                    FieldValue rv ->
+                      decVal f rv
+
+                    RecordValue x ->
+                      toString x
+                ) |>
+              List.intersperse ", " |>
+              String.concat
+
+            else toString rows
+        )
+
+    jlist d md =
+      d |>
+      List.map
+        (\r -> case r of
+          RecordValue row -> --rows
+            decRow md row
+
+          x -> [ toString x ] --should not happen
+        )
+  in
+    Dict.get typeName metadata |>
+    Maybe.map (jlist (data m)) |>
+    Maybe.withDefault []
+
+
+flattenJsonForm: (VM.View -> List VM.Field) -> JsonFormModel msg -> List (Path, VM.Field, JsonValue)
+flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
+  let
+    flatten viewmd path jsonData result =
+      case jsonData of
+        RecordValue values ->
+          Utils.zip (fieldGetter viewmd) values |>
+          List.foldl
+            (\(f, v) res ->
+              let
+                fpath = Name f.name path
+              in
+                if f.isComplexType then
+                  Dict.get f.typeName metadata |>
+                  Maybe.map
+                    (\vmd ->
+                      if f.isCollection then
+                        case v of
+                          RecordValue rows ->
+                            List.foldl
+                              (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
+                              (res, 0)
+                              rows |>
+                            Tuple.first
+
+                          _ -> res --unexpected match, structure not according to metadata
+                      else
+                        flatten vmd fpath v res
+                    ) |>
+                  Maybe.withDefault res
+                else
+                  if f.isCollection then
+                    case v of
+                      RecordValue rows ->
+                        List.foldl
+                          (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
+                          (res, 0)
+                          rows |>
+                        Tuple.first
+
+                      _ -> res --unexpected match, structure not according to metadata
+                  else
+                    (fpath, f, v) :: res
+            )
+            result
+
+        _ -> result -- unexpected match, structure not according to metadata
+  in
+    Dict.get typeName metadata |>
+    Maybe.map(\md -> flatten md End (data m) []) |>
+    Maybe.map (List.foldl (\(p, f, v) nres -> (reversePath p, f, v) :: nres) []) |>
+    Maybe.withDefault []
 
 
 searchParsFromJson: JsonFormModel msg -> SearchParams
@@ -1143,6 +1098,68 @@ searchParsFromJson (Model _ { metadata, typeName } as m) =
     Dict.get typeName metadata |>
     Maybe.map (pars [] (data m)) |>
     Maybe.withDefault []
+
+
+{-| Decoder of json array of strings and ints, i.e. ["department-name", 2, "employee-name"]
+    or just "department-name" or just idx like - 1
+-}
+pathDecoder: JD.Decoder Path
+pathDecoder =
+  let
+    nameDec = JD.string |> JD.map ((Utils.flip Name) End)
+
+    idxDec = JD.int |> JD.map ((Utils.flip Idx) End)
+
+    pathElementDecoder = JD.oneOf [ nameDec, idxDec ]
+
+    pathDec =
+      JD.list pathElementDecoder |>
+      JD.map
+        (List.foldr
+          (\el path ->
+            case el of
+              Name n _ -> Name n path
+
+              Idx i _ -> Idx i path
+
+              End -> End
+          )
+          End
+      )
+  in
+    JD.oneOf [ nameDec, pathDec, idxDec ]
+
+
+pathEncoder: Path -> JD.Value
+pathEncoder path =
+  let
+    encode res p =
+      case p of
+        Name n rest ->
+          JE.string n :: encode res rest
+
+        Idx i rest ->
+          JE.int i :: encode res rest
+
+        End -> res
+  in case encode [] path of
+    [ val ] -> val
+
+    x -> JE.list identity x
+
+
+reversePath: Path -> Path
+reversePath path =
+  let
+    reverse np p =
+      case p of
+        End -> np
+
+        Name n rest -> reverse (Name n np) rest
+
+        Idx i rest as ie -> reverse (Idx i np) rest
+  in
+    reverse End path
 
 
 -- commands
