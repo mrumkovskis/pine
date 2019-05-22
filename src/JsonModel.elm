@@ -14,8 +14,9 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonRowToList, jsonValue, jsonDataDecoder, pathDecoder, isInitialized, notInitialized
-  , ready, jsonValueDecoder, jsonValueEncoder, searchParsFromJson, reversePath, flattenJsonForm
+  , jsonRowToList, jsonValue, jsonDataDecoder, pathDecoder, pathEncoder, isInitialized
+  , notInitialized, ready, jsonValueDecoder, jsonValueEncoder, searchParsFromJson
+  , reversePath, flattenJsonForm
   -- commands
   , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
@@ -925,6 +926,24 @@ pathDecoder =
       )
   in
     JD.oneOf [ nameDec, pathDec, idxDec ]
+
+
+pathEncoder: Path -> JD.Value
+pathEncoder path =
+  let
+    encode res p =
+      case p of
+        Name n rest ->
+          JE.string n :: encode res rest
+
+        Idx i rest ->
+          JE.int i :: encode res rest
+
+        End -> res
+  in case encode [] path of
+    [ val ] -> val
+
+    x -> JE.list identity x
 
 
 reversePath: Path -> Path

@@ -491,13 +491,18 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         newInputs
 
     updateModel doInputUpdate newModel =
-      { same |
-        model = newModel
-      , inputs =
-          if doInputUpdate then
-            updateInputsFromModel (JM.data newModel) same.inputs
-          else same.inputs
-      }
+      if doInputUpdate then
+        same.initializer newModel |>
+        Maybe.map
+          (\(ctrls, is) ->
+            { same | model = newModel, controllers = ctrls, inputs = is }
+          ) |>
+        Maybe.withDefault
+          { same |
+            model = newModel
+          , inputs = updateInputsFromModel (JM.data newModel) same.inputs
+          }
+      else { same | model = newModel }
 
     applyCreateModel newModel =
       { same | model = newModel }
