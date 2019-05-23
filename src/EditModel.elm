@@ -236,7 +236,25 @@ jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel)
             validator iv =
               case field.jsonType of
                 "number" ->
-                   Ok iv
+                  let
+                    res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
+                  in
+                    field.fractionDigits |>
+                    Maybe.map
+                      (\fd ->
+                        if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
+                      ) |>
+                    Maybe.withDefault (String.toInt iv |> res)
+
+                "boolean" ->
+                  String.toLower iv |>
+                    (\s ->
+                      if s == "true" || s == "false" then
+                        Ok iv
+                      else
+                        Err <| "Not a boolean: " ++ iv
+                    )
+
                 _ -> Ok iv
           in
             Controller
