@@ -222,7 +222,7 @@ jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel)
             JD.decodeValue (JM.jsonValueDecoder field.jsonType) v |>
             Result.withDefault ""
 
-          JM.RecordValue x -> toString x
+          x -> toString x
 
         input =
           Input key val False Nothing Nothing field.label field.typeName field.required

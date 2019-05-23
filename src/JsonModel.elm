@@ -218,7 +218,8 @@ type alias JsonFormMsg msg = FormMsg msg JsonValue
 -}
 type JsonValue
   = FieldValue JD.Value
-  | RecordValue (List JsonValue)
+  | ListValue (List JsonValue)
+  | ObjectValue (Dict String JsonValue)
 
 
 {-| Path to field in dynamic model data.
@@ -270,8 +271,8 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
     editor eTypeName metadata path value edata =
       let
         result =
-          case jsonEditor .fields eTypeName metadata path value <| RecordValue edata of
-            RecordValue rows -> rows
+          case jsonEditor .fields eTypeName metadata path value <| ListValue edata of
+            ListValue rows -> rows
 
             _ -> edata
       in
@@ -284,11 +285,11 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
 
     reader rTypeName metadata path value =
       case path of
-        End -> RecordValue value
+        End -> ListValue value
 
-        Idx _ _ -> jsonReader .fields rTypeName metadata path <| RecordValue value
+        Idx _ _ -> jsonReader .fields rTypeName metadata path <| ListValue value
 
-        Name _ _ -> RecordValue [] -- list reading cannot start with name
+        Name _ _ -> ListValue [] -- list reading cannot start with name
 
     jsonModel (Model md mc) =
       Model md
@@ -365,7 +366,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , encoder = \_ _ value -> JE.list encoder value
       , setter = listSetter
       , editor = \_ _ _ _ value -> value
-      , reader = \_ _ _ _ -> RecordValue []
+      , reader = \_ _ _ _ -> ListValue []
       , emptyData = emptyListData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -420,7 +421,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
       let
         result =
           case jsonEditor fieldGetter eTypeName metadata path value edata of
-            RecordValue fields -> RecordValue fields
+            ObjectValue fields -> ObjectValue fields
 
             _ -> edata
       in
@@ -437,7 +438,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
 
         Name _ _ -> jsonReader fieldGetter rTypeName metadata path value
 
-        Idx _ _ -> RecordValue [] -- form reading cannot start with index
+        Idx _ _ -> ObjectValue Dict.empty -- form reading cannot start with index
 
     formId (Model md mc) =
       case mc.reader mc.typeName mc.metadata (Name mc.idParamName End) md.data of
@@ -465,7 +466,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
         typeName
         (jsonDataDecoder fieldGetter Dict.empty "")
         (jsonDataEncoder fieldGetter Dict.empty "")
-        (RecordValue [])
+        (ObjectValue Dict.empty)
         formId
         toMessagemsg
 
@@ -556,7 +557,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , encoder = \_ _ value -> encoder value
       , setter = setter
       , editor = \_ _ _ _ value -> value -- not implemented (only for Json... model)
-      , reader = \_ _ _ _ -> RecordValue [] -- not implemented (only for Json... model)
+      , reader = \_ _ _ _ -> ObjectValue Dict.empty -- not implemented (only for Json... model)
       , emptyData = emptyFormData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -829,34 +830,38 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
         JD.map FieldValue JD.value
       else if fieldmd.isComplexType && (not fieldmd.isCollection) then
         Dict.get fieldmd.typeName metadata |>
-        Maybe.map recordDecoder |>
+        Maybe.map objectDecoder |>
         Maybe.withDefault (fail fieldmd.typeName)
       else if (not fieldmd.isComplexType) && fieldmd.isCollection then
         JD.list (JD.value |> JD.map FieldValue) |>
-        JD.map RecordValue
+        JD.map ListValue
       else
         Dict.get fieldmd.typeName metadata |>
-        Maybe.map jsonListDecoder |>
-        Maybe.map (\ld -> JD.map RecordValue ld) |>
+        Maybe.map list_decoder |>
+        Maybe.map (\ld -> JD.map ListValue ld) |>
         Maybe.withDefault (fail fieldmd.typeName)
 
-    recordDecoder viewmd =
+    objectDecoder viewmd =
       let
         fieldsDecoder fields decodedFields =
           case fields of
             [] -> JD.succeed <| List.reverse decodedFields
 
             fieldmd :: tail ->
-              JD.field fieldmd.name (JD.lazy (\_ -> fieldDecoder fieldmd)) |>
-              JD.andThen (\df -> fieldsDecoder tail <| df :: decodedFields)
+              JD.oneOf
+                [ JD.field fieldmd.name (JD.lazy (\_ -> fieldDecoder fieldmd)) |>
+                  JD.andThen (\df -> fieldsDecoder tail <| (fieldmd.name, df) :: decodedFields)
+                , fieldsDecoder tail decodedFields -- field not found
+                ]
       in
         JD.oneOf [ fieldsDecoder (fieldGetter viewmd) [], JD.null [] ] |>
-        JD.map RecordValue
+        JD.map Dict.fromList |>
+        JD.map ObjectValue
 
-    jsonListDecoder viewmd = JD.oneOf [ JD.list (recordDecoder viewmd), JD.null [] ]
+    list_decoder viewmd = JD.oneOf [ JD.list (objectDecoder viewmd), JD.null [] ]
   in
     Dict.get viewTypeName metadata |>
-    Maybe.map recordDecoder |>
+    Maybe.map objectDecoder |>
     Maybe.withDefault (fail viewTypeName)
 
 
@@ -872,44 +877,49 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
 
       _ -> JE.null -- unexpected element, encode as null
 
-    encodeRecord rv vmd = case rv of
-      RecordValue values ->
-        Utils.zip (fieldGetter vmd) values |>
-        List.map
-          (\(fmd, fv) ->
-            ( fmd.name
-            , if (not fmd.isComplexType) && (not fmd.isCollection) then
-                encodeField fv
-              else if fmd.isComplexType && (not fmd.isCollection) then
-                Dict.get fmd.typeName metadata |>
-                Maybe.map (encodeRecord fv) |>
-                Maybe.withDefault JE.null
-              else if (not fmd.isComplexType) && fmd.isCollection then
-                case fv of
-                  RecordValue primitiveValues ->
-                    primitiveValues |>
-                    JE.list encodeField
+    encodeObject rv vmd = case rv of
+      ObjectValue fields ->
+        fieldGetter vmd |>
+        List.concatMap
+          (\fmd ->
+            Dict.get fmd.name fields |>
+            Maybe.map
+              (\fv ->
+                ( fmd.name
+                , if (not fmd.isComplexType) && (not fmd.isCollection) then
+                    encodeField fv
+                  else if fmd.isComplexType && (not fmd.isCollection) then
+                    Dict.get fmd.typeName metadata |>
+                    Maybe.map (encodeObject fv) |>
+                    Maybe.withDefault JE.null
+                  else if (not fmd.isComplexType) && fmd.isCollection then
+                    case fv of
+                      ListValue primitiveValues ->
+                        primitiveValues |>
+                        JE.list encodeField
 
-                  _ -> JE.list identity []
-              else
-                Dict.get fmd.typeName metadata |>
-                Maybe.map (encodeList value) |>
-                Maybe.withDefault JE.null
-            )
+                      _ -> JE.list identity []
+                  else
+                    Dict.get fmd.typeName metadata |>
+                    Maybe.map (encodeList value) |>
+                    Maybe.withDefault JE.null
+                ) :: []
+              ) |>
+            Maybe.withDefault []
           ) |>
-          JE.object
+        JE.object
 
       _ -> JE.null -- unexpected element, encode as null
 
     encodeList lv vmd = case lv of
-      RecordValue values ->
+      ListValue values ->
         values |>
-        JE.list ((Utils.flip encodeRecord) vmd)
+        JE.list ((Utils.flip encodeObject) vmd)
 
       _ -> JE.null -- unexpected element, encode as null
   in
     Dict.get viewTypeName metadata |>
-    Maybe.map (encodeRecord value) |>
+    Maybe.map (encodeObject value) |>
     Maybe.withDefault JE.null
 
 
@@ -970,36 +980,50 @@ jsonList (Model _ {typeName, metadata} as m) =
         Err err -> JD.errorToString err
 
     decRow vmd row =
-      Utils.zip vmd.fields row |>
-      List.map
-        (\(f, fv) -> case fv of
-          FieldValue v ->
-            decVal f v
+      vmd.fields |>
+      List.concatMap
+        (\f ->
+          Dict.get f.name row |>
+          Maybe.map
+            (\fv ->
+              case fv of
+                FieldValue v ->
+                  decVal f v
 
-          RecordValue rows ->
-            if not f.isComplexType then
-              rows |>
-              List.map
-                (\rjv ->
-                  case rjv of
-                    FieldValue rv ->
-                      decVal f rv
+                ListValue rows ->
+                  if not f.isComplexType then
+                    rows |>
+                    List.map
+                      (\rjv ->
+                        case rjv of
+                          FieldValue rv ->
+                            decVal f rv
 
-                    RecordValue x ->
-                      toString x
-                ) |>
-              List.intersperse ", " |>
-              String.concat
+                          x ->
+                            toString x
+                      ) |>
+                    List.intersperse ", " |>
+                    String.concat
 
-            else toString rows
+                  else toString rows
+
+                x -> toString x
+            ) |>
+          Maybe.map List.singleton |>
+          Maybe.withDefault []
         )
 
     jlist d md =
       d |>
       List.map
         (\r -> case r of
-          RecordValue row -> --rows
+          ObjectValue row -> --rows
             decRow md row
+
+          FieldValue v ->
+            JD.decodeValue Utils.primitiveStrDecoder v |>
+            Result.withDefault (toString v) |>
+            List.singleton
 
           x -> [ toString x ] --should not happen
         )
@@ -1014,44 +1038,49 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
   let
     flatten viewmd path jsonData result =
       case jsonData of
-        RecordValue values ->
-          Utils.zip (fieldGetter viewmd) values |>
+        ObjectValue values ->
+          fieldGetter viewmd |>
           List.foldl
-            (\(f, v) res ->
-              let
-                fpath = Name f.name path
-              in
-                if f.isComplexType then
-                  Dict.get f.typeName metadata |>
-                  Maybe.map
-                    (\vmd ->
+            (\f res ->
+              Dict.get f.name values |>
+              Maybe.map
+                (\v ->
+                  let
+                    fpath = Name f.name path
+                  in
+                    if f.isComplexType then
+                      Dict.get f.typeName metadata |>
+                      Maybe.map
+                        (\vmd ->
+                          if f.isCollection then
+                            case v of
+                              ListValue rows ->
+                                List.foldl
+                                  (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
+                                  (res, 0)
+                                  rows |>
+                                Tuple.first
+
+                              _ -> res --unexpected match, structure not according to metadata
+                          else
+                            flatten vmd fpath v res
+                        ) |>
+                      Maybe.withDefault res
+                    else
                       if f.isCollection then
                         case v of
-                          RecordValue rows ->
+                          ListValue rows ->
                             List.foldl
-                              (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
+                              (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
                               (res, 0)
                               rows |>
                             Tuple.first
 
                           _ -> res --unexpected match, structure not according to metadata
                       else
-                        flatten vmd fpath v res
-                    ) |>
-                  Maybe.withDefault res
-                else
-                  if f.isCollection then
-                    case v of
-                      RecordValue rows ->
-                        List.foldl
-                          (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
-                          (res, 0)
-                          rows |>
-                        Tuple.first
-
-                      _ -> res --unexpected match, structure not according to metadata
-                  else
-                    (fpath, f, v) :: res
+                        (fpath, f, v) :: res
+                ) |>
+              Maybe.withDefault res
             )
             result
 
@@ -1074,26 +1103,33 @@ searchParsFromJson (Model _ { metadata, typeName } as m) =
           Maybe.map (\v -> (fld.name, v) :: res) |>
           Maybe.withDefault res
 
-        RecordValue vals ->
+        ListValue vals ->
           List.foldl (par fld) res vals
+
+        _ -> res
 
     pars res vals viewmd =
       case vals of
-        FieldValue json ->
-          res
-
-        RecordValue jsons ->
-          Utils.zip viewmd.filter jsons |>
+        ObjectValue jsons ->
+          viewmd.filter |>
           List.foldl
-            (\(f, v) vs ->
-              if f.isComplexType then
-                Dict.get f.typeName metadata |>
-                Maybe.map (pars vs v) |>
-                Maybe.withDefault vs
-              else
-                par f v vs
+            (\f vs ->
+              Dict.get f.name jsons |>
+              Maybe.map
+                (\v ->
+                  if f.isComplexType then
+                    Dict.get f.typeName metadata |>
+                    Maybe.map (pars vs v) |>
+                    Maybe.withDefault vs
+                  else
+                    par f v vs
+                ) |>
+              Maybe.withDefault res
             )
             res
+
+        _ ->
+          res
   in
     Dict.get typeName metadata |>
     Maybe.map (pars [] (data m)) |>
@@ -1721,24 +1757,28 @@ jsonEditor fieldGetter typeName metadata path value model =
 
         Name name rest ->
           case tdata of
-            RecordValue values ->
-              RecordValue
-                ( Utils.zip (fieldGetter viewmd) values |>
-                  List.map
-                    (\(f, val) -> -- find field transformer must be applied to
-                      if f.name == name then transform rest val (vmd f viewmd) else val
-                    )
+            ObjectValue values ->
+              ObjectValue
+                ( Utils.find (\f -> f.name == name) (fieldGetter viewmd) |>
+                  Maybe.map
+                    (\f ->
+                      Dict.update
+                        f.name
+                        (Maybe.map (\val -> transform rest val (vmd f viewmd)))
+                        values
+                    ) |>
+                  Maybe.withDefault values
                 )
 
             fv -> fv -- do nothing since element must match complex type
 
         Idx idx End ->
           case tdata of
-            RecordValue rows ->
-              RecordValue <|
+            ListValue rows ->
+              ListValue <|
                 if idx < 0 then -- insert or delete row with index -idx - 1
                   case value of
-                    RecordValue [] -> deleteRow rows (-idx - 1) -- no data in value, delete row
+                    ListValue [] -> deleteRow rows (-idx - 1) -- no data in value, delete row
 
                     _ -> insertRow value rows (-idx - 1)
                 else setRow End viewmd idx rows
@@ -1747,7 +1787,7 @@ jsonEditor fieldGetter typeName metadata path value model =
 
         Idx idx rest ->
           case tdata of
-            RecordValue rows -> RecordValue <| setRow rest viewmd idx rows
+            ListValue rows -> ListValue <| setRow rest viewmd idx rows
 
             fv -> fv -- do nothing since element must match complex type
   in
@@ -1763,32 +1803,36 @@ jsonReader fieldGetter typeName metadata fieldPath value =
       case path of
         Name name rest ->
           case result of
-            RecordValue values ->
-              Utils.zip values (fieldGetter viewmd) |>
-              List.filter (\(_, f) -> f.name == name) |>
+            ObjectValue values ->
+              fieldGetter viewmd |>
+              List.filter (.name >> (==) name) |>
               List.head |>
               Maybe.andThen
-                (\(v, f) ->
-                  if f.isComplexType then
-                    Dict.get f.typeName metadata |> Maybe.map (reader rest v)
-                  else Just v
-                ) |>
-              Maybe.withDefault (RecordValue [])
+                (\f ->
+                  Dict.get f.name values |>
+                  Maybe.andThen
+                    (\v ->
+                      if f.isComplexType then
+                        Dict.get f.typeName metadata |> Maybe.map (reader rest v)
+                      else Just v
+                    )
+              ) |>
+              Maybe.withDefault (ObjectValue Dict.empty)
 
-            _ -> RecordValue [] -- cannot match name, return empty data
+            _ -> ObjectValue Dict.empty -- cannot match name, return empty data
 
         Idx idx rest ->
           case result of
-            RecordValue values ->
+            ListValue values ->
               Utils.at idx values |>
               Maybe.map (\v -> reader rest v viewmd) |>
-              Maybe.withDefault (RecordValue [])
+              Maybe.withDefault (ListValue [])
 
-            _ -> RecordValue [] -- cannot match idx, return empty data
+            _ -> ListValue [] -- cannot match idx, return empty data
 
         End ->
           result
   in
     Dict.get typeName metadata |>
     Maybe.map (reader fieldPath value) |>
-    Maybe.withDefault (RecordValue [])
+    Maybe.withDefault (ObjectValue Dict.empty)
