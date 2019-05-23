@@ -1,6 +1,7 @@
 module Utils exposing
   ( zip, at, find, findIdx, set, orElse, httpQuery, matchIdx, strOrEmpty
-  , optField, emptyEncoder, noBreakSpace, flip, curry, uncurry, httpErrorToString
+  , optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
+  , flip, curry, uncurry, httpErrorToString
   , searchParams, toList, styles
   )
 
@@ -183,6 +184,16 @@ strOrEmpty =
 optField: String -> JD.Decoder a -> JD.Decoder (Maybe a)
 optField name decoder =
   JD.maybe (JD.field name decoder)
+
+
+primitiveStrDecoder: JD.Decoder String
+primitiveStrDecoder =
+  JD.oneOf
+    [ JD.string
+    , JD.float |> JD.map String.fromFloat
+    , JD.null ""
+    , JD.bool |> JD.map toString
+    ]
 
 
 {-| Always returns empty json object {} -}
