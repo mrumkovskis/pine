@@ -1,7 +1,8 @@
 module EditModel exposing
   ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , EditModel, Msg, Tomsg
-  , init, setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
+  , EditModel, JsonEditModel, Msg, Tomsg
+  , init, initJsonForm, initJsonQueryForm
+  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
   , id, data, inp, inps, simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg
   , update
@@ -46,7 +47,8 @@ import Debug exposing (toString, log)
 
 {-| Represents form input field. Is synchronized with model. -}
 type alias Input msg =
-  { value: String
+  { name: String
+  , value: String
   , editing: Bool
   , error: Maybe String
   , select: Maybe (SelectModel msg String)
@@ -124,6 +126,9 @@ type alias EditModel msg model =
   }
 
 
+type alias JsonEditModel msg = EditModel msg JM.JsonValue
+
+
 {-| Edit model update messages -}
 type Msg msg model
   = UpdateModelMsg Bool (JM.FormMsg msg model)
@@ -162,7 +167,10 @@ init model ctrlList toMessagemsg =
 
     inputs =
       controllers |>
-      Dict.map (\k _ -> Input "" False Nothing Nothing "" "text" False Nothing Nothing False emptyAttrs -1)
+      Dict.map
+        (\k _ ->
+          Input k "" False Nothing Nothing "" "text" False Nothing Nothing False emptyAttrs -1
+        )
   in
     EditModel
       model
@@ -175,10 +183,20 @@ init model ctrlList toMessagemsg =
       True
 
 
-initJsonFormInternal: (VM.View -> List VM.Field) -> Tomsg msg JM.JsonValue -> String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
-initJsonFormInternal fieldGetter toMsg metadataBaseUri dataBaseUri typeName toMessagemsg =
+initJsonForm: String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonForm =
+  initJsonFormInternal .fields
+
+
+initJsonQueryForm: String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonQueryForm =
+  initJsonFormInternal .filter
+
+
+initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    initializer fm = Nothing
+    initializer = jsonFormInitializer fieldGetter >> Just
   in
     EditModel
       (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
@@ -197,7 +215,7 @@ jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel)
   List.indexedMap
     (\i (path, field, value) ->
       let
-        key = JM.pathEncoder (JM.Name "x" JM.End) |> JE.encode 0
+        key = JM.pathEncoder path |> JE.encode 0
 
         val = case value of
           JM.FieldValue v ->
@@ -207,7 +225,7 @@ jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel)
           JM.RecordValue x -> toString x
 
         input =
-          Input val False Nothing Nothing field.label field.typeName field.required
+          Input key val False Nothing Nothing field.label field.typeName field.required
             field.length field.fractionDigits field.isCollection
             (Attributes (always []) []) i
 
