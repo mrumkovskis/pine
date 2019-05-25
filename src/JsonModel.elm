@@ -14,8 +14,8 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonDataDecoder, jsonValueDecoder, jsonValueEncoder
-  , jsonValue, jsonList, jsonEditor, jsonReader, searchParsFromJson, flattenJsonForm
+  , jsonDataDecoder, jsonValue, jsonList, jsonEditor, jsonReader
+  , jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath
   , isInitialized, notInitialized, ready
   -- commands
@@ -101,7 +101,7 @@ type alias Setter msg value = value -> Model msg value -> Model msg value
 type alias JsonEditor value = String -> Dict String VM.View -> Path -> JsonValue -> value -> value
 
 
-type alias JsonReader value = String -> Dict String VM.View -> Path -> value -> JsonValue
+type alias JsonReader value = String -> Dict String VM.View -> Path -> value -> Maybe JsonValue
 
 
 type alias DeferredHeader = (String, String)
@@ -217,9 +217,12 @@ type alias JsonFormMsg msg = FormMsg msg JsonValue
 {-| Data for dynamic Json models.
 -}
 type JsonValue
-  = FieldValue JD.Value
-  | ListValue (List JsonValue)
-  | ObjectValue (Dict String JsonValue)
+  = JsString String
+  | JsNumber Float
+  | JsBool Bool
+  | JsNull
+  | JsList (List JsonValue)
+  | JsObject (Dict String JsonValue)
 
 
 {-| Path to field in dynamic model data.
@@ -271,8 +274,8 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
     editor eTypeName metadata path value edata =
       let
         result =
-          case jsonEditor .fields eTypeName metadata path value <| ListValue edata of
-            ListValue rows -> rows
+          case jsonEditor .fields eTypeName metadata path value <| JsList edata of
+            JsList rows -> rows
 
             _ -> edata
       in
@@ -285,11 +288,11 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
 
     reader rTypeName metadata path value =
       case path of
-        End -> ListValue value
+        End -> Just <| JsList value
 
-        Idx _ _ -> jsonReader .fields rTypeName metadata path <| ListValue value
+        Idx _ _ -> jsonReader .fields rTypeName metadata path <| JsList value
 
-        Name _ _ -> ListValue [] -- list reading cannot start with name
+        Name _ _ -> Nothing -- list reading cannot start with name
 
     jsonModel (Model md mc) =
       Model md
@@ -366,7 +369,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , encoder = \_ _ value -> JE.list encoder value
       , setter = listSetter
       , editor = \_ _ _ _ value -> value
-      , reader = \_ _ _ _ -> ListValue []
+      , reader = \_ _ _ _ -> Nothing
       , emptyData = emptyListData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -421,7 +424,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
       let
         result =
           case jsonEditor fieldGetter eTypeName metadata path value edata of
-            ObjectValue fields -> ObjectValue fields
+            JsObject fields -> JsObject fields
 
             _ -> edata
       in
@@ -434,20 +437,15 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
 
     reader rTypeName metadata path value =
       case path of
-        End -> value
+        End -> Just value
 
         Name _ _ -> jsonReader fieldGetter rTypeName metadata path value
 
-        Idx _ _ -> ObjectValue Dict.empty -- form reading cannot start with index
+        Idx _ _ -> Nothing -- form reading cannot start with index
 
     formId (Model md mc) =
-      case mc.reader mc.typeName mc.metadata (Name mc.idParamName End) md.data of
-        FieldValue v ->
-          JD.decodeValue JD.int v |>
-          Result.toMaybe |>
-          Maybe.map String.fromInt
-
-        x -> Nothing
+      mc.reader mc.typeName mc.metadata (Name mc.idParamName End) md.data |>
+      Maybe.map jsonValueToString
 
     jsonModel (Model md mc) =
       Model md
@@ -466,7 +464,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
         typeName
         (jsonDataDecoder fieldGetter Dict.empty "")
         (jsonDataEncoder fieldGetter Dict.empty "")
-        (ObjectValue Dict.empty)
+        (JsObject Dict.empty)
         formId
         toMessagemsg
 
@@ -557,7 +555,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , encoder = \_ _ value -> encoder value
       , setter = setter
       , editor = \_ _ _ _ value -> value -- not implemented (only for Json... model)
-      , reader = \_ _ _ _ -> ObjectValue Dict.empty -- not implemented (only for Json... model)
+      , reader = \_ _ _ _ -> Nothing -- not implemented (only for Json... model)
       , emptyData = emptyFormData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -825,20 +823,33 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
   let
     fail name = JD.fail <| "Metadata not found for type: " ++ name
 
+    primDec jsonType = case jsonType of
+      "string" ->
+        JD.oneOf [ JD.string |> JD.map JsString, JD.null JsNull ]
+
+      "number" ->
+        JD.oneOf [ JD.float |> JD.map JsNumber, JD.null JsNull ]
+
+      "boolean" ->
+        JD.oneOf [ JD.bool |> JD.map JsBool, JD.null JsNull ]
+
+      x ->
+        JD.fail ("<unknown json type: " ++ x ++ " >")
+
     fieldDecoder fieldmd =
       if (not fieldmd.isComplexType) && (not fieldmd.isCollection) then
-        JD.map FieldValue JD.value
+        primDec fieldmd.jsonType
       else if fieldmd.isComplexType && (not fieldmd.isCollection) then
         Dict.get fieldmd.typeName metadata |>
         Maybe.map objectDecoder |>
         Maybe.withDefault (fail fieldmd.typeName)
       else if (not fieldmd.isComplexType) && fieldmd.isCollection then
-        JD.list (JD.value |> JD.map FieldValue) |>
-        JD.map ListValue
+        JD.list (primDec fieldmd.jsonType) |>
+        JD.map JsList
       else
         Dict.get fieldmd.typeName metadata |>
         Maybe.map list_decoder |>
-        Maybe.map (\ld -> JD.map ListValue ld) |>
+        Maybe.map (\ld -> JD.map JsList ld) |>
         Maybe.withDefault (fail fieldmd.typeName)
 
     objectDecoder viewmd =
@@ -849,14 +860,14 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
 
             fieldmd :: tail ->
               JD.oneOf
-                [ JD.field fieldmd.name (JD.lazy (\_ -> fieldDecoder fieldmd)) |>
+                [ JD.field fieldmd.name (fieldDecoder fieldmd) |>
                   JD.andThen (\df -> fieldsDecoder tail <| (fieldmd.name, df) :: decodedFields)
-                , fieldsDecoder tail decodedFields -- field not found
+                , fieldsDecoder tail decodedFields -- field not found or failed to decode
                 ]
       in
         JD.oneOf [ fieldsDecoder (fieldGetter viewmd) [], JD.null [] ] |>
         JD.map Dict.fromList |>
-        JD.map ObjectValue
+        JD.map JsObject
 
     list_decoder viewmd = JD.oneOf [ JD.list (objectDecoder viewmd), JD.null [] ]
   in
@@ -872,13 +883,19 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
 jsonDataEncoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JsonValue -> JD.Value
 jsonDataEncoder fieldGetter metadata viewTypeName value =
   let
-    encodeField fv = case fv of
-      FieldValue v -> v
+    encodePrimField fv = case fv of
+      JsString v -> JE.string v
+
+      JsNumber v -> JE.float v
+
+      JsBool v -> JE.bool v
+
+      JsNull -> JE.null
 
       _ -> JE.null -- unexpected element, encode as null
 
     encodeObject rv vmd = case rv of
-      ObjectValue fields ->
+      JsObject fields ->
         fieldGetter vmd |>
         List.concatMap
           (\fmd ->
@@ -887,16 +904,16 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
               (\fv ->
                 ( fmd.name
                 , if (not fmd.isComplexType) && (not fmd.isCollection) then
-                    encodeField fv
+                    encodePrimField fv
                   else if fmd.isComplexType && (not fmd.isCollection) then
                     Dict.get fmd.typeName metadata |>
                     Maybe.map (encodeObject fv) |>
                     Maybe.withDefault JE.null
                   else if (not fmd.isComplexType) && fmd.isCollection then
                     case fv of
-                      ListValue primitiveValues ->
+                      JsList primitiveValues ->
                         primitiveValues |>
-                        JE.list encodeField
+                        JE.list encodePrimField
 
                       _ -> JE.list identity []
                   else
@@ -912,7 +929,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
       _ -> JE.null -- unexpected element, encode as null
 
     encodeList lv vmd = case lv of
-      ListValue values ->
+      JsList values ->
         values |>
         JE.list ((Utils.flip encodeObject) vmd)
 
@@ -923,62 +940,45 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
     Maybe.withDefault JE.null
 
 
-jsonValueDecoder: String -> JD.Decoder String
-jsonValueDecoder jsonType =
-  case jsonType of
-    "string" ->
-      JD.maybe JD.string
-      |> JD.map (Maybe.withDefault "")
-
-    "number" ->
-      JD.maybe JD.float
-      |> JD.map (Maybe.map String.fromFloat)
-      |> JD.map (Maybe.withDefault "")
-
-    "boolean" ->
-      JD.maybe JD.bool
-      |> JD.map (Maybe.map toString)
-      |> JD.map (Maybe.withDefault "")
-
-    x ->
-      JD.fail ("<unknown json type: " ++ x ++ " >")
-
-
-jsonValueEncoder: String -> String -> Maybe JD.Value
-jsonValueEncoder jsonType value =
-  let
-    enc v =
-      case jsonType of
-        "string" ->
-          Just <| JE.string v
-
-        "number" ->
-          String.toFloat v |> Maybe.map JE.float
-
-        "boolean" ->
-          Just <| JE.bool (String.toLower v |> (\x -> x == "true"))
-
-        x ->
-          Just JE.null
-  in
-    if String.isEmpty value then Just JE.null else enc value
-
-
 {-| Returns `JsonValue` -}
-jsonValue: Path -> Model msg value -> JsonValue
+jsonValue: Path -> Model msg value -> Maybe JsonValue
 jsonValue path (Model _ { typeName, metadata, reader } as m) =
   data m |> reader typeName metadata path
+
+
+jsonValueToString: JsonValue -> String
+jsonValueToString jsValue =
+  case jsValue of
+    JsString v -> v
+
+    JsNumber v -> String.fromFloat v
+
+    JsBool v -> toString v
+
+    JsNull -> ""
+
+    x -> toString x
+
+
+stringToJsonValue: String -> String -> Maybe JsonValue
+stringToJsonValue jsonType value =
+  case jsonType of
+    "string" ->
+      Just <| JsString value
+
+    "number" ->
+      String.toFloat value |> Maybe.map JsNumber
+
+    "boolean" ->
+      Just <| JsBool (String.toLower value |> (==) "true")
+
+    x ->
+      Just JsNull
 
 
 jsonList: JsonListModel msg -> List (List String)
 jsonList (Model _ {typeName, metadata} as m) =
   let
-    decVal f v =
-      case JD.decodeValue (jsonValueDecoder f.jsonType) v of
-        Ok jv -> jv
-
-        Err err -> JD.errorToString err
-
     decRow vmd row =
       vmd.fields |>
       List.concatMap
@@ -987,27 +987,16 @@ jsonList (Model _ {typeName, metadata} as m) =
           Maybe.map
             (\fv ->
               case fv of
-                FieldValue v ->
-                  decVal f v
-
-                ListValue rows ->
+                JsList rows ->
                   if not f.isComplexType then
                     rows |>
-                    List.map
-                      (\rjv ->
-                        case rjv of
-                          FieldValue rv ->
-                            decVal f rv
-
-                          x ->
-                            toString x
-                      ) |>
+                    List.map (\rjv -> jsonValueToString rjv) |>
                     List.intersperse ", " |>
                     String.concat
+                  else
+                    toString rows
 
-                  else toString rows
-
-                x -> toString x
+                x -> jsonValueToString x
             ) |>
           Maybe.map List.singleton |>
           Maybe.withDefault []
@@ -1017,15 +1006,10 @@ jsonList (Model _ {typeName, metadata} as m) =
       d |>
       List.map
         (\r -> case r of
-          ObjectValue row -> --rows
-            decRow md row
+          JsObject fields -> --fields
+            decRow md fields
 
-          FieldValue v ->
-            JD.decodeValue Utils.primitiveStrDecoder v |>
-            Result.withDefault (toString v) |>
-            List.singleton
-
-          x -> [ toString x ] --should not happen
+          x -> [ jsonValueToString x ] --should not happen
         )
   in
     Dict.get typeName metadata |>
@@ -1038,7 +1022,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
   let
     flatten viewmd path jsonData result =
       case jsonData of
-        ObjectValue values ->
+        JsObject values ->
           fieldGetter viewmd |>
           List.foldl
             (\f res ->
@@ -1054,7 +1038,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                         (\vmd ->
                           if f.isCollection then
                             case v of
-                              ListValue rows ->
+                              JsList rows ->
                                 List.foldl
                                   (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
                                   (res, 0)
@@ -1069,7 +1053,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                     else
                       if f.isCollection then
                         case v of
-                          ListValue rows ->
+                          JsList rows ->
                             List.foldl
                               (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
                               (res, 0)
@@ -1097,20 +1081,15 @@ searchParsFromJson (Model _ { metadata, typeName } as m) =
   let
     par fld val res =
       case val of
-        FieldValue json ->
-          JD.decodeValue (jsonValueDecoder fld.jsonType) json |>
-          Result.toMaybe |>
-          Maybe.map (\v -> (fld.name, v) :: res) |>
-          Maybe.withDefault res
-
-        ListValue vals ->
+        JsList vals ->
           List.foldl (par fld) res vals
 
-        _ -> res
+        x ->
+          (fld.name, jsonValueToString val) :: res
 
     pars res vals viewmd =
       case vals of
-        ObjectValue jsons ->
+        JsObject jsons ->
           viewmd.filter |>
           List.foldl
             (\f vs ->
@@ -1757,8 +1736,8 @@ jsonEditor fieldGetter typeName metadata path value model =
 
         Name name rest ->
           case tdata of
-            ObjectValue values ->
-              ObjectValue
+            JsObject values ->
+              JsObject
                 ( Utils.find (\f -> f.name == name) (fieldGetter viewmd) |>
                   Maybe.map
                     (\f ->
@@ -1774,11 +1753,11 @@ jsonEditor fieldGetter typeName metadata path value model =
 
         Idx idx End ->
           case tdata of
-            ListValue rows ->
-              ListValue <|
+            JsList rows ->
+              JsList <|
                 if idx < 0 then -- insert or delete row with index -idx - 1
                   case value of
-                    ListValue [] -> deleteRow rows (-idx - 1) -- no data in value, delete row
+                    JsNull -> deleteRow rows (-idx - 1) -- no data in value, delete row
 
                     _ -> insertRow value rows (-idx - 1)
                 else setRow End viewmd idx rows
@@ -1787,7 +1766,7 @@ jsonEditor fieldGetter typeName metadata path value model =
 
         Idx idx rest ->
           case tdata of
-            ListValue rows -> ListValue <| setRow rest viewmd idx rows
+            JsList rows -> JsList <| setRow rest viewmd idx rows
 
             fv -> fv -- do nothing since element must match complex type
   in
@@ -1796,14 +1775,14 @@ jsonEditor fieldGetter typeName metadata path value model =
     Maybe.withDefault model
 
 
-jsonReader: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue
+jsonReader: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> Maybe JsonValue
 jsonReader fieldGetter typeName metadata fieldPath value =
   let
     reader path result viewmd =
       case path of
         Name name rest ->
           case result of
-            ObjectValue values ->
+            JsObject values ->
               fieldGetter viewmd |>
               List.filter (.name >> (==) name) |>
               List.head |>
@@ -1813,26 +1792,24 @@ jsonReader fieldGetter typeName metadata fieldPath value =
                   Maybe.andThen
                     (\v ->
                       if f.isComplexType then
-                        Dict.get f.typeName metadata |> Maybe.map (reader rest v)
-                      else Just v
+                        Dict.get f.typeName metadata |> Maybe.andThen (reader rest v)
+                      else reader rest v viewmd
                     )
-              ) |>
-              Maybe.withDefault (ObjectValue Dict.empty)
+              )
 
-            _ -> ObjectValue Dict.empty -- cannot match name, return empty data
+            _ -> Nothing -- cannot match name
 
         Idx idx rest ->
           case result of
-            ListValue values ->
+            JsList values ->
               Utils.at idx values |>
-              Maybe.map (\v -> reader rest v viewmd) |>
-              Maybe.withDefault (ListValue [])
+              Maybe.andThen (\v -> reader rest v viewmd)
 
-            _ -> ListValue [] -- cannot match idx, return empty data
+            _ -> Nothing -- cannot match idx
 
         End ->
-          result
+          Just result
   in
     Dict.get typeName metadata |>
-    Maybe.map (reader fieldPath value) |>
-    Maybe.withDefault (ObjectValue Dict.empty)
+    Maybe.andThen (reader fieldPath value)
+

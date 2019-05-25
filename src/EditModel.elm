@@ -217,12 +217,7 @@ jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel)
       let
         key = JM.pathEncoder path |> JE.encode 0
 
-        val = case value of
-          JM.FieldValue v ->
-            JD.decodeValue (JM.jsonValueDecoder field.jsonType) v |>
-            Result.withDefault ""
-
-          x -> toString x
+        val = JM.jsonValueToString value
 
         input =
           Input key val False Nothing Nothing field.label field.typeName field.required
@@ -232,24 +227,14 @@ jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel)
         ctrl =
           let
             updater toMsg cinp model =
-              let
-                miv =
-                  JM.jsonValueEncoder field.jsonType cinp.value |>
-                  Maybe.map JM.FieldValue
-              in
-                miv |>
-                Maybe.map (\iv -> ( model, JM.edit (toMsg << UpdateModelMsg False) path iv )) |>
-                Maybe.withDefault ( model, Cmd.none )
+              JM.stringToJsonValue field.jsonType cinp.value |>
+              Maybe.map (\iv -> ( model, JM.edit (toMsg << UpdateModelMsg False) path iv )) |>
+              Maybe.withDefault ( model, Cmd.none )
 
             formatter model =
               JM.jsonReader fieldGetter typeName metadata path model |>
-              (\jv -> case jv of
-                JM.FieldValue v ->
-                  JD.decodeValue (JM.jsonValueDecoder field.jsonType) v |>
-                  Result.withDefault ""
-
-                x -> toString x
-              )
+              Maybe.map JM.jsonValueToString |>
+              Maybe.withDefault ""
 
             validator iv =
               case field.jsonType of
