@@ -41,6 +41,7 @@ import Http
 import Dict exposing (..)
 import Json.Encode as JE
 import Json.Decode as JD
+import Regex
 
 import Debug exposing (toString, log)
 
@@ -196,82 +197,78 @@ initJsonQueryForm =
 initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
 initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg =
   let
-    initializer = jsonFormInitializer fieldGetter >> Just
+    jsonFormInitializer (JM.Model _ { metadata } as formModel) =
+      JM.flattenJsonForm fieldGetter formModel |>
+      List.indexedMap
+        (\i (path, field, value) ->
+          let
+            key = JM.pathEncoder path |> JE.encode 0
+
+            val = JM.jsonValueToString value
+
+            input =
+              Input key val False Nothing Nothing field.label field.typeName field.required
+                field.length field.fractionDigits field.isCollection
+                (Attributes (always []) []) i
+
+            ctrl =
+              let
+                updater toMsg cinp model =
+                  JM.stringToJsonValue field.jsonType cinp.value |>
+                  Maybe.map (\iv -> ( model, JM.edit (toMsg << UpdateModelMsg False) path iv )) |>
+                  Maybe.withDefault ( model, Cmd.none )
+
+                formatter model =
+                  JM.jsonReader fieldGetter typeName metadata path model |>
+                  Maybe.map JM.jsonValueToString |>
+                  Maybe.withDefault ""
+
+                validator iv =
+                  case field.jsonType of
+                    "number" ->
+                      let
+                        res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
+                      in
+                        field.fractionDigits |>
+                        Maybe.map
+                          (\fd ->
+                            if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
+                          ) |>
+                        Maybe.withDefault (String.toInt iv |> res)
+
+                    "boolean" ->
+                      String.toLower iv |>
+                        (\s ->
+                          if s == "true" || s == "false" then
+                            Ok iv
+                          else
+                            Err <| "Not a boolean: " ++ iv
+                        )
+
+                    _ -> Ok iv
+              in
+                Controller
+                  { name = key
+                  , updateModel = updater
+                  , formatter = formatter
+                  , selectInitializer = Nothing
+                  , validateInput = validator
+                  }
+          in
+            ((key, ctrl), (key, input))
+        ) |>
+        List.unzip |>
+        Tuple.mapBoth Dict.fromList Dict.fromList
   in
     EditModel
       (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
-      initializer
+      (jsonFormInitializer >> Just)
       Dict.empty
       Dict.empty
       toMessagemsg
       False
       False
       True
-
-
-jsonFormInitializer:(VM.View -> List VM.Field) -> JM.JsonFormModel msg -> (Dict String (Controller msg JM.JsonValue), Dict String (Input msg))
-jsonFormInitializer fieldGetter (JM.Model _ { typeName, metadata } as formModel) =
-  JM.flattenJsonForm fieldGetter formModel |>
-  List.indexedMap
-    (\i (path, field, value) ->
-      let
-        key = JM.pathEncoder path |> JE.encode 0
-
-        val = JM.jsonValueToString value
-
-        input =
-          Input key val False Nothing Nothing field.label field.typeName field.required
-            field.length field.fractionDigits field.isCollection
-            (Attributes (always []) []) i
-
-        ctrl =
-          let
-            updater toMsg cinp model =
-              JM.stringToJsonValue field.jsonType cinp.value |>
-              Maybe.map (\iv -> ( model, JM.edit (toMsg << UpdateModelMsg False) path iv )) |>
-              Maybe.withDefault ( model, Cmd.none )
-
-            formatter model =
-              JM.jsonReader fieldGetter typeName metadata path model |>
-              Maybe.map JM.jsonValueToString |>
-              Maybe.withDefault ""
-
-            validator iv =
-              case field.jsonType of
-                "number" ->
-                  let
-                    res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
-                  in
-                    field.fractionDigits |>
-                    Maybe.map
-                      (\fd ->
-                        if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
-                      ) |>
-                    Maybe.withDefault (String.toInt iv |> res)
-
-                "boolean" ->
-                  String.toLower iv |>
-                    (\s ->
-                      if s == "true" || s == "false" then
-                        Ok iv
-                      else
-                        Err <| "Not a boolean: " ++ iv
-                    )
-
-                _ -> Ok iv
-          in
-            Controller
-              { name = key
-              , updateModel = updater
-              , formatter = formatter
-              , selectInitializer = Nothing
-              , validateInput = validator
-              }
-      in
-        ((key, ctrl), (key, input))
-    ) |>
-    List.unzip |>
-    Tuple.mapBoth Dict.fromList Dict.fromList
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
@@ -416,33 +413,8 @@ inp key toMsg staticAttrs { controllers, inputs } =
   let
     ks = toString key
   in
-    Dict.get ks controllers |>
-    Maybe.map2
-      (\input ctl ->
-        let
-          inputEventAttrs =
-            [ onInput <| toMsg << OnMsg ctl
-            , onFocus <| toMsg <| OnFocusMsg ctl True
-            , onBlur <| toMsg <| OnFocusMsg ctl False
-            ]
-
-          selectEventAttrs =
-            input.select |>
-            Maybe.map
-              ( always
-                  ( Select.onSelectInput <| toMsg << SelectMsg ctl
-                  , Select.onMouseSelect <| toMsg << SelectMsg ctl
-                  )
-              ) |>
-            Maybe.withDefault ([], always [])
-
-          attrs =
-            inputEventAttrs ++
-            (Attrs.value input.value :: staticAttrs) ++
-            Tuple.first selectEventAttrs
-        in
-          { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs }
-      )
+    Maybe.map2 (inpInternal toMsg staticAttrs)
+      (Dict.get ks controllers)
       (Dict.get ks inputs)
 
 
@@ -455,6 +427,56 @@ inps keys toMsg model =
     []
     keys |>
   List.reverse
+
+
+inpsByPattern: String -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> List (Input msg)
+inpsByPattern pattern toMsg staticAttrs { controllers, inputs } =
+  let
+    regex =
+      String.words pattern |>
+      List.map (\s -> if s == "*" then "[^,]+" else String.concat ["\\\"?", s, "\\\"?"]) |>
+      String.join "" |>
+      String.append "^\\[?" |>
+      Regex.fromString |>
+      Maybe.withDefault Regex.never
+  in
+    Dict.filter (\k _ -> Regex.contains regex k) inputs |>
+    Dict.values |>
+    List.sortBy .idx |>
+    List.concatMap
+      (\i ->
+        Dict.get i.name controllers |>
+        Maybe.map (\c -> inpInternal toMsg staticAttrs c i) |>
+        Maybe.map List.singleton |>
+        Maybe.withDefault []
+      )
+
+
+inpInternal: Tomsg msg model -> List (Attribute msg) ->  Controller msg model -> Input msg -> Input msg
+inpInternal toMsg staticAttrs ctl input =
+  let
+    inputEventAttrs =
+      [ onInput <| toMsg << OnMsg ctl
+      , onFocus <| toMsg <| OnFocusMsg ctl True
+      , onBlur <| toMsg <| OnFocusMsg ctl False
+      ]
+
+    selectEventAttrs =
+      input.select |>
+      Maybe.map
+        ( always
+            ( Select.onSelectInput <| toMsg << SelectMsg ctl
+            , Select.onMouseSelect <| toMsg << SelectMsg ctl
+            )
+        ) |>
+      Maybe.withDefault ([], always [])
+
+    attrs =
+      inputEventAttrs ++
+      (Attrs.value input.value :: staticAttrs) ++
+      Tuple.first selectEventAttrs
+  in
+    { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs }
 
 
 {-| Produces `OnSelectMsg` input message. This can be used on input events like `onCheck` or `onClick`
