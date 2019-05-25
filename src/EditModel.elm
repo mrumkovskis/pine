@@ -4,7 +4,8 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
-  , id, data, inp, inps, simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg
+  , id, data, inp, inps, inpsByPattern
+  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg
   , update
   )
 
