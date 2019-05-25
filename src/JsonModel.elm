@@ -860,7 +860,7 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
 
             fieldmd :: tail ->
               JD.oneOf
-                [ JD.field fieldmd.name (fieldDecoder fieldmd) |>
+                [ JD.field fieldmd.name (JD.lazy (\_ -> fieldDecoder fieldmd)) |> -- use lazy decoder to avoid possible metadata recurcion
                   JD.andThen (\df -> fieldsDecoder tail <| (fieldmd.name, df) :: decodedFields)
                 , fieldsDecoder tail decodedFields -- field not found or failed to decode
                 ]
