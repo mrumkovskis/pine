@@ -2,6 +2,7 @@ module EditModel exposing
   ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditModel, Msg, Tomsg
   , init, initJsonForm, initJsonQueryForm
+  , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
   , id, data, inp, inps, inpsByPattern
@@ -73,8 +74,14 @@ type alias ModelInitializer msg model =
 type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 
 
+type alias JsonModelUpdater msg = ModelUpdater msg JM.JsonValue -> Tomsg msg JM.JsonValue -> Input msg -> JM.JsonValue -> (JM.JsonValue, Cmd msg)
+
+
 {-| Validates input -}
 type alias InputValidator = String -> Result String String
+
+
+type alias JsonInputValidator = InputValidator -> String -> Result String String
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -82,6 +89,9 @@ type alias InputValidator = String -> Result String String
    so data can be formatted according to display mode.
 -}
 type alias Formatter model = model -> String
+
+
+type alias JsonFormatter = Formatter JM.JsonValue -> JM.JsonValue -> String
 
 
 type alias SelectInitializer msg =
@@ -101,6 +111,14 @@ type Controller msg model =
     , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
     , validateInput: InputValidator -- called on OnMsg, OnSelect
     }
+
+
+type alias JsonController msg =
+  { updateModel: Maybe (JsonModelUpdater msg)
+  , formatter: Maybe (JsonFormatter)
+  , validateInput: Maybe (JsonInputValidator)
+  , selectInitializer: Maybe (SelectInitializer msg)
+  }
 
 
 {-| Input together with proposed html input element attributes and with
@@ -185,18 +203,18 @@ init model ctrlList toMessagemsg =
       True
 
 
-initJsonForm: String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
 initJsonForm =
   initJsonFormInternal .fields
 
 
-initJsonQueryForm: String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonQueryForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
-initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
-initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg =
+initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controllers toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ { metadata } as formModel) =
       JM.flattenJsonForm fieldGetter formModel |>
@@ -248,13 +266,33 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName toMessagem
 
                     _ -> Ok iv
               in
-                Controller
-                  { name = key
-                  , updateModel = updater
-                  , formatter = formatter
-                  , selectInitializer = Nothing
-                  , validateInput = validator
-                  }
+                case List.filter (\(p, _) -> pathMatch p key) controllers of
+                  [] ->
+                    Controller
+                      { name = key
+                      , updateModel = updater
+                      , formatter = formatter
+                      , selectInitializer = Nothing
+                      , validateInput = validator
+                      }
+
+                  (_, match) :: rest -> -- TODO prioritize matched controllers if more than one match is found
+                    Controller
+                      { name = key
+                      , updateModel =
+                          match.updateModel |>
+                          Maybe.map (\u -> u updater) |>
+                          Maybe.withDefault updater
+                      , formatter =
+                          match.formatter |>
+                          Maybe.map (\f -> f formatter) |>
+                          Maybe.withDefault formatter
+                      , selectInitializer = match.selectInitializer
+                      , validateInput =
+                          match.validateInput |>
+                          Maybe.map (\v -> v validator) |>
+                          Maybe.withDefault validator
+                      }
           in
             ((key, ctrl), (key, input))
         ) |>
@@ -270,6 +308,31 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName toMessagem
       False
       False
       True
+
+
+jsonController: JsonController msg
+jsonController =
+  JsonController Nothing Nothing Nothing Nothing
+
+
+jsonModelUpdater: JsonModelUpdater msg -> JsonController msg -> JsonController msg
+jsonModelUpdater updater jc =
+  { jc | updateModel = Just updater }
+
+
+jsonInputValidator: JsonInputValidator -> JsonController msg -> JsonController msg
+jsonInputValidator validator jc =
+  { jc | validateInput = Just validator }
+
+
+jsonFormatter: JsonFormatter -> JsonController msg -> JsonController msg
+jsonFormatter formatter jc =
+  { jc | formatter = Just formatter }
+
+
+jsonSelectInitializer: SelectInitializer msg -> JsonController msg -> JsonController msg
+jsonSelectInitializer initializer jc =
+  { jc | selectInitializer = Just initializer }
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
@@ -430,35 +493,37 @@ inps keys toMsg model =
   List.reverse
 
 
+pathMatch: String -> String -> Bool
+pathMatch pattern path =
+  ((String.words pattern |>
+    List.map
+      (\s ->
+        if s == "*" then "[^,]+"
+        else if s == "**" then ".*?"
+        else String.concat ["\\\"?", s, "\\\"?"]
+      ) |>
+    List.intersperse "," |>
+    String.join "" |>
+    String.append "^\\[?" |>
+    String.append
+  ) "$" |>
+  Regex.fromString |>
+  Maybe.withDefault Regex.never |>
+  Regex.contains) path
+
+
 inpsByPattern: String -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> List (Input msg)
 inpsByPattern pattern toMsg staticAttrs { controllers, inputs } =
-  let
-    regex =
-      ( String.words pattern |>
-        List.map
-          (\s ->
-            if s == "*" then "[^,]+"
-            else if s == "**" then ".*?"
-            else String.concat ["\\\"?", s, "\\\"?"]
-          ) |>
-        List.intersperse "," |>
-        String.join "" |>
-        String.append "^\\[?" |>
-        String.append
-      ) "$" |>
-      Regex.fromString |>
-      Maybe.withDefault Regex.never
-  in
-    Dict.filter (\k _ -> Regex.contains regex k) inputs |>
-    Dict.values |>
-    List.sortBy .idx |>
-    List.concatMap
-      (\i ->
-        Dict.get i.name controllers |>
-        Maybe.map (\c -> inpInternal toMsg staticAttrs c i) |>
-        Maybe.map List.singleton |>
-        Maybe.withDefault []
-      )
+  Dict.filter (\k _ -> pathMatch pattern k) inputs |>
+  Dict.values |>
+  List.sortBy .idx |>
+  List.concatMap
+    (\i ->
+      Dict.get i.name controllers |>
+      Maybe.map (\c -> inpInternal toMsg staticAttrs c i) |>
+      Maybe.map List.singleton |>
+      Maybe.withDefault []
+    )
 
 
 inpInternal: Tomsg msg model -> List (Attribute msg) ->  Controller msg model -> Input msg -> Input msg
