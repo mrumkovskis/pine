@@ -434,10 +434,18 @@ inpsByPattern: String -> Tomsg msg model -> List (Attribute msg) -> EditModel ms
 inpsByPattern pattern toMsg staticAttrs { controllers, inputs } =
   let
     regex =
-      String.words pattern |>
-      List.map (\s -> if s == "*" then "[^,]+" else String.concat ["\\\"?", s, "\\\"?"]) |>
-      String.join "" |>
-      String.append "^\\[?" |>
+      ( String.words pattern |>
+        List.map
+          (\s ->
+            if s == "*" then "[^,]+"
+            else if s == "**" then ".*?"
+            else String.concat ["\\\"?", s, "\\\"?"]
+          ) |>
+        List.intersperse "," |>
+        String.join "" |>
+        String.append "^\\[?" |>
+        String.append
+      ) "$" |>
       Regex.fromString |>
       Maybe.withDefault Regex.never
   in
