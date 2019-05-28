@@ -918,7 +918,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
                       _ -> JE.list identity []
                   else
                     Dict.get fmd.typeName metadata |>
-                    Maybe.map (encodeList value) |>
+                    Maybe.map (encodeList fv) |>
                     Maybe.withDefault JE.null
                 ) :: []
               ) |>

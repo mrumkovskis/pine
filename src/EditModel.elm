@@ -240,7 +240,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
               let
                 updater toMsg cinp model =
                   JM.stringToJsonValue field.jsonType cinp.value |>
-                  Maybe.map (\iv -> ( model, JM.edit (toMsg << UpdateModelMsg False) path iv )) |>
+                  Maybe.map (\iv -> ( JM.jsonEditor fieldGetter typeName metadata path iv model, Cmd.none )) |>
                   Maybe.withDefault ( model, Cmd.none )
 
                 formatter model =
