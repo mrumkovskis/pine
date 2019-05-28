@@ -74,7 +74,13 @@ type alias ModelInitializer msg model =
 type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 
 
-type alias JsonModelUpdater msg = ModelUpdater msg JM.JsonValue -> Tomsg msg JM.JsonValue -> Input msg -> JM.JsonValue -> (JM.JsonValue, Cmd msg)
+type alias JsonModelUpdater msg =
+  ModelUpdater msg JM.JsonValue ->
+  Dict String VM.View ->
+  Tomsg msg JM.JsonValue ->
+  Input msg ->
+  JM.JsonValue ->
+  (JM.JsonValue, Cmd msg)
 
 
 {-| Validates input -}
@@ -281,7 +287,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                       { name = key
                       , updateModel =
                           match.updateModel |>
-                          Maybe.map (\u -> u updater) |>
+                          Maybe.map (\u -> u updater metadata) |>
                           Maybe.withDefault updater
                       , formatter =
                           match.formatter |>
@@ -669,61 +675,56 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         newInputs
         newInputs
 
-    updateModel doInputUpdate newModel =
-      if doInputUpdate then
-        same.initializer newModel |>
-        Maybe.map
-          (\(ctrls, is) ->
-            { same | model = newModel, controllers = ctrls, inputs = is }
-          ) |>
-        Maybe.withDefault
-          { same |
-            model = newModel
-          , inputs = updateInputsFromModel (JM.data newModel) same.inputs
-          }
-      else { same | model = newModel }
-
-    applyCreateModel newModel =
-      { same | model = newModel }
-
-    createCmd createFun cmd =
-      if cmd == Cmd.none then set toMsg createFun else cmd
-
-    applyModel (newModel, cmd) =
-      updateModel (cmd == Cmd.none) newModel
-
-    applyFetchModel newModelAndCmd =
-      applyModel newModelAndCmd
-
-    applySaveModel newModelAndCmd =
-      applyModel newModelAndCmd |>
-      (\m -> { m | isSaving = Tuple.second newModelAndCmd /= Cmd.none })
-
-    applyDeleteModel newModelAndCmd =
-      applyModel newModelAndCmd |>
-      (\m -> { m | isDeleting = Tuple.second newModelAndCmd /= Cmd.none })
+    updateModel doInputUpdate transform (newModel, cmd) =
+      { same | model = newModel } |>
+      transform cmd |>
+      (\newem ->
+        if doInputUpdate && cmd == Cmd.none then -- update inputs
+          newem.initializer newModel |>
+          Maybe.map
+            (\(ctrls, is) ->
+              ( { newem | controllers = ctrls, inputs = is }
+              , newem.inputs |>
+                Dict.filter (\_ i -> i.editing ) |>
+                Dict.values |>
+                List.head |>
+                Maybe.andThen (\i -> Dict.get i.name ctrls) |>
+                Maybe.map (\c -> Task.perform toMsg <| Task.succeed <| OnFocusMsg c True) |> -- restore select box if present
+                Maybe.withDefault Cmd.none
+              )
+            ) |>
+          Maybe.withDefault
+            ( { newem | inputs = updateInputsFromModel (JM.data newem.model) newem.inputs }
+            , Cmd.none
+            )
+        else (newem, cmd)
+      )
   in
     case msg of
       -- JM model messages
       UpdateModelMsg doInputUpdate value ->
         JM.update (toMsg << UpdateModelMsg doInputUpdate) value model |>
-        (\(jm, cmd) -> (updateModel (cmd == Cmd.none && doInputUpdate) jm, cmd)) -- update inputs at the end
+        updateModel doInputUpdate (\_ nm -> nm)
 
       FetchModelMsg value ->
         JM.update (toMsg << FetchModelMsg) value model |>
-        (\mc -> (applyFetchModel mc, Tuple.second mc))
+        updateModel True (\_ nm -> nm)
 
       SaveModelMsg value ->
         JM.update (toMsg << SaveModelMsg) value model |>
-        (\mc -> (applySaveModel mc, Tuple.second mc))
+        updateModel True (\c nm -> { nm | isSaving = c /= Cmd.none })
 
       CreateModelMsg createFun value ->
         JM.update (toMsg << CreateModelMsg createFun) value model |>
-        Tuple.mapBoth applyCreateModel (createCmd createFun)
+        (\(nm, cmd) ->
+          ( { same | model = nm }
+          , if cmd == Cmd.none then set toMsg createFun else cmd
+          )
+        )
 
       DeleteModelMsg value ->
         JM.update (toMsg << DeleteModelMsg) value model |>
-        (\mc -> (applyDeleteModel mc, Tuple.second mc))
+        updateModel True (\c nm -> { nm | isDeleting = c /= Cmd.none })
 
       -- Select messages
       SelectMsg (Controller ctrl) selMsg -> -- field select list messages
