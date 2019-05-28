@@ -506,7 +506,7 @@ pathMatch pattern path =
     String.join "" |>
     String.append "^\\[?" |>
     String.append
-  ) "$" |>
+  ) "\\]?$" |>
   Regex.fromString |>
   Maybe.withDefault Regex.never |>
   Regex.contains) path
