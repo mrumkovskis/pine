@@ -1064,7 +1064,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                       else
                         (fpath, f, v) :: res
                 ) |>
-              Maybe.withDefault res
+              Maybe.withDefault ((Name f.name path, f, JsNull) :: res) -- set value to JsNull if field no present
             )
             result
 
@@ -1085,7 +1085,11 @@ searchParsFromJson (Model _ { metadata, typeName } as m) =
           List.foldl (par fld) res vals
 
         x ->
-          (fld.name, jsonValueToString val) :: res
+          jsonValueToString val |>
+          (\v ->
+            if String.isEmpty v then res
+            else (fld.name, jsonValueToString val) :: res
+          )
 
     pars res vals viewmd =
       case vals of
@@ -1743,7 +1747,10 @@ jsonEditor fieldGetter typeName metadata path value model =
                     (\f ->
                       Dict.update
                         f.name
-                        (Maybe.map (\val -> transform rest val (vmd f viewmd)))
+                        (\mv ->
+                          Just <|
+                            transform rest (Maybe.withDefault JsNull mv) (vmd f viewmd)
+                        )
                         values
                     ) |>
                   Maybe.withDefault values
