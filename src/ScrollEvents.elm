@@ -1,7 +1,7 @@
 module ScrollEvents exposing
   ( Model, Msg, StickyElPos, Tomsg, init
   , subscribeToScrollIntoVisibility, subscribeToStick
-  , update, subscriptions
+  , process, visibilitySub, stickySub, update, subscriptions
   )
 
 
@@ -30,7 +30,9 @@ type Model msg =
 
 
 type Msg msg
-  = WindowScrollOrResizeMsg
+  = CheckVisibilityMsg String msg
+  | CheckStickyMsg String String (Maybe StickyElPos -> msg)
+  | WindowScrollOrResizeMsg
   | SubscribeVisibilityMsg String msg
   | SubscribeStickToMsg String (String -> Maybe StickyElPos -> msg)
   | UnsubscribeVisibilityMsg String
@@ -60,9 +62,84 @@ subscribeToStick toMsg elId toStickPosmsg =
   Task.perform (toMsg << SubscribeStickToMsg elId) <| Task.succeed toStickPosmsg
 
 
+process: Tomsg msg -> Msg msg -> Cmd msg
+process toMsg msg =
+  case msg of
+    CheckVisibilityMsg id vmsg ->
+      Dom.getElement id |>
+      Task.map
+        (\ { viewport, element } ->
+          if element.y <= viewport.y + viewport.height then
+            vmsg
+          else
+            toMsg <| NoOp Nothing
+        ) |>
+      Task.onError (\e -> Task.succeed <| toMsg <| NoOp <| Just e) |>
+      Task.perform identity
+
+    CheckStickyMsg stickToId id stickMsg ->
+      Task.sequence [ Dom.getElement stickToId, Dom.getElement id ] |>
+      Task.map
+        (\ res ->
+          case res of
+            [ stickToPos, pos ] ->
+              (stickToPos.element, stickToPos.viewport, pos.element) |>
+              (\(upper, sviewport, lower) ->
+                if lower.y < upper.y + upper.height then
+                  stickMsg <|
+                    Just
+                      { top = upper.height + upper.y - sviewport.y
+                      , left = lower.x
+                      }
+                else
+                  stickMsg Nothing
+              )
+            _ -> toMsg <| NoOp Nothing
+        ) |>
+      Task.onError (\e -> Task.succeed <| toMsg <| NoOp <| Just e) |>
+      Task.perform identity
+
+    _ -> Cmd.none
+
 update: Tomsg msg -> Msg msg -> Model msg -> ( Model msg, Cmd msg )
 update toMsg msg (Model ({ stickToElId, visibilitySubscriptions, stickSubscriptions } as mi) as same) =
   case msg of
+    CheckVisibilityMsg id vmsg ->
+      Dom.getElement id |>
+      Task.map
+        (\ { viewport, element } ->
+          if element.y <= viewport.y + viewport.height then
+            vmsg
+          else
+            toMsg <| NoOp Nothing
+        ) |>
+      Task.onError (\e -> Task.succeed <| toMsg <| NoOp <| Just e) |>
+      Task.perform identity |>
+      Tuple.pair same
+
+    CheckStickyMsg stickToId id stickMsg ->
+      Task.sequence [ Dom.getElement stickToId, Dom.getElement id ] |>
+      Task.map
+        (\ res ->
+          case res of
+            [ stickToPos, pos ] ->
+              (stickToPos.element, stickToPos.viewport, pos.element) |>
+              (\(upper, sviewport, lower) ->
+                if lower.y < upper.y + upper.height then
+                  stickMsg <|
+                    Just
+                      { top = upper.height + upper.y - sviewport.y
+                      , left = lower.x
+                      }
+                else
+                  stickMsg Nothing
+              )
+            _ -> toMsg <| NoOp Nothing
+        ) |>
+      Task.onError (\e -> Task.succeed <| toMsg <| NoOp <| Just e) |>
+      Task.perform identity |>
+      Tuple.pair same
+
     WindowScrollOrResizeMsg ->
       let
         visibilityCmds =
@@ -165,3 +242,19 @@ subscriptions toMsg (Model { visibilitySubscriptions, stickSubscriptions }) =
       [ windowScroll (\_ -> toMsg WindowScrollOrResizeMsg)
       , Ev.onResize (\_ _ -> toMsg WindowScrollOrResizeMsg)
       ]
+
+
+visibilitySub: Tomsg msg -> String -> msg -> Sub msg
+visibilitySub toMsg id msg =
+  Sub.batch
+    [ windowScroll (\_ -> toMsg <| CheckVisibilityMsg id msg)
+    , Ev.onResize (\_ _ -> toMsg <| CheckVisibilityMsg id msg)
+    ]
+
+
+stickySub: Tomsg msg -> String -> String -> (Maybe StickyElPos -> msg) -> Sub msg
+stickySub toMsg stickToElId id toStickmsg =
+  Sub.batch
+    [ windowScroll (\_ -> toMsg <| CheckStickyMsg stickToElId id toStickmsg)
+    , Ev.onResize (\_ _ -> toMsg <| CheckStickyMsg stickToElId id toStickmsg)
+    ]
