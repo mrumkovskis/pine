@@ -1,6 +1,6 @@
 module EditModel exposing
   ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , EditModel, JsonEditModel, Msg, Tomsg
+  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
@@ -153,6 +153,9 @@ type alias EditModel msg model =
 
 
 type alias JsonEditModel msg = EditModel msg JM.JsonValue
+
+
+type alias JsonEditMsg msg = Msg msg JM.JsonValue
 
 
 {-| Edit model update messages -}
