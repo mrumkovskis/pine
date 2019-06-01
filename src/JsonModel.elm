@@ -104,6 +104,13 @@ type alias JsonEditor value = String -> Dict String VM.View -> Path -> JsonValue
 type alias JsonReader value = String -> Dict String VM.View -> Path -> value -> Maybe JsonValue
 
 
+type alias JsonTraverser a =
+  { before: String -> JsonValue -> a -> a
+  , on: String -> VM.Field -> JsonValue -> a -> a
+  , after: String -> JsonValue -> a -> a
+  }
+
+
 type alias DeferredHeader = (String, String)
 
 
@@ -974,6 +981,47 @@ stringToJsonValue jsonType value =
 
     x ->
       Just JsNull
+
+
+traverseJson: Dict String VM.View -> JsonTraverser a -> String -> JsonValue -> a -> a
+traverseJson metadata ({ before, on, after } as traverser) typeName value result =
+  let
+    trj = traverseJson metadata traverser
+  in
+    Dict.get typeName metadata |>
+    Maybe.map
+      (\view ->
+        case value of
+          JsObject fields ->
+            List.foldl
+              (\fmd res ->
+                Dict.get fmd.name fields |>
+                Maybe.map
+                  (\val ->
+                    if fmd.isComplexType then
+                      trj
+                        fmd.typeName
+                        val
+                        res
+                    else
+                      on view.typeName fmd val res
+                  ) |>
+                Maybe.withDefault res
+              )
+              (before view.typeName value result)
+              view.fields |>
+            (\res -> after view.typeName value res)
+
+          JsList vals ->
+            List.foldl
+              (\v r -> trj typeName v r)
+              (before view.typeName value result)
+              vals |>
+            (\res -> after view.typeName value res)
+
+          _ -> result -- structure not according to metadata
+      ) |>
+    Maybe.withDefault result
 
 
 jsonList: JsonListModel msg -> List (List String)
