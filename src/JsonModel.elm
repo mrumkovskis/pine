@@ -14,12 +14,12 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonDataDecoder, jsonValue, jsonList, jsonEditor, jsonReader
+  , jsonDataDecoder, jsonValue, jsonInt, jsonList, jsonEditor, jsonReader
   , jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath
   , isInitialized, notInitialized, ready
   -- commands
-  , fetch, fetchFromStart, fetchDeferred, fetchDeferredFromStart, fetchCount
+  , fetch,fetchMsg, fetchFromStart, fetchFromStartMsg, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, create, delete
   , httpDataFetcher, httpCountFetcher, enumFetcher
   -- model updater
@@ -101,7 +101,7 @@ type alias Setter msg value = value -> Model msg value -> Model msg value
 type alias JsonEditor value = String -> Dict String VM.View -> Path -> JsonValue -> value -> value
 
 
-type alias JsonReader value = String -> Dict String VM.View -> Path -> value -> Maybe JsonValue
+type alias JsonReader value = Path -> value -> Maybe JsonValue
 
 
 type alias JsonTraverser a =
@@ -293,11 +293,11 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
 
           Name _ _ -> edata -- list editing path cannot start with name
 
-    reader rTypeName metadata path value =
+    reader path value =
       case path of
         End -> Just <| JsList value
 
-        Idx _ _ -> jsonReader .fields rTypeName metadata path <| JsList value
+        Idx _ _ -> jsonReader path <| JsList value
 
         Name _ _ -> Nothing -- list reading cannot start with name
 
@@ -376,7 +376,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , encoder = \_ _ value -> JE.list encoder value
       , setter = listSetter
       , editor = \_ _ _ _ value -> value
-      , reader = \_ _ _ _ -> Nothing
+      , reader = \_ _ -> Nothing
       , emptyData = emptyListData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -442,16 +442,16 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
 
           Idx _ _ -> edata -- form editing path cannot start with index
 
-    reader rTypeName metadata path value =
+    reader path value =
       case path of
         End -> Just value
 
-        Name _ _ -> jsonReader fieldGetter rTypeName metadata path value
+        Name _ _ -> jsonReader path value
 
         Idx _ _ -> Nothing -- form reading cannot start with index
 
     formId (Model md mc) =
-      mc.reader mc.typeName mc.metadata (Name mc.idParamName End) md.data |>
+      mc.reader (Name mc.idParamName End) md.data |>
       Maybe.map jsonValueToString
 
     jsonModel (Model md mc) =
@@ -562,7 +562,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , encoder = \_ _ value -> encoder value
       , setter = setter
       , editor = \_ _ _ _ value -> value -- not implemented (only for Json... model)
-      , reader = \_ _ _ _ -> Nothing -- not implemented (only for Json... model)
+      , reader = \_ _ -> Nothing -- not implemented (only for Json... model)
       , emptyData = emptyFormData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
       , dataBaseUri = dataBaseUri
@@ -948,9 +948,21 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
 
 
 {-| Returns `JsonValue` -}
-jsonValue: Path -> Model msg value -> Maybe JsonValue
-jsonValue path (Model _ { typeName, metadata, reader } as m) =
-  data m |> reader typeName metadata path
+jsonValue: Path -> JsonValue -> Maybe JsonValue
+jsonValue path source =
+  source |> jsonReader path
+
+
+jsonInt: Path -> JsonValue -> Maybe Int
+jsonInt path source =
+  jsonValue path source |>
+  Maybe.andThen
+    (\v -> case v of
+      JsNumber n ->
+        Just <| round n
+
+      _ -> Nothing
+    )
 
 
 jsonValueToString: JsonValue -> String
@@ -1132,39 +1144,25 @@ searchParsFromJson (Model _ { metadata, typeName } as m) =
         JsList vals ->
           List.foldl (par fld) res vals
 
+        JsObject vals ->
+          pars res <| JsObject vals
+
         x ->
           jsonValueToString val |>
           (\v ->
             if String.isEmpty v then res
-            else (fld.name, jsonValueToString val) :: res
+            else (fld, jsonValueToString val) :: res
           )
 
-    pars res vals viewmd =
+    pars res vals =
       case vals of
         JsObject jsons ->
-          viewmd.filter |>
-          List.foldl
-            (\f vs ->
-              Dict.get f.name jsons |>
-              Maybe.map
-                (\v ->
-                  if f.isComplexType then
-                    Dict.get f.typeName metadata |>
-                    Maybe.map (pars vs v) |>
-                    Maybe.withDefault vs
-                  else
-                    par f v vs
-                ) |>
-              Maybe.withDefault res
-            )
-            res
+          Dict.foldl (\f v r -> par f v r) res jsons
 
         _ ->
           res
   in
-    Dict.get typeName metadata |>
-    Maybe.map (pars [] (data m)) |>
-    Maybe.withDefault []
+    pars [] <| data m
 
 
 {-| Decoder of json array of strings and ints, i.e. ["department-name", 2, "employee-name"]
@@ -1237,7 +1235,12 @@ reversePath path =
 -}
 fetch: Tomsg msg value -> SearchParams -> Cmd msg
 fetch toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| DataCmdMsg True False searchParams Nothing
+  Task.perform identity <| Task.succeed <| fetchMsg toMsg searchParams
+
+
+fetchMsg: Tomsg msg value -> SearchParams -> msg
+fetchMsg toMsg searchParams =
+  toMsg <| DataCmdMsg True False searchParams Nothing
 
 
 {-| Fetch view data from starting from first record. Relevant for [`ListModel`](#ListModel)
@@ -1246,7 +1249,12 @@ fetch toMsg searchParams =
 -}
 fetchFromStart: Tomsg msg value -> SearchParams -> Cmd msg
 fetchFromStart toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams Nothing
+  Task.perform identity <| Task.succeed <| fetchFromStartMsg toMsg searchParams
+
+
+fetchFromStartMsg: Tomsg msg value -> SearchParams -> msg
+fetchFromStartMsg toMsg searchParams =
+  toMsg <| DataCmdMsg True True searchParams Nothing
 
 
 {-| Fetch view data with deferred header set.
@@ -1830,41 +1838,25 @@ jsonEditor fieldGetter typeName metadata path value model =
     Maybe.withDefault model
 
 
-jsonReader: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> Maybe JsonValue
-jsonReader fieldGetter typeName metadata fieldPath value =
-  let
-    reader path result viewmd =
-      case path of
-        Name name rest ->
-          case result of
-            JsObject values ->
-              fieldGetter viewmd |>
-              List.filter (.name >> (==) name) |>
-              List.head |>
-              Maybe.andThen
-                (\f ->
-                  Dict.get f.name values |>
-                  Maybe.andThen
-                    (\v ->
-                      if f.isComplexType then
-                        Dict.get f.typeName metadata |> Maybe.andThen (reader rest v)
-                      else reader rest v viewmd
-                    )
-              )
+jsonReader: Path -> JsonValue -> Maybe JsonValue
+jsonReader path value =
+  case path of
+    Name name rest ->
+      case value of
+        JsObject values ->
+          Dict.get name values |>
+          Maybe.andThen (jsonReader rest)
 
-            _ -> Nothing -- cannot match name
+        _ -> Nothing -- cannot match name
 
-        Idx idx rest ->
-          case result of
-            JsList values ->
-              Utils.at idx values |>
-              Maybe.andThen (\v -> reader rest v viewmd)
+    Idx idx rest ->
+      case value of
+        JsList values ->
+          Utils.at idx values |>
+          Maybe.andThen (\v -> jsonReader rest v)
 
-            _ -> Nothing -- cannot match idx
+        _ -> Nothing -- cannot match idx
 
-        End ->
-          Just result
-  in
-    Dict.get typeName metadata |>
-    Maybe.andThen (reader fieldPath value)
+    End ->
+      Just value
 

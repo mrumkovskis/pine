@@ -247,7 +247,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                   Maybe.withDefault ( model, Cmd.none )
 
                 formatter model =
-                  JM.jsonReader fieldGetter typeName metadata path model |>
+                  JM.jsonReader path model |>
                   Maybe.map JM.jsonValueToString |>
                   Maybe.withDefault ""
 
