@@ -7,6 +7,7 @@ module JsonModel exposing
   , initJsonList, initList, initJsonForm, initJsonQueryForm, initJsonValueForm, initForm, initQueryForm
   , listDecoder, formDecoder, countBaseUri, pageSize, countDecoder, idParam
   , offsetLimitParams , enableDeferred, enableDeferredWithTimeout, dataFetcher, countFetcher
+  , setData
   -- data examination
   , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
@@ -14,8 +15,8 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonDataDecoder, jsonValue, jsonInt, jsonList, jsonEditor, jsonReader
-  , jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
+  , jsonDataDecoder, jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonEditor, jsonReader
+  , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath
   , isInitialized, notInitialized, ready
   -- commands
@@ -663,6 +664,14 @@ countFetcher fetcher (Model d c) =
   Model d { c | countFetcher = fetcher }
 
 
+{-| Set data directly into model. This will not force metadata initialization as
+    if when [`set`](#set) command is called. Other fields like [`count`] are not
+    modified.
+-}
+setData: value -> Model msg value -> Model msg value
+setData value (Model d c) =
+  Model { d | data = value } c
+
 -- Data getter functions
 
 {-| Get model data.
@@ -945,24 +954,6 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
     Dict.get viewTypeName metadata |>
     Maybe.map (encodeObject value) |>
     Maybe.withDefault JE.null
-
-
-{-| Returns `JsonValue` -}
-jsonValue: Path -> JsonValue -> Maybe JsonValue
-jsonValue path source =
-  source |> jsonReader path
-
-
-jsonInt: Path -> JsonValue -> Maybe Int
-jsonInt path source =
-  jsonValue path source |>
-  Maybe.andThen
-    (\v -> case v of
-      JsNumber n ->
-        Just <| round n
-
-      _ -> Nothing
-    )
 
 
 jsonValueToString: JsonValue -> String
@@ -1825,6 +1816,15 @@ jsonEditor path value model =
     transform path model
 
 
+jsonEdit: String -> JsonValue -> JsonValue -> JsonValue
+jsonEdit path value model =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.map (\p -> jsonEditor p value model) |>
+  Maybe.withDefault model
+
+
 jsonReader: Path -> JsonValue -> Maybe JsonValue
 jsonReader path value =
   case path of
@@ -1847,3 +1847,68 @@ jsonReader path value =
     End ->
       Just value
 
+
+jsonString: String -> JsonValue -> Maybe String
+jsonString path source =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.andThen (\p -> jsonReader p source) |>
+  Maybe.andThen
+    (\v -> case v of
+      JsNumber n ->
+        Just <| String.fromFloat n
+
+      JsBool b ->
+        Just <| toString b
+
+      JsString s ->
+        Just s
+
+      x -> Just <| toString x
+    )
+
+
+jsonInt: String -> JsonValue -> Maybe Int
+jsonInt path source =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.andThen (\p -> jsonReader p source) |>
+  Maybe.andThen
+    (\v -> case v of
+      JsNumber n ->
+        Just <| round n
+
+      _ -> Nothing
+    )
+
+
+jsonFloat: String -> JsonValue -> Maybe Float
+jsonFloat path source =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.andThen (\p -> jsonReader p source) |>
+  Maybe.andThen
+    (\v -> case v of
+      JsNumber n ->
+        Just n
+
+      _ -> Nothing
+    )
+
+
+jsonBool: String -> JsonValue -> Maybe Bool
+jsonBool path source =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.andThen (\p -> jsonReader p source) |>
+  Maybe.andThen
+    (\v -> case v of
+      JsBool b ->
+        Just b
+
+      _ -> Nothing
+    )
