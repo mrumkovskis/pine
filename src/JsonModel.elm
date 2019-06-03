@@ -98,7 +98,7 @@ type alias Encoder value = Dict String VM.View -> String -> value -> JD.Value
 type alias Setter msg value = value -> Model msg value -> Model msg value
 
 
-type alias JsonEditor value = String -> Dict String VM.View -> Path -> JsonValue -> value -> value
+type alias JsonEditor value = Path -> JsonValue -> value -> value
 
 
 type alias JsonReader value = Path -> value -> Maybe JsonValue
@@ -278,10 +278,10 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
       value |>
       JE.list (jsonDataEncoder .fields metadata eTypeName)
 
-    editor eTypeName metadata path value edata =
+    editor path value edata =
       let
         result =
-          case jsonEditor .fields eTypeName metadata path value <| JsList edata of
+          case jsonEditor path value <| JsList edata of
             JsList rows -> rows
 
             _ -> edata
@@ -375,7 +375,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , decoder = \_ _ -> JD.list decoder
       , encoder = \_ _ value -> JE.list encoder value
       , setter = listSetter
-      , editor = \_ _ _ _ value -> value
+      , editor = \_ _ value -> value
       , reader = \_ _ -> Nothing
       , emptyData = emptyListData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
@@ -427,10 +427,10 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
 
     encoder metadata eTypeName value = jsonDataEncoder fieldGetter metadata eTypeName value
 
-    editor eTypeName metadata path value edata =
+    editor path value edata =
       let
         result =
-          case jsonEditor fieldGetter eTypeName metadata path value edata of
+          case jsonEditor path value edata of
             JsObject fields -> JsObject fields
 
             _ -> edata
@@ -561,7 +561,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , decoder = \_ _ -> decoder
       , encoder = \_ _ value -> encoder value
       , setter = setter
-      , editor = \_ _ _ _ value -> value -- not implemented (only for Json... model)
+      , editor = \_ _ value -> value -- not implemented (only for Json... model)
       , reader = \_ _ -> Nothing -- not implemented (only for Json... model)
       , emptyData = emptyFormData True -- model ready when emptyData function called
       , metadataBaseUri = metadataBaseUri
@@ -1618,7 +1618,7 @@ update toMsg msg (Model modelData modelConf as same) =
           in
             if good then
               let
-                newValue = modelConf.editor modelConf.typeName modelConf.metadata path value modelData.data
+                newValue = modelConf.editor path value modelData.data
               in
                 ( Model { modelData | data = newValue } modelConf
                 , Cmd.none
@@ -1760,18 +1760,13 @@ update toMsg msg (Model modelData modelConf as same) =
           errorResponse doneProgressOnError err
 
 
-jsonEditor: (VM.View -> List VM.Field) -> String -> Dict String VM.View -> Path -> JsonValue -> JsonValue -> JsonValue
-jsonEditor fieldGetter typeName metadata path value model =
+jsonEditor: Path -> JsonValue -> JsonValue -> JsonValue
+jsonEditor path value model =
   let
-    vmd fmd default =
-      if fmd.isComplexType then
-        Dict.get fmd.typeName metadata |> Maybe.withDefault default
-      else default
-
-    setRow rpath viewmd idx rows =
+    setRow rpath idx rows =
       ( rows |>
         List.indexedMap
-          (\i val -> if i == idx then transform rpath val viewmd else val)
+          (\i val -> if i == idx then transform rpath val else val)
       )
 
     deleteRow rows idx =
@@ -1790,27 +1785,21 @@ jsonEditor fieldGetter typeName metadata path value model =
           rows
       of (l, _) -> List.reverse l
 
-    transform tpath tdata viewmd =
+    transform tpath tdata =
       case tpath of
         End -> value
 
         Name name rest ->
           case tdata of
             JsObject values ->
-              JsObject
-                ( Utils.find (\f -> f.name == name) (fieldGetter viewmd) |>
-                  Maybe.map
-                    (\f ->
-                      Dict.update
-                        f.name
-                        (\mv ->
-                          Just <|
-                            transform rest (Maybe.withDefault JsNull mv) (vmd f viewmd)
-                        )
-                        values
-                    ) |>
-                  Maybe.withDefault values
-                )
+              JsObject <|
+                Dict.update
+                  name
+                  (\mv ->
+                    Just <|
+                      transform rest (Maybe.withDefault JsNull mv)
+                  )
+                  values
 
             fv -> fv -- do nothing since element must match complex type
 
@@ -1823,19 +1812,17 @@ jsonEditor fieldGetter typeName metadata path value model =
                     JsNull -> deleteRow rows (-idx - 1) -- no data in value, delete row
 
                     _ -> insertRow value rows (-idx - 1)
-                else setRow End viewmd idx rows
+                else setRow End idx rows
 
             fv -> fv -- do nothing since element must be record
 
         Idx idx rest ->
           case tdata of
-            JsList rows -> JsList <| setRow rest viewmd idx rows
+            JsList rows -> JsList <| setRow rest idx rows
 
             fv -> fv -- do nothing since element must match complex type
   in
-    Dict.get typeName metadata |>
-    Maybe.map (transform path model) |>
-    Maybe.withDefault model
+    transform path model
 
 
 jsonReader: Path -> JsonValue -> Maybe JsonValue
