@@ -1776,21 +1776,31 @@ jsonEditor path value model =
           rows
       of (l, _) -> List.reverse l
 
+    setField rpath name fields =
+      Dict.update
+        name
+        (\mv -> Just <| transform rpath <| Maybe.withDefault JsNull mv)
+        fields
+
     transform tpath tdata =
       case tpath of
         End -> value
 
-        Name name rest ->
+        Name name End ->
           case tdata of
             JsObject values ->
-              JsObject <|
-                Dict.update
-                  name
-                  (\mv ->
-                    Just <|
-                      transform rest (Maybe.withDefault JsNull mv)
-                  )
-                  values
+              case value of
+                JsNull -> -- no data, remove value
+                  JsObject <| Dict.remove name values
+
+                _ -> -- insert or update field value
+                  JsObject <| setField End name values
+
+            fv -> fv -- do nothing element must be
+
+        Name name rest ->
+          case tdata of
+            JsObject values -> JsObject <| setField rest name values
 
             fv -> fv -- do nothing since element must match complex type
 
@@ -1805,13 +1815,13 @@ jsonEditor path value model =
                     _ -> insertRow value rows (-idx - 1)
                 else setRow End idx rows
 
-            fv -> fv -- do nothing since element must be record
+            fv -> fv -- do nothing since element must be list
 
         Idx idx rest ->
           case tdata of
             JsList rows -> JsList <| setRow rest idx rows
 
-            fv -> fv -- do nothing since element must match complex type
+            fv -> fv -- do nothing since element must match list
   in
     transform path model
 
