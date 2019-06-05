@@ -212,17 +212,17 @@ init model ctrlList toMessagemsg =
       True
 
 
-initJsonForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
 initJsonForm =
   initJsonFormInternal .fields
 
 
-initJsonQueryForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonQueryForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
-initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> EditModel msg JM.JsonValue
+initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
 initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controllers toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ { metadata } as formModel) =
@@ -568,6 +568,13 @@ inputMsg: key -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
 inputMsg key toMsg { controllers } =
   Dict.get (toString key) controllers |>
   Maybe.map (\ctrl -> toMsg << OnSelectMsg ctrl)
+
+
+{-| Produces `EditModelMsg` message given json encoded `Path`
+-}
+jsonEditMsg: Tomsg msg JM.JsonValue -> String -> JM.JsonValue -> msg
+jsonEditMsg toMsg path value =
+  toMsg <| EditModelMsg (\m -> JM.jsonEdit path value m)
 
 
 {-| Model update -}
