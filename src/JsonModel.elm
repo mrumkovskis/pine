@@ -1769,12 +1769,8 @@ jsonEditor path value model =
       of (l, _) -> List.reverse l
 
     insertRow row rows idx =
-      case
-        List.foldl
-          (\val (res, i) -> (val :: (if i == idx then row :: res else res), i + 1))
-          ([], 0)
-          rows
-      of (l, _) -> List.reverse l
+      (List.take idx rows, List.drop idx rows) |>
+      (\(first, last) -> first ++ (row :: last))
 
     setField rpath name fields =
       Dict.update
