@@ -15,7 +15,8 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonDataDecoder, jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonEditor, jsonReader
+  , jsonDataDecoder, jsonDecoder, jsonEncoder
+  , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonEditor, jsonReader
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath
   , isInitialized, notInitialized, ready
@@ -830,9 +831,9 @@ conf (Model _ c) = c
 -- utility functions
 
 
-{-| Decoder for [`JsonValue`](#JsonValue)
+{-| Decoder for [`JsonValue`](#JsonValue). Structure must correspond to metadata provided
 
-    jsonDataDecoder metadata viewTypeName
+    jsonDataDecoder .fields metadata viewTypeName
 -}
 jsonDataDecoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JD.Decoder JsonValue
 jsonDataDecoder fieldGetter metadata viewTypeName =
@@ -892,9 +893,9 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
     Maybe.withDefault (fail viewTypeName)
 
 
-{-| Encoder for [`JsonValue`](#JsonValue)
+{-| Encoder for [`JsonValue`](#JsonValue). Only data corresponding to metadata are encoded.
 
-    jsonDataEncoder metadata viewTypeName value
+    jsonDataEncoder .fields metadata viewTypeName value
 -}
 jsonDataEncoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> JsonValue -> JD.Value
 jsonDataEncoder fieldGetter metadata viewTypeName value =
@@ -954,6 +955,44 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
     Dict.get viewTypeName metadata |>
     Maybe.map (encodeObject value) |>
     Maybe.withDefault JE.null
+
+
+{-| Decoder for [`JsonValue`](#JsonValue)
+-}
+jsonDecoder: JD.Decoder JsonValue
+jsonDecoder =
+  JD.oneOf
+    [ JD.string |> JD.map JsString
+    , JD.float |> JD.map JsNumber
+    , JD.bool |> JD.map JsBool
+    , JD.null JsNull
+    , (JD.list <| JD.lazy (\_ -> jsonDecoder)) |> JD.map JsList
+    , (JD.dict <| JD.lazy (\_ -> jsonDecoder)) |> JD.map JsObject
+    ]
+
+
+{-| Encoder for [`JsonValue`](#JsonValue).
+-}
+jsonEncoder: JsonValue -> JE.Value
+jsonEncoder value =
+  case value of
+    JsString v ->
+      JE.string v
+
+    JsNumber v ->
+      JE.float v
+
+    JsBool v ->
+      JE.bool v
+
+    JsNull ->
+      JE.null
+
+    JsList v ->
+      JE.list jsonEncoder v
+
+    JsObject v ->
+      JE.dict identity jsonEncoder v
 
 
 jsonValueToString: JsonValue -> String
