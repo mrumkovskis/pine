@@ -1768,9 +1768,9 @@ jsonEditor path value model =
           rows
       of (l, _) -> List.reverse l
 
-    insertRow row rows idx =
+    insertRow rpath rows idx =
       (List.take idx rows, List.drop idx rows) |>
-      (\(first, last) -> first ++ (row :: last))
+      (\(first, last) -> first ++ ((transform rpath JsNull) :: last))
 
     setField rpath name fields =
       Dict.update
@@ -1782,7 +1782,7 @@ jsonEditor path value model =
       case tpath of
         End -> value
 
-        Name name End ->
+        Name name rest ->
           case tdata of
             JsObject values ->
               case value of
@@ -1790,17 +1790,14 @@ jsonEditor path value model =
                   JsObject <| Dict.remove name values
 
                 _ -> -- insert or update field value
-                  JsObject <| setField End name values
+                  JsObject <| setField rest name values
+
+            JsNull -> -- nodata, continue processing path
+              JsObject <| setField rest name Dict.empty
 
             fv -> fv -- do nothing element must be
 
-        Name name rest ->
-          case tdata of
-            JsObject values -> JsObject <| setField rest name values
-
-            fv -> fv -- do nothing since element must match complex type
-
-        Idx idx End ->
+        Idx idx rest ->
           case tdata of
             JsList rows ->
               JsList <|
@@ -1808,16 +1805,16 @@ jsonEditor path value model =
                   case value of
                     JsNull -> deleteRow rows (-idx - 1) -- no data in value, delete row
 
-                    _ -> insertRow value rows (-idx - 1)
-                else setRow End idx rows
+                    _ -> insertRow rest rows (-idx - 1)
+                else setRow rest idx rows
+
+            JsNull -> -- nodata, continue processing path
+              JsList <|
+                if idx == -1 then --
+                  insertRow rest [] 0
+                else []
 
             fv -> fv -- do nothing since element must be list
-
-        Idx idx rest ->
-          case tdata of
-            JsList rows -> JsList <| setRow rest idx rows
-
-            fv -> fv -- do nothing since element must match list
   in
     transform path model
 
