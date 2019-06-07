@@ -18,7 +18,7 @@ module JsonModel exposing
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonEditor, jsonReader
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
-  , pathDecoder, pathEncoder, reversePath
+  , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
   -- commands
   , fetch,fetchMsg, fetchFromStart, fetchFromStartMsg, fetchDeferred, fetchDeferredFromStart, fetchCount
@@ -1015,7 +1015,7 @@ jsonValueToString jsValue =
 
     JsNull -> ""
 
-    x -> toString x
+    x -> "" -- empty string for complex type
 
 
 stringToJsonValue: String -> String -> Maybe JsonValue
@@ -1133,21 +1133,8 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                   in
                     if f.isComplexType then
                       Dict.get f.typeName metadata |>
-                      Maybe.map
-                        (\vmd ->
-                          if f.isCollection then
-                            case v of
-                              JsList rows ->
-                                List.foldl
-                                  (\fv (nres, i) -> (flatten vmd (Idx i fpath) fv nres, i + 1))
-                                  (res, 0)
-                                  rows |>
-                                Tuple.first
-
-                              _ -> res --unexpected match, structure not according to metadata
-                          else
-                            flatten vmd fpath v res
-                        ) |>
+                      Maybe.map (\vmd -> flatten vmd fpath v res) |>
+                      Maybe.map (\r -> (path, f, v) :: r) |>
                       Maybe.withDefault res
                     else
                       if f.isCollection then
@@ -1157,7 +1144,8 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                               (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
                               (res, 0)
                               rows |>
-                            Tuple.first
+                            Tuple.first |>
+                            (::) (path, f, v)
 
                           _ -> res --unexpected match, structure not according to metadata
                       else
@@ -1166,6 +1154,13 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
               Maybe.withDefault ((Name f.name path, f, JsNull) :: res) -- set value to JsNull if field no present
             )
             result
+
+        JsList values ->
+          List.foldl
+            (\v (r, i) -> (flatten viewmd (Idx i path) v r, i + 1))
+            (result, 0)
+            values |>
+          Tuple.first
 
         _ -> result -- unexpected match, structure not according to metadata
   in
@@ -1272,6 +1267,21 @@ reversePath path =
   in
     reverse End path
 
+
+appendPath: Path -> Path -> Path
+appendPath begin end =
+  case begin of
+    End ->
+      end
+
+    Name n rest ->
+      Name n <| appendPath rest end
+
+    Idx i rest ->
+      Idx i <| appendPath rest end
+
+    EndIdx rest ->
+      EndIdx <| appendPath rest end
 
 -- commands
 
