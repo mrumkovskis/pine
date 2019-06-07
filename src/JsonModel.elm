@@ -239,6 +239,7 @@ type JsonValue
 type Path
   = Name String Path
   | Idx Int Path
+  | EndIdx Path
   | End
 
 
@@ -282,16 +283,18 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
 
     editor path value edata =
       let
-        result =
-          case jsonEditor path value <| JsList edata of
+        result d =
+          case jsonEditor path value <| JsList d of
             JsList rows -> rows
 
             _ -> edata
       in
         case path of
-          End -> result
+          End -> result edata
 
-          Idx _ _ -> result
+          Idx _ _ -> result edata
+
+          EndIdx _ -> result edata
 
           Name _ _ -> edata -- list editing path cannot start with name
 
@@ -300,6 +303,8 @@ initJsonList metadataBaseUri dataBaseUri typeName toMessagemsg =
         End -> Just <| JsList value
 
         Idx _ _ -> jsonReader path <| JsList value
+
+        EndIdx _ -> jsonReader path <| JsList value
 
         Name _ _ -> Nothing -- list reading cannot start with name
 
@@ -431,18 +436,20 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
 
     editor path value edata =
       let
-        result =
-          case jsonEditor path value edata of
+        result d =
+          case jsonEditor path value d of
             JsObject fields -> JsObject fields
 
             _ -> edata
       in
         case path of
-          End -> result
+          End -> result edata
 
-          Name _ _ -> result
+          Name _ _ -> result edata
 
           Idx _ _ -> edata -- form editing path cannot start with index
+
+          EndIdx _ -> edata -- form editing path cannot start with index
 
     reader path value =
       case path of
@@ -451,6 +458,8 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
         Name _ _ -> jsonReader path value
 
         Idx _ _ -> Nothing -- form reading cannot start with index
+
+        EndIdx _ -> Nothing -- form reading cannot start with index
 
     formId (Model md mc) =
       mc.reader (Name mc.idParamName End) md.data |>
@@ -1201,11 +1210,12 @@ searchParsFromJson (Model _ { metadata, typeName } as m) =
 pathDecoder: JD.Decoder Path
 pathDecoder =
   let
-    nameDec = JD.string |> JD.map ((Utils.flip Name) End)
+    nameEndIdxDec =
+      JD.string |> JD.map (\s -> if s == "$" then EndIdx End else Name s End)
 
     idxDec = JD.int |> JD.map ((Utils.flip Idx) End)
 
-    pathElementDecoder = JD.oneOf [ nameDec, idxDec ]
+    pathElementDecoder = JD.oneOf [ nameEndIdxDec, idxDec ]
 
     pathDec =
       JD.list pathElementDecoder |>
@@ -1217,12 +1227,14 @@ pathDecoder =
 
               Idx i _ -> Idx i path
 
+              EndIdx _ -> EndIdx path
+
               End -> End
           )
           End
       )
   in
-    JD.oneOf [ nameDec, pathDec, idxDec ]
+    JD.oneOf [ nameEndIdxDec, pathDec, idxDec ]
 
 
 pathEncoder: Path -> JD.Value
@@ -1235,6 +1247,8 @@ pathEncoder path =
 
         Idx i rest ->
           JE.int i :: encode res rest
+
+        EndIdx rest -> JE.string "$" :: encode res rest
 
         End -> res
   in case encode [] path of
@@ -1253,6 +1267,8 @@ reversePath path =
         Name n rest -> reverse (Name n np) rest
 
         Idx i rest as ie -> reverse (Idx i np) rest
+
+        EndIdx rest -> reverse (EndIdx np) rest
   in
     reverse End path
 
@@ -1854,6 +1870,21 @@ jsonEditor path value model =
                 else []
 
             fv -> fv -- do nothing since element must be list
+
+        EndIdx rest ->
+          case tdata of
+            JsList rows ->
+              JsList <|
+                case value of
+                  JsNull -> deleteRow rows (-(List.length rows) - 1) -- no data in value, delete row
+
+                  _ -> insertRow rest rows (-(List.length rows) - 1)
+
+            JsNull -> -- nodata, continue processing path
+              JsList <|
+                insertRow rest [] 0
+
+            fv -> fv -- do nothing since element must be list
   in
     transform path model
 
@@ -1882,6 +1913,14 @@ jsonReader path value =
       case value of
         JsList values ->
           Utils.at idx values |>
+          Maybe.andThen (\v -> jsonReader rest v)
+
+        _ -> Nothing -- cannot match idx
+
+    EndIdx rest ->
+      case value of
+        JsList values ->
+          Utils.at (List.length values - 1) values |>
           Maybe.andThen (\v -> jsonReader rest v)
 
         _ -> Nothing -- cannot match idx
