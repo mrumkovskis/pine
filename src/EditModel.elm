@@ -55,14 +55,9 @@ type alias Input msg =
   , editing: Bool
   , error: Maybe String
   , select: Maybe (SelectModel msg String)
-  , label: String
-  , type_: String
-  , required: Bool
-  , length: Maybe Int
-  , decimalPlaces: Maybe Int
-  , isCollection: Bool
   , attrs: Attributes msg
   , idx: Int -- index of input in metadata fields list, used for JsonValue model
+  , field: Maybe VM.Field
   }
 
 
@@ -174,7 +169,7 @@ type Msg msg model
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
-  | HttpModelMsg (Maybe model) (Result Http.Error model)
+  | HttpModelMsg (() -> Maybe model) (Result Http.Error model)
 
 
 {-| Edit model message constructor -}
@@ -198,7 +193,7 @@ init model ctrlList toMessagemsg =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing "" "text" False Nothing Nothing False emptyAttrs -1
+          Input k "" False Nothing Nothing emptyAttrs -1 Nothing
         )
   in
     EditModel
@@ -232,19 +227,79 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
           let
             key = JM.pathEncoder path |> JE.encode 0
 
-            val = JM.jsonValueToString value
+            stringVal = JM.jsonValueToString value
 
             input =
-              Input key val False Nothing Nothing field.label field.typeName field.required
-                field.length field.fractionDigits field.isCollection
-                (Attributes (always []) []) i
+              Input key stringVal False Nothing Nothing (Attributes (always []) []) i <| Just field
 
             ctrl =
               let
                 updater toMsg cinp model =
-                  JM.stringToJsonValue field.jsonType cinp.value |>
-                  Maybe.map (\iv -> ( JM.jsonEditor path iv model, Cmd.none )) |>
-                  Maybe.withDefault ( model, Cmd.none )
+                  let
+                    maybeUpdateSubList val =
+                      JM.jsonReader path model |>
+                      Maybe.map
+                        (\exv -> case exv of
+                          JM.JsList vals ->
+                            Utils.find ((==) val) vals |>
+                            Maybe.map (\_ -> model) |>
+                            Maybe.withDefault
+                              (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model)
+
+                          _ -> JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model
+                        )
+                  in
+                    if field.isComplexType then
+                      let
+                        subviewDecoder () =
+                          JM.jsonDecoder |>
+                          JD.map
+                            (\val ->
+                              if field.isCollection then
+                                -- set value if value not exists already
+                                maybeUpdateSubList val |>
+                                Maybe.withDefault model
+                              else
+                                JM.jsonEditor path val model
+                            )
+
+                        updateSingleStringFieldSubview () =
+                          Dict.get field.typeName metadata |>
+                          Maybe.map .fields |>
+                          Maybe.map (List.filter (\f -> f.jsonType == "string")) |>
+                          Maybe.andThen
+                            (\fs -> case fs of
+                              [ f ] ->
+                                let
+                                  p =
+                                    if field.isCollection then
+                                      JM.appendPath path <| JM.EndIdx <| JM.Name f.name JM.End
+                                    else
+                                      JM.appendPath path <| JM.Name f.name JM.End
+                                in
+                                  Just <| JM.jsonEditor p (JM.JsString cinp.value) model
+
+                              _ -> Nothing
+                            )
+                      in
+                        ( model
+                        , Http.get
+                            ( dataBaseUri ++ "/create/" ++ field.typeName ++
+                              Utils.httpQuery [(field.name, cinp.value)]
+                            )
+                            (subviewDecoder ()) |>
+                          http toMsg updateSingleStringFieldSubview
+                        )
+                    else if field.isCollection then
+                      ( JM.stringToJsonValue field.jsonType cinp.value |>
+                        Maybe.andThen maybeUpdateSubList |>
+                        Maybe.withDefault model
+                      , Cmd.none
+                      )
+                    else
+                      JM.stringToJsonValue field.jsonType cinp.value |>
+                      Maybe.map (\iv -> ( JM.jsonEditor path iv model, Cmd.none )) |>
+                      Maybe.withDefault ( model, Cmd.none )
 
                 formatter model =
                   JM.jsonReader path model |>
@@ -252,28 +307,42 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                   Maybe.withDefault ""
 
                 validator iv =
-                  case field.jsonType of
-                    "number" ->
-                      let
-                        res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
-                      in
-                        field.fractionDigits |>
-                        Maybe.map
-                          (\fd ->
-                            if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
-                          ) |>
-                        Maybe.withDefault (String.toInt iv |> res)
+                  let
+                    typeValidator t =
+                      case t of
+                        "number" ->
+                          let
+                            res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
+                          in
+                            field.fractionDigits |>
+                            Maybe.map
+                              (\fd ->
+                                if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
+                              ) |>
+                            Maybe.withDefault (String.toInt iv |> res)
 
-                    "boolean" ->
-                      String.toLower iv |>
-                        (\s ->
-                          if s == "true" || s == "false" then
-                            Ok iv
-                          else
-                            Err <| "Not a boolean: " ++ iv
-                        )
+                        "boolean" ->
+                          String.toLower iv |>
+                            (\s ->
+                              if s == "true" || s == "false" then
+                                Ok iv
+                              else
+                                Err <| "Not a boolean: " ++ iv
+                            )
 
-                    _ -> Ok iv
+                        _ -> Ok iv
+
+                    enumValidator en =
+                      Utils.find ((==) iv) en |>
+                      Result.fromMaybe ("Value must come from list")
+                  in
+                    typeValidator field.jsonType |>
+                    Result.andThen
+                      (\r ->
+                        field.enum |>
+                        Maybe.map enumValidator |>
+                        Maybe.withDefault (Ok r)
+                      )
               in
                 case List.filter (\(p, _) -> pathMatch p key) controllers of
                   [] ->
@@ -399,7 +468,7 @@ create toMsg createParams createFun =
 
 {-| Creates model from http request.
 -}
-http: Tomsg msg model -> Maybe model -> Http.Request model -> Cmd msg
+http: Tomsg msg model -> (() -> Maybe model) -> Http.Request model -> Cmd msg
 http toMsg maybeOnErr req =
   Http.send (toMsg << HttpModelMsg maybeOnErr) req
 
@@ -504,21 +573,22 @@ inps keys toMsg model =
 
 pathMatch: String -> String -> Bool
 pathMatch pattern path =
-  ((String.words pattern |>
-    List.map
-      (\s ->
-        if s == "*" then "[^,]+"
-        else if s == "**" then ".*?"
-        else String.concat ["\\\"?", s, "\\\"?"]
-      ) |>
-    List.intersperse "," |>
-    String.join "" |>
-    String.append "^\\[?" |>
-    String.append
-  ) "\\]?$" |>
-  Regex.fromString |>
-  Maybe.withDefault Regex.never |>
-  Regex.contains) path
+  ( ( String.words pattern |>
+      List.map
+        (\s ->
+          if s == "*" then "[^,]+"
+          else if s == "**" then ".*?"
+          else String.concat ["\\\"?", s, "\\\"?"]
+        ) |>
+      List.intersperse "," |>
+      String.join "" |>
+      String.append "^\\[?" |>
+      String.append
+    ) "\\]?$" |>
+    Regex.fromString |>
+    Maybe.withDefault Regex.never |>
+    Regex.contains
+  ) path
 
 
 inpsByPattern: String -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> List (Input msg)
@@ -770,7 +840,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 set toMsg (always r)
 
               Err e ->
-                onErr |>
+                onErr () |>
                 Maybe.map (\r -> set toMsg (always r)) |>
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
