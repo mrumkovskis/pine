@@ -6,7 +6,7 @@ module EditModel exposing
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, create, http, save, delete
   , id, data, inp, inps, inpsByPattern
-  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg
+  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, jsonEditMsg, jsonDeleteMsg
   , update
   )
 
@@ -246,7 +246,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                             Maybe.withDefault
                               (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model)
 
-                          _ -> JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model
+                          _ -> JM.jsonEditor (JM.appendPath path JM.End) val model
                         )
                   in
                     if field.isComplexType then
@@ -270,14 +270,9 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                           Maybe.andThen
                             (\fs -> case fs of
                               [ f ] ->
-                                let
-                                  p =
-                                    if field.isCollection then
-                                      JM.appendPath path <| JM.EndIdx <| JM.Name f.name JM.End
-                                    else
-                                      JM.appendPath path <| JM.Name f.name JM.End
-                                in
-                                  Just <| JM.jsonEditor p (JM.JsString cinp.value) model
+                                maybeUpdateSubList <|
+                                  JM.JsObject <|
+                                    Dict.fromList [(f.name, JM.JsString cinp.value)]
 
                               _ -> Nothing
                             )
@@ -645,6 +640,13 @@ inputMsg key toMsg { controllers } =
 jsonEditMsg: Tomsg msg JM.JsonValue -> String -> JM.JsonValue -> msg
 jsonEditMsg toMsg path value =
   toMsg <| EditModelMsg (\m -> JM.jsonEdit path value m)
+
+
+{-| Produces `EditModelMsg` message given json encoded `Path` with `JsonValue` `JsNull`
+-}
+jsonDeleteMsg: Tomsg msg JM.JsonValue -> String -> msg
+jsonDeleteMsg toMsg path =
+  toMsg <| EditModelMsg (\m -> JM.jsonEdit path JM.JsNull m)
 
 
 {-| Model update -}

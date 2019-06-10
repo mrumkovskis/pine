@@ -16,7 +16,7 @@ module JsonModel exposing
   , field
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
-  , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonEditor, jsonReader
+  , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -1075,47 +1075,6 @@ traverseJson metadata ({ before, on, after } as traverser) typeName value result
     Maybe.withDefault result
 
 
-jsonList: JsonListModel msg -> List (List String)
-jsonList (Model _ {typeName, metadata} as m) =
-  let
-    decRow vmd row =
-      vmd.fields |>
-      List.concatMap
-        (\f ->
-          Dict.get f.name row |>
-          Maybe.map
-            (\fv ->
-              case fv of
-                JsList rows ->
-                  if not f.isComplexType then
-                    rows |>
-                    List.map (\rjv -> jsonValueToString rjv) |>
-                    List.intersperse ", " |>
-                    String.concat
-                  else
-                    toString rows
-
-                x -> jsonValueToString x
-            ) |>
-          Maybe.map List.singleton |>
-          Maybe.withDefault []
-        )
-
-    jlist d md =
-      d |>
-      List.map
-        (\r -> case r of
-          JsObject fields -> --fields
-            decRow md fields
-
-          x -> [ jsonValueToString x ] --should not happen
-        )
-  in
-    Dict.get typeName metadata |>
-    Maybe.map (jlist (data m)) |>
-    Maybe.withDefault []
-
-
 flattenJsonForm: (VM.View -> List VM.Field) -> JsonFormModel msg -> List (Path, VM.Field, JsonValue)
 flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
   let
@@ -1134,7 +1093,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                     if f.isComplexType then
                       Dict.get f.typeName metadata |>
                       Maybe.map (\vmd -> flatten vmd fpath v res) |>
-                      Maybe.map (\r -> (path, f, v) :: r) |>
+                      Maybe.map (\r -> (fpath, f, v) :: r) |>
                       Maybe.withDefault res
                     else
                       if f.isCollection then
@@ -1145,7 +1104,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                               (res, 0)
                               rows |>
                             Tuple.first |>
-                            (::) (path, f, v)
+                            (::) (fpath, f, v)
 
                           _ -> res --unexpected match, structure not according to metadata
                       else
@@ -1826,12 +1785,11 @@ jsonEditor path value model =
       )
 
     deleteRow rows idx =
-      case
-        List.foldl
-          (\val (res, i) -> (if i == idx then res else val :: res, i + 1))
-          ([], 0)
-          rows
-      of (l, _) -> List.reverse l
+      List.foldl
+        (\val (res, i) -> (if i == idx then res else val :: res, i + 1))
+        ([], 0)
+        rows |>
+      (\(l, _) -> List.reverse l)
 
     insertRow rpath rows idx =
       (List.take idx rows, List.drop idx rows) |>
@@ -1850,17 +1808,15 @@ jsonEditor path value model =
         Name name rest ->
           case tdata of
             JsObject values ->
-              case value of
-                JsNull -> -- no data, remove value
-                  JsObject <| Dict.remove name values
-
-                _ -> -- insert or update field value
-                  JsObject <| setField rest name values
+              if rest == End && value == JsNull then
+                JsObject <| Dict.remove name values -- no data, remove value
+              else
+                JsObject <| setField rest name values -- insert or update field value
 
             JsNull -> -- nodata, continue processing path
               JsObject <| setField rest name Dict.empty
 
-            fv -> fv -- do nothing element must be
+            fv -> fv -- do nothing element must be object
 
         Idx idx rest ->
           case tdata of
@@ -1886,9 +1842,9 @@ jsonEditor path value model =
             JsList rows ->
               JsList <|
                 case value of
-                  JsNull -> deleteRow rows (-(List.length rows) - 1) -- no data in value, delete row
+                  JsNull -> deleteRow rows <| List.length rows -- no data in value, delete row
 
-                  _ -> insertRow rest rows (-(List.length rows) - 1)
+                  _ -> insertRow rest rows <| List.length rows
 
             JsNull -> -- nodata, continue processing path
               JsList <|
@@ -2000,6 +1956,36 @@ jsonBool path source =
     (\v -> case v of
       JsBool b ->
         Just b
+
+      _ -> Nothing
+    )
+
+
+jsonList: String -> JsonValue -> Maybe (List JsonValue)
+jsonList path source =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.andThen (\p -> jsonReader p source) |>
+  Maybe.andThen
+    (\v -> case v of
+      JsList l ->
+        Just l
+
+      _ -> Nothing
+    )
+
+
+jsonObject: String -> JsonValue -> Maybe (Dict String JsonValue)
+jsonObject path source =
+  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
+  JD.decodeString pathDecoder |>
+  Result.toMaybe |>
+  Maybe.andThen (\p -> jsonReader p source) |>
+  Maybe.andThen
+    (\v -> case v of
+      JsObject o ->
+        Just o
 
       _ -> Nothing
     )
