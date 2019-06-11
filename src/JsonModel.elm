@@ -463,6 +463,7 @@ initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg 
 
     formId (Model md mc) =
       mc.reader (Name mc.idParamName End) md.data |>
+      Maybe.andThen (\x -> if x == JsNull then Nothing else Just x) |>
       Maybe.map jsonValueToString
 
     jsonModel (Model md mc) =
