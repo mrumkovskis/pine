@@ -17,7 +17,7 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
-  , pathMatch
+  , traverseJson, jsonValues, pathMatch
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -106,13 +106,6 @@ type alias JsonEditor value = Path -> JsonValue -> value -> value
 
 
 type alias JsonReader value = Path -> value -> Maybe JsonValue
-
-
-type alias JsonTraverser a =
-  { before: String -> JsonValue -> a -> a
-  , on: String -> VM.Field -> JsonValue -> a -> a
-  , after: String -> JsonValue -> a -> a
-  }
 
 
 type alias DeferredHeader = (String, String)
@@ -1037,45 +1030,30 @@ stringToJsonValue jsonType value =
       Just JsNull
 
 
-traverseJson: Dict String VM.View -> JsonTraverser a -> String -> JsonValue -> a -> a
-traverseJson metadata ({ before, on, after } as traverser) typeName value result =
+traverseJson: (String -> JsonValue -> a -> a) -> a -> JsonValue -> a
+traverseJson fun result source =
   let
-    trj = traverseJson metadata traverser
-  in
-    Dict.get typeName metadata |>
-    Maybe.map
-      (\view ->
-        case value of
+    traverser path res val =
+      fun (JE.encode 0 <| pathEncoder path) val res |>
+      (\r ->
+        case val of
           JsObject fields ->
-            List.foldl
-              (\fmd res ->
-                Dict.get fmd.name fields |>
-                Maybe.map
-                  (\val ->
-                    if fmd.isComplexType then
-                      trj
-                        fmd.typeName
-                        val
-                        res
-                    else
-                      on view.typeName fmd val res
-                  ) |>
-                Maybe.withDefault res
-              )
-              (before view.typeName value result)
-              view.fields |>
-            (\res -> after view.typeName value res)
+            Dict.foldl
+              (\n v tr -> traverser (appendPath path <| Name n End) tr v)
+              r
+              fields
 
           JsList vals ->
             List.foldl
-              (\v r -> trj typeName v r)
-              (before view.typeName value result)
+              (\v (tr, i) -> (traverser (appendPath path <| Idx i End) tr v, i + 1))
+              (r, 0)
               vals |>
-            (\res -> after view.typeName value res)
+              Tuple.first
 
-          _ -> result -- structure not according to metadata
-      ) |>
-    Maybe.withDefault result
+          _ -> r
+      )
+  in
+    traverser End result source
 
 
 flattenJsonForm: (VM.View -> List VM.Field) -> JsonFormModel msg -> List (Path, VM.Field, JsonValue)
@@ -2014,27 +1992,14 @@ pathMatch pattern path =
   ) path
 
 
-{-
 jsonValues: String -> JsonValue -> List (String, JsonValue)
 jsonValues pattern source =
-  let
-    traverser res path val =
-      JE.encode 0 pathEncoder path |>
-      (\p ->
-        let
-          r =
-            case val of
-              JsList vals ->
-
-
-              JsObject o ->
-
-              _ -> res
-        in
-          if pathMatch pattern p then
-            (p, val) :: r
-          else r
-      )
-  in
-    traverser [] End source
--}
+  traverseJson
+    (\path val res ->
+      if pathMatch pattern path then
+        (path, val) :: res
+      else res
+    )
+    []
+    source |>
+    List.reverse
