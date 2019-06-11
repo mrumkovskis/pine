@@ -43,7 +43,6 @@ import Http
 import Dict exposing (..)
 import Json.Encode as JE
 import Json.Decode as JD
-import Regex
 
 import Debug exposing (toString, log)
 
@@ -339,7 +338,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                         Maybe.withDefault (Ok r)
                       )
               in
-                case List.filter (\(p, _) -> pathMatch p key) controllers of
+                case List.filter (\(p, _) -> JM.pathMatch p key) controllers of
                   [] ->
                     Controller
                       { name = key
@@ -566,29 +565,9 @@ inps keys toMsg model =
   List.reverse
 
 
-pathMatch: String -> String -> Bool
-pathMatch pattern path =
-  ( ( String.words pattern |>
-      List.map
-        (\s ->
-          if s == "*" then "[^,]+"
-          else if s == "**" then ".*?"
-          else String.concat ["\\\"?", s, "\\\"?"]
-        ) |>
-      List.intersperse "," |>
-      String.join "" |>
-      String.append "^\\[?" |>
-      String.append
-    ) "\\]?$" |>
-    Regex.fromString |>
-    Maybe.withDefault Regex.never |>
-    Regex.contains
-  ) path
-
-
 inpsByPattern: String -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> List (Input msg)
 inpsByPattern pattern toMsg staticAttrs { controllers, inputs } =
-  Dict.filter (\k _ -> pathMatch pattern k) inputs |>
+  Dict.filter (\k _ -> JM.pathMatch pattern k) inputs |>
   Dict.values |>
   List.sortBy .idx |>
   List.concatMap

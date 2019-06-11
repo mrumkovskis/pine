@@ -17,6 +17,7 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
+  , pathMatch
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -73,6 +74,7 @@ import Dict exposing (Dict)
 import Set exposing (Set)
 import Http
 import Task
+import Regex
 
 import ViewMetadata as VM
 import DeferredRequests as DR
@@ -1990,3 +1992,49 @@ jsonObject path source =
 
       _ -> Nothing
     )
+
+
+pathMatch: String -> String -> Bool
+pathMatch pattern path =
+  ( ( String.words pattern |>
+      List.map
+        (\s ->
+          if s == "*" then "[^,]+"
+          else if s == "**" then ".*?"
+          else String.concat ["\\\"?", s, "\\\"?"]
+        ) |>
+      List.intersperse "," |>
+      String.join "" |>
+      String.append "^\\[?" |>
+      String.append
+    ) "\\]?$" |>
+    Regex.fromString |>
+    Maybe.withDefault Regex.never |>
+    Regex.contains
+  ) path
+
+
+{-
+jsonValues: String -> JsonValue -> List (String, JsonValue)
+jsonValues pattern source =
+  let
+    traverser res path val =
+      JE.encode 0 pathEncoder path |>
+      (\p ->
+        let
+          r =
+            case val of
+              JsList vals ->
+
+
+              JsObject o ->
+
+              _ -> res
+        in
+          if pathMatch pattern p then
+            (p, val) :: r
+          else r
+      )
+  in
+    traverser [] End source
+-}
