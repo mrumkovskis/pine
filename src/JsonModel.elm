@@ -17,7 +17,7 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
-  , traverseJson, jsonValues, pathMatch
+  , traverseJson, jsonValues, stringValues, pathMatch
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -1761,8 +1761,16 @@ jsonEditor path value model =
   let
     setRow rpath idx rows =
       ( rows |>
-        List.indexedMap
-          (\i val -> if i == idx then transform rpath val else val)
+        List.indexedMap (\i val -> (i, val)) |>
+        List.filterMap
+          (\(i, val) ->
+            if i == idx then
+              case transform rpath val of
+                JsNull -> Nothing
+
+                x -> Just x
+            else Just val
+          )
       )
 
     deleteRow rows idx =
@@ -1777,10 +1785,10 @@ jsonEditor path value model =
       (\(first, last) -> first ++ ((transform rpath JsNull) :: last))
 
     setField rpath name fields =
-      Dict.update
-        name
-        (\mv -> Just <| transform rpath <| Maybe.withDefault JsNull mv)
-        fields
+      transform rpath (Dict.get name fields |> Maybe.withDefault JsNull) |>
+      (\r ->
+        if r == JsNull then Dict.remove name fields else Dict.update name (\_ -> Just r) fields
+      )
 
     transform tpath tdata =
       case tpath of
@@ -2003,3 +2011,20 @@ jsonValues pattern source =
     []
     source |>
     List.reverse
+
+
+stringValues: String -> JsonValue -> List (String, String)
+stringValues pattern source =
+  jsonValues pattern source |>
+  List.concatMap
+    (\(p, v) ->
+      [ ( p
+        , case v of
+            JsString s -> s
+
+            JsNumber n -> String.fromFloat n
+
+            x -> toString x
+        )
+      ]
+    )
