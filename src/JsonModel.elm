@@ -22,7 +22,7 @@ module JsonModel exposing
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
   -- commands
-  , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchDeferred, fetchDeferredFromStart, fetchCount
+  , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParamMsg, fetchDeferred, fetchDeferredFromStart, fetchCount
   , fetchCountDeferred, fetchMetadata, set, edit, save, saveMsg, create, delete
   , httpDataFetcher, httpCountFetcher, enumFetcher
   -- model updater
@@ -248,6 +248,7 @@ type Msg msg value
   | MetadataMsgCmd (Maybe (Cmd msg))
   | UpdateCmdMsg Bool value
   | DataCmdMsg Bool Bool SearchParams (Maybe DeferredHeader)
+  | DataWithParamCmd String String
   | CountCmdMsg Bool SearchParams (Maybe DeferredHeader)
   | SaveCmdMsg Bool SearchParams
   | CreateCmdMsg Bool SearchParams
@@ -1253,6 +1254,11 @@ fetchFromStartMsg toMsg searchParams =
   toMsg <| DataCmdMsg True True searchParams Nothing
 
 
+fetchWithParamMsg: Tomsg msg value -> String -> String -> msg
+fetchWithParamMsg toMsg name param =
+  toMsg <| DataWithParamCmd name param
+
+
 {-| Fetch view data with deferred header set.
 -}
 fetchDeferred: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
@@ -1668,6 +1674,14 @@ update toMsg msg (Model modelData modelConf as same) =
             newModel = same |> withEmptyQueue |> withProgress fetchProgress
           in
             ( newModel, initializeAndCmd noInitCmd cmd)
+
+      DataWithParamCmd name param ->
+        ( same
+        , modelData.searchParams |>
+          List.filter (\(n, _) -> n /= name) |>
+          (::) (name, param) |>
+          (\p -> Task.perform toMsg <| Task.succeed <| DataCmdMsg True True p Nothing)
+        )
 
       CountCmdMsg check searchParams deferredHeader ->
         if String.isEmpty modelConf.countBaseUri then
