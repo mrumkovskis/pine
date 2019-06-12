@@ -4,7 +4,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, create, http, save, delete
+  , fetch, set, setMsg, create, createMsg, http, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, jsonEditMsg, jsonDeleteMsg
   , update
@@ -445,11 +445,21 @@ fetch toMsg fid =
   JM.fetch (toMsg << FetchModelMsg) <| [ ("id", String.fromInt fid) ]
 
 
+fetchMsg: Tomsg msg model -> Int -> msg
+fetchMsg toMsg fid =
+  JM.fetchMsg (toMsg << FetchModelMsg) <| [ ("id", String.fromInt fid) ]
+
+
 {-| Set model data. After updating inputs, calls [`JsonModel.set`](JsonModel#set)
 -}
 set: Tomsg msg model -> (model -> model) -> Cmd msg
 set toMsg editFun =
-  Task.perform toMsg <| Task.succeed <| EditModelMsg editFun
+  Task.perform identity <| Task.succeed <| setMsg toMsg editFun
+
+
+setMsg: Tomsg msg model -> (model -> model) -> msg
+setMsg toMsg editFun =
+  toMsg <| EditModelMsg editFun
 
 
 {-| Creates model data, calling [`JsonModel.set`](JsonModel#create).
@@ -457,7 +467,12 @@ After that call function `createFun` on received data.
 -}
 create: Tomsg msg model -> JM.SearchParams -> (model -> model) -> Cmd msg
 create toMsg createParams createFun =
-  Task.perform toMsg <| Task.succeed <| NewModelMsg createParams createFun
+  Task.perform identity <| Task.succeed <| createMsg toMsg createParams createFun
+
+
+createMsg: Tomsg msg model -> JM.SearchParams -> (model -> model) -> msg
+createMsg toMsg createParams createFun =
+  toMsg <| NewModelMsg createParams createFun
 
 
 {-| Creates model from http request.
@@ -472,6 +487,11 @@ http toMsg maybeOnErr req =
 save: Tomsg msg model -> Cmd msg
 save toMsg =
   JM.save (toMsg << SaveModelMsg) []
+
+
+saveMsg: Tomsg msg model -> msg
+saveMsg toMsg =
+  JM.saveMsg (toMsg << SaveModelMsg) []
 
 
 {-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
