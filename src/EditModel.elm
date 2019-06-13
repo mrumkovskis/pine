@@ -2,7 +2,7 @@ module EditModel exposing
   ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController
   , init, initJsonForm, initJsonQueryForm
-  , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer
+  , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, http, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern
@@ -110,6 +110,7 @@ type Controller msg model =
     , formatter: Formatter model
     , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
     , validateInput: InputValidator -- called on OnMsg, OnSelect
+    , inputCmd: Maybe (String -> Cmd msg)
     }
 
 
@@ -118,6 +119,7 @@ type alias JsonController msg =
   , formatter: Maybe (JsonFormatter)
   , validateInput: Maybe (JsonInputValidator)
   , selectInitializer: Maybe (SelectInitializer msg)
+  , inputCmd: Maybe (String -> Cmd msg)
   }
 
 
@@ -346,6 +348,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                       , formatter = formatter
                       , selectInitializer = Nothing
                       , validateInput = validator
+                      , inputCmd = Nothing
                       }
 
                   (_, match) :: rest -> -- TODO prioritize matched controllers if more than one match is found
@@ -364,6 +367,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                           match.validateInput |>
                           Maybe.map (\v -> v validator) |>
                           Maybe.withDefault validator
+                      , inputCmd = match.inputCmd
                       }
           in
             ((key, ctrl), (key, input))
@@ -384,7 +388,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
 
 jsonController: JsonController msg
 jsonController =
-  JsonController Nothing Nothing Nothing Nothing
+  JsonController Nothing Nothing Nothing Nothing Nothing
 
 
 jsonModelUpdater: JsonModelUpdater msg -> JsonController msg -> JsonController msg
@@ -405,6 +409,11 @@ jsonFormatter formatter jc =
 jsonSelectInitializer: SelectInitializer msg -> JsonController msg -> JsonController msg
 jsonSelectInitializer initializer jc =
   { jc | selectInitializer = Just initializer }
+
+
+jsonInputCmd: Maybe (String -> Cmd msg) -> JsonController msg -> JsonController msg
+jsonInputCmd maybeInputCmd jc =
+  { jc | inputCmd = maybeInputCmd }
 
 
 setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
@@ -524,6 +533,7 @@ simpleCtrl updateModel formatter =
     , formatter = formatter
     , selectInitializer = Nothing
     , validateInput = Ok
+    , inputCmd = Nothing
     }
 
 
@@ -536,6 +546,7 @@ simpleSelectCtrl updateModel formatter selectInitializer =
     , formatter = formatter
     , selectInitializer = Just selectInitializer
     , validateInput = Ok
+    , inputCmd = Nothing
     }
 
 
@@ -550,14 +561,16 @@ controller:
   Formatter model ->
   Maybe (SelectInitializer msg) ->
   InputValidator ->
+  Maybe (String -> Cmd msg) ->
   Controller msg model
-controller updateModel formatter selectInitializer validator =
+controller updateModel formatter selectInitializer validator inputCmd =
   Controller
     { name = ""
     , updateModel = updateModel
     , formatter = formatter
     , selectInitializer = selectInitializer
     , validateInput = validator
+    , inputCmd = inputCmd
     }
 
 
@@ -691,6 +704,18 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         ( Maybe.andThen .select >>
           Maybe.map (always <| Select.search toSelectmsg value) >>
           Maybe.withDefault Cmd.none
+        ) |>
+      Tuple.mapSecond
+        (\cmd ->
+          ctrl.inputCmd |>
+          Maybe.map (\fcmd -> fcmd value) |>
+          Maybe.map
+            (\icmd ->
+              if cmd /= Cmd.none && icmd /= Cmd.none then
+                Cmd.batch [ cmd, icmd ]
+              else if cmd /= Cmd.none then cmd else icmd
+            ) |>
+          Maybe.withDefault cmd
         )
 
     setEditing ctrl focus =  -- OnFocus
