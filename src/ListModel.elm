@@ -96,8 +96,8 @@ sort toMsg col =
 
 
 select: Tomsg msg -> (Bool -> JM.JsonValue -> msg) -> Bool -> JM.JsonValue -> msg
-select toMsg selectAction isSelected val =
-  toMsg <| SelectMsg selectAction isSelected val
+select toMsg selectAction multiSelect val =
+  toMsg <| SelectMsg selectAction multiSelect val
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
