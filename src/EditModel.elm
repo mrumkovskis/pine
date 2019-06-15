@@ -6,7 +6,7 @@ module EditModel exposing
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, http, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern
-  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, jsonEditMsg, jsonDeleteMsg
+  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
   )
 
@@ -637,6 +637,14 @@ inpInternal toMsg staticAttrs ctl input =
       Tuple.first selectEventAttrs
   in
     { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs }
+
+
+{-| Produces `OnMsg` input message. This can be used to set or clear text in input field.
+-}
+onInputMsg: key -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
+onInputMsg key toMsg { controllers } =
+  Dict.get (toString key) controllers |>
+  Maybe.map (\ctrl -> toMsg << OnMsg ctrl)
 
 
 {-| Produces `OnSelectMsg` input message. This can be used on input events like `onCheck` or `onClick`
