@@ -52,6 +52,7 @@ type alias Input msg =
   { name: String
   , value: String
   , editing: Bool
+  , clearmsg: Maybe msg
   , error: Maybe String
   , select: Maybe (SelectModel msg String)
   , attrs: Attributes msg
@@ -194,7 +195,7 @@ init model ctrlList toMessagemsg =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing emptyAttrs -1 Nothing
+          Input k "" False Nothing Nothing Nothing emptyAttrs -1 Nothing
         )
   in
     EditModel
@@ -231,7 +232,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
             stringVal = JM.jsonValueToString value
 
             input =
-              Input key stringVal False Nothing Nothing (Attributes (always []) []) i <| Just field
+              Input key stringVal False Nothing Nothing Nothing (Attributes (always []) []) i <| Just field
 
             ctrl =
               let
@@ -635,8 +636,14 @@ inpInternal toMsg staticAttrs ctl input =
       inputEventAttrs ++
       (Attrs.value input.value :: staticAttrs) ++
       Tuple.first selectEventAttrs
+
+    clearmsg =
+      ctl |>
+      (\(Controller { selectInitializer }) ->
+        selectInitializer |> Maybe.map (\_ -> toMsg <| OnMsg ctl "")
+      )
   in
-    { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs }
+    { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs, clearmsg = clearmsg }
 
 
 {-| Produces `OnMsg` input message. This can be used to set or clear text in input field.
