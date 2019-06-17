@@ -640,7 +640,7 @@ inpInternal toMsg staticAttrs ctl input =
     clearmsg =
       ctl |>
       (\(Controller { selectInitializer }) ->
-        selectInitializer |> Maybe.map (\_ -> toMsg <| OnMsg ctl "")
+        selectInitializer |> Maybe.map (\_ -> toMsg <| OnSelectMsg ctl "")
       )
   in
     { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs, clearmsg = clearmsg }
