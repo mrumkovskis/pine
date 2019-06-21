@@ -22,8 +22,9 @@ module JsonModel exposing
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
   -- commands
-  , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParamMsg, fetchDeferred, fetchDeferredFromStart, fetchCount
-  , fetchCountDeferred, fetchMetadata, set, edit, save, saveMsg, create, delete
+  , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParam, fetchWithParamMsg, fetchDeferred
+  , fetchDeferredFromStart, fetchCount, fetchCountDeferred, fetchMetadata
+  , set, edit, save, saveMsg, create, delete
   , httpDataFetcher, httpCountFetcher, enumFetcher
   -- model updater
   , update
@@ -1252,6 +1253,11 @@ fetchFromStart toMsg searchParams =
 fetchFromStartMsg: Tomsg msg value -> SearchParams -> msg
 fetchFromStartMsg toMsg searchParams =
   toMsg <| DataCmdMsg True True searchParams Nothing
+
+
+fetchWithParam: Tomsg msg value -> String -> String -> Cmd msg
+fetchWithParam toMsg name param =
+  Task.perform identity <| Task.succeed  <| fetchWithParamMsg toMsg name param
 
 
 fetchWithParamMsg: Tomsg msg value -> String -> String -> msg
