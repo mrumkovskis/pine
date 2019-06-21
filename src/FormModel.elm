@@ -1,6 +1,8 @@
 module FormModel exposing
   ( Model, Msg, Tomsg
-  , init, toModelMsg, create, save, edit, cancel, delete
+  , init, toModelMsg
+  , createMsg, saveMsg, editMsg, cancelMsg, deleteMsg
+  , create, save, edit, cancel, delete
   , update
   )
 
@@ -40,29 +42,54 @@ toModelMsg toMsg =
   toMsg << CreateMsg
 
 
-create: Tomsg msg -> JM.SearchParams -> (JM.JsonValue -> JM.JsonValue) -> msg
-create toMsg searchParams createFun =
+createMsg: Tomsg msg -> JM.SearchParams -> (JM.JsonValue -> JM.JsonValue) -> msg
+createMsg toMsg searchParams createFun =
   EM.createMsg (toModelMsg toMsg) searchParams createFun
 
 
-save: Tomsg msg -> Maybe msg -> msg
-save toMsg maybeSuccessmsg =
+create: Tomsg msg -> JM.SearchParams -> (JM.JsonValue -> JM.JsonValue) -> Cmd msg
+create toMsg searchParams createFun =
+  Task.perform identity <| Task.succeed <| createMsg toMsg searchParams createFun
+
+
+saveMsg: Tomsg msg -> Maybe msg -> msg
+saveMsg toMsg maybeSuccessmsg =
   EM.saveMsg (toMsg << SaveMsg maybeSuccessmsg)
 
 
-edit: Tomsg msg -> JM.JsonValue -> msg
-edit toMsg data =
+save: Tomsg msg -> Maybe msg -> Cmd msg
+save toMsg maybeSuccessmsg =
+  Task.perform identity <| Task.succeed <| saveMsg toMsg maybeSuccessmsg
+
+
+editMsg: Tomsg msg -> JM.JsonValue -> msg
+editMsg toMsg data =
   toMsg <| EditMsg data
 
 
-cancel: Tomsg msg -> Bool -> msg
-cancel toMsg ask =
+edit: Tomsg msg -> JM.JsonValue -> Cmd msg
+edit toMsg data =
+  Task.perform identity <| Task.succeed <| editMsg toMsg data
+
+
+cancelMsg: Tomsg msg -> Bool -> msg
+cancelMsg toMsg ask =
   toMsg <| CancelEditMsg ask
 
 
-delete: Tomsg msg -> Maybe msg -> Int -> msg
-delete toMsg maybeSuccessmsg id =
+cancel: Tomsg msg -> Bool -> Cmd msg
+cancel toMsg ask =
+    Task.perform identity <| Task.succeed <| cancelMsg toMsg ask
+
+
+deleteMsg: Tomsg msg -> Maybe msg -> Int -> msg
+deleteMsg toMsg maybeSuccessmsg id =
   toMsg <| DeleteMsg maybeSuccessmsg id
+
+
+delete: Tomsg msg -> Maybe msg -> Int -> Cmd msg
+delete toMsg maybeSuccessmsg id =
+    Task.perform identity <| Task.succeed <| deleteMsg toMsg maybeSuccessmsg id
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
@@ -89,7 +116,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
         , Ask.ask
             toMessagemsg
             "Vai atcelt datu labošanu?"
-            (Task.perform identity <| Task.succeed <| cancel toMsg False)
+            (cancel toMsg False)
             Nothing
         )
       else

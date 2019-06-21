@@ -1,6 +1,7 @@
 module ListModel exposing
   ( Model (..), Config, Msg, Tomsg
-  , init, config, toParamsMsg, toListMsg, load, loadMore, sort, select
+  , init, config, toParamsMsg, toListMsg
+  , loadMsg, loadMoreMsg, sortMsg, selectMsg, load, loadMore, sort, select
   , update, subs
   )
 
@@ -80,24 +81,44 @@ toListMsg toMsg =
   toMsg << ListMsg
 
 
-load: Tomsg msg -> msg
-load toMsg =
+loadMsg: Tomsg msg -> msg
+loadMsg toMsg =
   toMsg LoadMsg
 
 
-loadMore: Tomsg msg -> msg
-loadMore toMsg =
+load: Tomsg msg -> Cmd msg
+load toMsg =
+  Task.perform identity <| Task.succeed <| loadMsg toMsg
+
+
+loadMoreMsg: Tomsg msg -> msg
+loadMoreMsg toMsg =
   toMsg LoadMoreMsg
 
 
-sort: Tomsg msg -> String -> msg
-sort toMsg col =
+loadMore: Tomsg msg -> Cmd msg
+loadMore toMsg =
+  Task.perform identity <| Task.succeed <| loadMoreMsg toMsg
+
+
+sortMsg: Tomsg msg -> String -> msg
+sortMsg toMsg col =
   toMsg <| SortMsg col
 
 
-select: Tomsg msg -> (Bool -> JM.JsonValue -> msg) -> Bool -> JM.JsonValue -> msg
-select toMsg selectAction multiSelect val =
+sort: Tomsg msg -> String -> Cmd msg
+sort toMsg col =
+  Task.perform identity <| Task.succeed <| sortMsg toMsg col
+
+
+selectMsg: Tomsg msg -> (Bool -> JM.JsonValue -> msg) -> Bool -> JM.JsonValue -> msg
+selectMsg toMsg selectAction multiSelect val =
   toMsg <| SelectMsg selectAction multiSelect val
+
+
+select: Tomsg msg -> (Bool -> JM.JsonValue -> msg) -> Bool -> JM.JsonValue -> Cmd msg
+select toMsg selectAction multiSelect val =
+  Task.perform identity <| Task.succeed <| selectMsg toMsg selectAction multiSelect val
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
@@ -140,7 +161,7 @@ update toMsg msg (Model ({ searchParams, sortCol } as model) as same) =
                     else Just (col, True)
                   )
           } |>
-        (\m -> ( m, Task.perform identity <| Task.succeed <| load toMsg ))
+        (\m -> ( m, load toMsg ))
 
       LoadMsg ->
         (same, JM.fetchFromStart (toMsg << ListMsg) <| searchPars searchParams.model)
