@@ -1,7 +1,7 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
   , askmsg, ask, info, warn, error, unauthorized
-  , askToDeferredmsg, askToCmdChainmsg, askToScrollEventsmsg
+  , askToDeferredmsg, askToCmdChainmsg, browserKeymsg, askToScrollEventsmsg
   , errorOrUnauthorized, text
   )
 
@@ -19,6 +19,7 @@ import ScrollEvents as SE exposing (Tomsg)
 import Task
 import Http
 import Json.Decode as JD
+import Browser.Navigation exposing (Key)
 
 {-| Message type: Info, Warn, Error
 -}
@@ -35,9 +36,10 @@ type MsgType
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg) (Maybe(Cmd msg))
+  | BrowserKey (Key -> msg)
   | SubscribeToDeferredMsg (DR.Tomsg msg -> msg)
   | SubscribeToCmdChainMsg (CmdChain.Tomsg msg -> msg)
-  | SubscribeToScrollEventsMsg (SE.Tomsg msg -> msg)
+  | SubscribeToScrollEventsMsg (SE.Tomsg msg -> msg) -- deprecated
 
 
 {-| Message constructor -}
@@ -89,6 +91,11 @@ askToDeferredmsg toMsg subscription =
 askToCmdChainmsg: Tomsg msg -> (CmdChain.Tomsg msg -> msg) -> Cmd msg
 askToCmdChainmsg toMsg subscription =
   Task.perform (toMsg << SubscribeToCmdChainMsg) <| Task.succeed subscription
+
+
+browserKeymsg: Tomsg msg -> (Key -> msg) -> msg
+browserKeymsg toMsg keymsg =
+  toMsg <| BrowserKey keymsg
 
 
 askToScrollEventsmsg: Tomsg msg -> (SE.Tomsg msg -> msg) -> Cmd msg

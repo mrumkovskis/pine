@@ -10,11 +10,14 @@ import JsonModel as JM
 import EditModel as EM
 import ViewMetadata as VM
 import ScrollEvents as SE
+import Utils
+import Ask
 
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Task
+import Browser.Navigation as Nav
 
 
 type Model msg =
@@ -23,6 +26,8 @@ type Model msg =
     , list: JM.JsonListModel msg
     , stickyPos: Maybe SE.StickyElPos
     , sortCol: Maybe (String, Bool)
+    , changeUrl: Bool
+    , addHistory: Bool
     }
 
 
@@ -49,20 +54,40 @@ type Msg msg
   | StickyPosMsg (Maybe SE.StickyElPos)
   | SortMsg String
   | SelectMsg (Bool -> JM.JsonValue -> msg) Bool JM.JsonValue
+  | BrowserKeyMsg Nav.Key
 
 
 type alias Tomsg msg = Msg msg -> msg
 
 
-init: Tomsg msg -> EM.JsonEditModel msg -> JM.JsonListModel msg -> (Model msg, Cmd msg)
-init toMsg searchPars l =
+init: Tomsg msg -> EM.JsonEditModel msg -> JM.JsonListModel msg -> Maybe JM.SearchParams -> (Model msg, Cmd msg)
+init toMsg searchPars l initPars =
   ( Model
       { searchParams = searchPars
       , list = l
       , stickyPos = Nothing
-      , sortCol = Nothing
+      , sortCol =
+          initPars |>
+          Maybe.andThen (Utils.find (\(n, _) -> n == "sort")) |>
+          Maybe.map Tuple.second |>
+          Maybe.map
+            (\c ->
+              if String.startsWith "~" c then (String.dropLeft 1 c, False) else (c, True)
+            )
+      , changeUrl = True
+      , addHistory = True
       }
-  , EM.set (toMsg << ParamsMsg) identity -- initialize query form metadata
+  , initPars |>
+    Maybe.map
+      (\pars ->
+        Cmd.batch
+          [ JM.fetchFromStart (toMsg << ListMsg) pars -- fetch list data
+          , pars |>
+            List.map (Tuple.mapSecond JM.JsString) |>
+            (\vals -> EM.set (toMsg << ParamsMsg) (\_ -> JM.JsObject <| Dict.fromList vals)) -- set search form values
+          ]
+      ) |>
+    Maybe.withDefault (EM.set (toMsg << ParamsMsg) identity) -- initialize query form metadata
   )
 
 
@@ -122,7 +147,7 @@ select toMsg selectAction multiSelect val =
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
-update toMsg msg (Model ({ searchParams, sortCol } as model) as same) =
+update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
   let
     searchPars params =
       JM.searchParsFromJson params ++
@@ -130,6 +155,10 @@ update toMsg msg (Model ({ searchParams, sortCol } as model) as same) =
         Maybe.map (\(c, o) -> [ ("sort", (if o then "" else "~") ++ c) ]) |>
         Maybe.withDefault []
       )
+
+    changeUrl toMessagemsg =
+      Task.perform identity <| Task.succeed <|
+        Ask.browserKeymsg toMessagemsg <| toMsg << BrowserKeyMsg
   in
     case msg of
       ParamsMsg data ->
@@ -164,10 +193,20 @@ update toMsg msg (Model ({ searchParams, sortCol } as model) as same) =
         (\m -> ( m, load toMsg ))
 
       LoadMsg ->
-        (same, JM.fetchFromStart (toMsg << ListMsg) <| searchPars searchParams.model)
+        ( same
+        , Cmd.batch
+          [ JM.fetchFromStart (toMsg << ListMsg) <| searchPars searchParams.model
+          , list |> (\(JM.Model _ c) -> changeUrl c.toMessagemsg)
+          ]
+        )
 
       LoadMoreMsg ->
-        (same, JM.fetch (toMsg << ListMsg) <| searchPars searchParams.model)
+        ( same
+        , Cmd.batch
+          [ JM.fetch (toMsg << ListMsg) <| searchPars searchParams.model
+          , list |> (\(JM.Model _ c) -> changeUrl c.toMessagemsg)
+          ]
+        )
 
       SelectMsg selmsg multiSelect data ->
         let
@@ -197,6 +236,19 @@ update toMsg msg (Model ({ searchParams, sortCol } as model) as same) =
             , Task.perform (selmsg is_selected) <| Task.succeed newdata
             )
           )
+
+      BrowserKeyMsg key ->
+        ( same
+        , (searchPars searchParams.model, list) |>
+          (\(sp, (JM.Model d c)) ->
+            sp ++
+            [ (c.offsetParamName, "0")
+            , (c.limitParamName, String.fromInt <| List.length d.data + c.pageSize)
+            ] |>
+            Utils.httpQuery
+          ) |>
+          (\q -> if model.addHistory then Nav.pushUrl key q else Nav.replaceUrl key q)
+        )
 
 
 subs: Tomsg msg -> Maybe String -> Maybe String -> Maybe String -> Sub msg
