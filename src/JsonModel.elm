@@ -357,11 +357,13 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
           else 0
 
         searchParamsWithOffsetLimit =
-          List.append
-            searchParams
-            [ (mc.offsetParamName, String.fromInt <| offset)
-            , (mc.limitParamName, String.fromInt mc.pageSize)
-            ]
+          List.any (\(n, _) -> n == mc.limitParamName) searchParams |>
+          (\r -> if r then [] else [(mc.limitParamName, String.fromInt <| mc.pageSize)]) |>
+          (\lp ->
+            List.any (\(n, _) -> n == mc.offsetParamName) searchParams |>
+            (\r -> if r then lp else (mc.offsetParamName, String.fromInt <| offset) :: lp)
+          ) |>
+          List.append searchParams
 
         queryString = Utils.httpQuery searchParamsWithOffsetLimit
       in
