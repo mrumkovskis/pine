@@ -173,6 +173,7 @@ type alias Config msg value =
   , limitParamName: String
   , toMessagemsg: Ask.Tomsg msg
   , queuedCmd: Maybe (Msg msg value)
+  , loadedCount: value -> Int
   }
 
 
@@ -351,7 +352,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
 
     listUri restart searchParams (Model md mc) =
       let
-        offset =
+        offset _ =
           if not restart && searchParams == md.searchParams then
             List.length md.data
           else 0
@@ -361,7 +362,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
           (\r -> if r then [] else [(mc.limitParamName, String.fromInt <| mc.pageSize)]) |>
           (\lp ->
             List.any (\(n, _) -> n == mc.offsetParamName) searchParams |>
-            (\r -> if r then lp else (mc.offsetParamName, String.fromInt <| offset) :: lp)
+            (\r -> if r then lp else (mc.offsetParamName, String.fromInt <| offset ()) :: lp)
           ) |>
           List.append searchParams
 
@@ -405,6 +406,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , limitParamName = "limit"
       , toMessagemsg = toMessagemsg
       , queuedCmd = Nothing
+      , loadedCount = List.length
       }
 
 
@@ -596,6 +598,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , limitParamName = "limit"
       , toMessagemsg = toMessagemsg
       , queuedCmd = Nothing
+      , loadedCount = \_ -> 1
       }
 
 
@@ -1115,7 +1118,7 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
 
 
 searchParsFromJson: JsonFormModel msg -> SearchParams
-searchParsFromJson (Model _ { metadata, typeName } as m) =
+searchParsFromJson m =
   let
     par fld val res =
       case val of
@@ -1403,27 +1406,53 @@ update toMsg msg (Model modelData modelConf as same) =
   let
     --model construction
     maybeWithNewData restart searchParams (Model _ mc) =
-      if not restart && searchParams == modelData.searchParams then
-        same
-      else let emptyData = mc.emptyData in
-        Model { emptyData | searchParams = searchParams } mc
+      let
+        offsetMore =
+          List.partition (\(p, _) -> p == mc.offsetParamName || p == mc.limitParamName) >>
+          (\(ol, rest) ->
+            rest == modelData.searchParams &&
+              ( Utils.find (\(p, _) -> p == mc.offsetParamName) ol |>
+                Maybe.andThen (Tuple.second >> String.toInt) |>
+                Maybe.map ((==) <| mc.loadedCount modelData.data) |>
+                Maybe.withDefault True
+              )
+          )
+      in
+        if not restart && (searchParams == modelData.searchParams || offsetMore searchParams) then
+          same
+        else let emptyData = mc.emptyData in
+          Model { emptyData | searchParams = searchParams } mc
+
     withProgress pr (Model d c) = Model { d | progress = pr } c
+
     withEmptyQueue ((Model d c) as m) =
       if c.queuedCmd == Nothing then m else Model d { c | queuedCmd = Nothing }
+
     --progress
     fetchProgress = Progress True modelData.progress.countProgress False
+
     fetchDone = Progress False modelData.progress.countProgress False
+
     countProgress = Progress modelData.progress.fetchProgress True False
+
     countDone = Progress modelData.progress.fetchProgress False False
+
     -- metadata progress can be within other progress, so keep other values
     metadataProgress = modelData.progress |> (\p -> { p | metadataProgress = True })
+
     metadataDone = modelData.progress |> (\p -> { p | metadataProgress = False })
+
     allDone = Progress False False False
+
     isFetchProgress = modelData.progress.fetchProgress
+
     isCountProgress = modelData.progress.countProgress
+
     isMetadataProgress = modelData.progress.metadataProgress
+
     --message - model integrity check
     hasIntegrity (name, isPr) = name == modelConf.typeName && isPr
+
     unInitialized = notInitialized same -- shortcut function
 
     -- metadata fetch

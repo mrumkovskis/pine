@@ -1,7 +1,8 @@
 module ListModel exposing
   ( Model (..), Config, Msg, Tomsg
   , init, config, toParamsMsg, toListMsg
-  , loadMsg, loadMoreMsg, sortMsg, selectMsg, load, loadMore, sort, select
+  , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg
+  , load, loadMore, sort, select, loadWithParam, sync
   , update, subs
   )
 
@@ -26,8 +27,6 @@ type Model msg =
     , list: JM.JsonListModel msg
     , stickyPos: Maybe SE.StickyElPos
     , sortCol: Maybe (String, Bool)
-    , changeUrl: Bool
-    , addHistory: Bool
     }
 
 
@@ -48,13 +47,15 @@ type alias Config msg =
 type Msg msg
   = ParamsMsg (EM.JsonEditMsg msg)
   | ListMsg (JM.JsonListMsg msg)
+  | SyncMsg JM.SearchParams
   | LoadMsg
   | LoadMoreMsg -- load more element visibility subscription message
+  | LoadWithParam String String
   | ScrollEventsMsg (SE.Msg msg)
   | StickyPosMsg (Maybe SE.StickyElPos)
   | SortMsg String
   | SelectMsg (Bool -> JM.JsonValue -> msg) Bool JM.JsonValue
-  | BrowserKeyMsg Nav.Key
+  | BrowserKeyMsg (Nav.Key -> String -> Cmd msg) JM.SearchParams Nav.Key
 
 
 type alias Tomsg msg = Msg msg -> msg
@@ -74,14 +75,12 @@ init toMsg searchPars l initPars =
             (\c ->
               if String.startsWith "~" c then (String.dropLeft 1 c, False) else (c, True)
             )
-      , changeUrl = True
-      , addHistory = True
       }
   , initPars |>
     Maybe.map
       (\pars ->
         Cmd.batch
-          [ JM.fetchFromStart (toMsg << ListMsg) pars -- fetch list data
+          [ sync toMsg pars -- fetch list data
           , pars |>
             List.map (Tuple.mapSecond JM.JsString) |>
             (\vals -> EM.set (toMsg << ParamsMsg) (\_ -> JM.JsObject <| Dict.fromList vals)) -- set search form values
@@ -126,6 +125,16 @@ loadMore toMsg =
   Task.perform identity <| Task.succeed <| loadMoreMsg toMsg
 
 
+loadWithParamMsg: Tomsg msg -> String -> String -> msg
+loadWithParamMsg toMsg name value =
+  toMsg <| LoadWithParam name value
+
+
+loadWithParam: Tomsg msg -> String -> String -> Cmd msg
+loadWithParam toMsg name value =
+  Task.perform identity <| Task.succeed <| loadWithParamMsg toMsg name value
+
+
 sortMsg: Tomsg msg -> String -> msg
 sortMsg toMsg col =
   toMsg <| SortMsg col
@@ -146,6 +155,11 @@ select toMsg selectAction multiSelect val =
   Task.perform identity <| Task.succeed <| selectMsg toMsg selectAction multiSelect val
 
 
+sync: Tomsg msg -> JM.SearchParams -> Cmd msg
+sync toMsg params =
+  Task.perform (toMsg << SyncMsg) <| Task.succeed params
+
+
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
 update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
   let
@@ -155,10 +169,6 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         Maybe.map (\(c, o) -> [ ("sort", (if o then "" else "~") ++ c) ]) |>
         Maybe.withDefault []
       )
-
-    changeUrl toMessagemsg =
-      Task.perform identity <| Task.succeed <|
-        Ask.browserKeymsg toMessagemsg <| toMsg << BrowserKeyMsg
   in
     case msg of
       ParamsMsg data ->
@@ -169,11 +179,8 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         JM.update (toMsg << ListMsg) data model.list |>
         Tuple.mapFirst (\m -> Model { model | list = m })
 
-      ScrollEventsMsg data ->
-        ( Model model, SE.process (toMsg << ScrollEventsMsg) data )
-
-      StickyPosMsg pos ->
-        ( Model { model | stickyPos = pos }, Cmd.none )
+      SyncMsg params ->
+        ( same, JM.fetch (toMsg << ListMsg) params )
 
       SortMsg col ->
         Model
@@ -194,18 +201,50 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
 
       LoadMsg ->
         ( same
-        , Cmd.batch
-          [ JM.fetchFromStart (toMsg << ListMsg) <| searchPars searchParams.model
-          , list |> (\(JM.Model _ c) -> changeUrl c.toMessagemsg)
-          ]
+        , list |>
+          (\(JM.Model d c) ->
+            ( searchPars searchParams.model |>
+              List.filter (\(n, _) -> n /= c.offsetParamName)
+            ) ++ [(c.offsetParamName, "0")] |>
+            (\sp ->
+              if sp == d.searchParams then
+                toMsg << BrowserKeyMsg Nav.replaceUrl sp
+              else
+                toMsg << BrowserKeyMsg Nav.pushUrl sp
+            ) |>
+            Ask.askBrowserKeymsg c.toMessagemsg
+          )
         )
 
       LoadMoreMsg ->
         ( same
-        , Cmd.batch
-          [ JM.fetch (toMsg << ListMsg) <| searchPars searchParams.model
-          , list |> (\(JM.Model _ c) -> changeUrl c.toMessagemsg)
-          ]
+        , list |>
+          (\(JM.Model d c) ->
+            ( searchPars searchParams.model |>
+              List.filter (\(n, _) -> n /= c.offsetParamName)
+            ) ++
+            [(c.offsetParamName, c.loadedCount d.data |> String.fromInt)] |>
+            (\sp -> toMsg << BrowserKeyMsg Nav.replaceUrl sp) |>
+            Ask.askBrowserKeymsg c.toMessagemsg
+          )
+        )
+
+      LoadWithParam name value ->
+        ( same
+        , list |>
+          (\(JM.Model d c) ->
+            ( searchPars searchParams.model |>
+              List.filter (\(n, _) -> n /= name && n /= c.offsetParamName)
+            ) ++
+            [(name, value), (c.offsetParamName, "0")] |>
+            (\sp ->
+              if sp == d.searchParams then
+                toMsg << BrowserKeyMsg Nav.replaceUrl sp
+              else
+                toMsg << BrowserKeyMsg Nav.pushUrl sp
+            ) |>
+            Ask.askBrowserKeymsg c.toMessagemsg
+          )
         )
 
       SelectMsg selmsg multiSelect data ->
@@ -237,18 +276,16 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
             )
           )
 
-      BrowserKeyMsg key ->
+      BrowserKeyMsg addressBarCmd pars key ->
         ( same
-        , (searchPars searchParams.model, list) |>
-          (\(sp, (JM.Model d c)) ->
-            sp ++
-            [ (c.offsetParamName, "0")
-            , (c.limitParamName, String.fromInt <| List.length d.data + c.pageSize)
-            ] |>
-            Utils.httpQuery
-          ) |>
-          (\q -> if model.addHistory then Nav.pushUrl key q else Nav.replaceUrl key q)
+        , addressBarCmd key <| Utils.httpQuery pars
         )
+
+      ScrollEventsMsg data ->
+        ( Model model, SE.process (toMsg << ScrollEventsMsg) data )
+
+      StickyPosMsg pos ->
+        ( Model { model | stickyPos = pos }, Cmd.none )
 
 
 subs: Tomsg msg -> Maybe String -> Maybe String -> Maybe String -> Sub msg

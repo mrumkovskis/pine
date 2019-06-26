@@ -111,7 +111,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
       )
 
     CancelEditMsg ask ->
-      if ask then
+      if ask && model.form /= Nothing then
         ( model
         , Ask.ask
             toMessagemsg

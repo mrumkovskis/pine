@@ -1,7 +1,7 @@
 module Ask exposing
   ( MsgType (..), Msg (..), Tomsg
   , askmsg, ask, info, warn, error, unauthorized
-  , askToDeferredmsg, askToCmdChainmsg, browserKeymsg, askToScrollEventsmsg
+  , askToDeferredmsg, askToCmdChainmsg, askBrowserKeymsg, askToScrollEventsmsg
   , errorOrUnauthorized, text
   )
 
@@ -93,9 +93,9 @@ askToCmdChainmsg toMsg subscription =
   Task.perform (toMsg << SubscribeToCmdChainMsg) <| Task.succeed subscription
 
 
-browserKeymsg: Tomsg msg -> (Key -> msg) -> msg
-browserKeymsg toMsg keymsg =
-  toMsg <| BrowserKey keymsg
+askBrowserKeymsg: Tomsg msg -> (Key -> msg) -> Cmd msg
+askBrowserKeymsg toMsg keymsg =
+  Task.perform (toMsg << BrowserKey) <| Task.succeed keymsg
 
 
 askToScrollEventsmsg: Tomsg msg -> (SE.Tomsg msg -> msg) -> Cmd msg

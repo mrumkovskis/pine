@@ -4,6 +4,8 @@ module Menu exposing
   , urlRequestmsg, urlChangedmsg, update
   )
 
+import JsonModel exposing (SearchParams)
+import Utils exposing (..)
 
 import Dict exposing (..)
 import Task
@@ -29,7 +31,7 @@ type alias MenuInternal msg model =
 
 {- menu item fields - url, name, activate function, deactivate function -}
 type MenuItem msg model
-  = MenuItem String String (String -> Cmd msg) (model -> model)
+  = MenuItem String String (List String -> SearchParams -> Cmd msg) (model -> model)
 
 
 type Msg msg model
@@ -58,7 +60,7 @@ items (Menu menu) =
   menu.menuItems |> List.map (\(MenuItem url name _ _) -> (url, name))
 
 
-item: String -> String -> (String -> Cmd msg) -> (model -> model) -> MenuItem msg model
+item: String -> String -> (List String -> SearchParams -> Cmd msg) -> (model -> model) -> MenuItem msg model
 item = MenuItem
 
 
@@ -102,18 +104,19 @@ update toMsg msg (Menu ({ menuItems, updater, menuUpdater, activeItem } as menu)
         )
       else ( newmod, Cmd.map (toMsg << ActionMsg it) cmd )
 
-    itemAndParams path =
+    itemAndParams path query =
       menu.menuItems |>
-      List.filter (\(MenuItem url _ _ _) -> String.startsWith url path) |>
+      List.filter
+        (\(MenuItem url _ _ _) -> String.startsWith url path) |>
       List.sortBy ((\(MenuItem url _ _ _) -> url) >> String.length >> negate) |>
       List.head |>
       Maybe.map
-        (\(MenuItem url _ _ _ as it) -> ( it, String.dropLeft (String.length url) path ))
-
-    urltostring path url =
-      path ++
-      (url.query |> Maybe.map ((++) "?") |> Maybe.withDefault "") ++
-      (url.fragment |> Maybe.map ((++) "#") |> Maybe.withDefault "")
+        (\(MenuItem url _ _ _ as it) ->
+          ( it
+          , String.dropLeft (String.length url) path |> String.split "/"
+          , query |> Maybe.map (decodeHttpQuery) |> Maybe.withDefault []
+          )
+        )
   in
     case msg of
       UrlClickedMsg urlRequest ->
@@ -130,10 +133,10 @@ update toMsg msg (Menu ({ menuItems, updater, menuUpdater, activeItem } as menu)
             (model, Nav.load url)
 
       UrlChangedMsg url ->
-        itemAndParams url.path |>
+        itemAndParams (decodeUrlPath url.path |> String.join "/") url.query |>
         Maybe.map
-          (\((MenuItem _ _ activate _ as it), params) ->
-            maybeActivateItem it ( model, activate <| urltostring params url )
+          (\((MenuItem _ _ activate _ as it), path, query) ->
+            maybeActivateItem it ( model, activate path query )
           ) |>
         Maybe.withDefault ( model, Cmd.none )
 

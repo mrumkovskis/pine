@@ -1,6 +1,7 @@
 module Utils exposing
-  ( zip, at, find, findIdx, set, orElse, httpQuery, matchIdx, strOrEmpty
-  , optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
+  ( zip, at, find, findIdx, set, orElse
+  , httpQuery, decodeHttpQuery, decodeUrlPath
+  , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
   , flip, curry, uncurry, httpErrorToString
   , searchParams, toList, styles
   )
@@ -18,6 +19,7 @@ import Dict
 import Json.Decode as JD
 import Json.Encode as JE
 import Url.Builder as UB
+import Url
 import Html
 import Html.Attributes as Attributes
 
@@ -96,6 +98,32 @@ httpQuery params =
   params |>
   List.map (uncurry UB.string) |>
   UB.toQuery
+
+
+decodeHttpQuery: String -> List (String, String)
+decodeHttpQuery query =
+  (if String.startsWith "?" query then String.dropLeft 1 query else query) |>
+  String.split "&" |>
+  List.map (String.split "=") |>
+  List.concatMap
+    (\pv -> case pv of
+      [] -> []
+
+      [ n ] -> if String.isEmpty n then [] else [ (n, "") ]
+
+      n :: v :: _ ->
+        [ ( Url.percentDecode n |> Maybe.withDefault ""
+          , Url.percentDecode v |> Maybe.withDefault ""
+          )
+        ]
+    )
+
+
+decodeUrlPath: String -> List String
+decodeUrlPath =
+  String.split "/" >>
+  List.filter ((/=) "") >>
+  List.map (Url.percentDecode >> Maybe.withDefault "")
 
 
 {-| Useful for &nbsp; characters in html.
