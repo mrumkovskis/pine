@@ -2,7 +2,7 @@ module ListModel exposing
   ( Model (..), Config, Msg, Tomsg
   , init, config, toParamsMsg, toListMsg
   , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg
-  , load, loadMore, sort, select, loadWithParam, sync
+  , load, loadMore, sort, select, loadWithParam
   , update, subs
   )
 
@@ -47,7 +47,6 @@ type alias Config msg =
 type Msg msg
   = ParamsMsg (EM.JsonEditMsg msg)
   | ListMsg (JM.JsonListMsg msg)
-  | SyncMsg JM.SearchParams
   | LoadMsg
   | LoadMoreMsg -- load more element visibility subscription message
   | LoadWithParam String String
@@ -80,7 +79,7 @@ init toMsg searchPars l initPars =
     Maybe.map
       (\pars ->
         Cmd.batch
-          [ sync toMsg pars -- fetch list data
+          [ JM.fetch (toMsg << ListMsg) pars -- fetch list data
           , pars |>
             List.map (Tuple.mapSecond JM.JsString) |>
             (\vals -> EM.set (toMsg << ParamsMsg) (\_ -> JM.JsObject <| Dict.fromList vals)) -- set search form values
@@ -155,11 +154,6 @@ select toMsg selectAction multiSelect val =
   Task.perform identity <| Task.succeed <| selectMsg toMsg selectAction multiSelect val
 
 
-sync: Tomsg msg -> JM.SearchParams -> Cmd msg
-sync toMsg params =
-  Task.perform (toMsg << SyncMsg) <| Task.succeed params
-
-
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
 update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
   let
@@ -178,9 +172,6 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
       ListMsg data ->
         JM.update (toMsg << ListMsg) data model.list |>
         Tuple.mapFirst (\m -> Model { model | list = m })
-
-      SyncMsg params ->
-        ( same, JM.fetch (toMsg << ListMsg) params )
 
       SortMsg col ->
         Model
