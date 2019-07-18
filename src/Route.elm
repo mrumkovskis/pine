@@ -83,9 +83,12 @@ update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
                 (\r ->
                   Route
                     r
-                    (String.dropLeft (String.length r + 1) path |> String.split "/")
+                    ( String.dropLeft (String.length r + 1) path |>
+                      String.split "/" |>
+                      List.filter (String.length >> (/=) 0)
+                    )
                     (url.query |> Maybe.map Utils.decodeHttpQuery |> Maybe.withDefault [])
                 ) |>
               Maybe.withDefault (Route (Url.toString url) [] [])
           in
-          ( { model | activePage = route.route}, cmd route )
+            ( { model | activePage = route.route}, cmd route )
