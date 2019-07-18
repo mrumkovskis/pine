@@ -123,10 +123,7 @@ update toMsg msg (Menu ({ menuItems, updater, menuUpdater, activeItem } as menu)
         case urlRequest of
           Internal url ->
             ( model
-            , url.fragment |>
-              Maybe.andThen (\f -> if f == "nohref" then Just () else Nothing ) |>
-              Maybe.map (always Cmd.none) |>
-              Maybe.withDefault (Nav.pushUrl menu.key (Url.toString url))
+            , Nav.pushUrl menu.key (Url.toString url)
             )
 
           External url ->
