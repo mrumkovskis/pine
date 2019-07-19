@@ -1,6 +1,6 @@
 module Route exposing
-  ( Route, Routes
-  , urlRequestMsg, urlChangedMsg
+  ( Route, Routes, Msg
+  , init, urlRequestMsg, urlChangedMsg
   , update
   )
 
@@ -38,6 +38,11 @@ type Msg
 type alias Tomsg msg = Msg -> msg
 
 
+init: Nav.Key -> (Route -> msg) -> List String -> Routes msg
+init key activateMsg routes =
+  Routes key activateMsg (Set.fromList routes) ""
+
+
 urlRequestMsg: Tomsg msg -> (UrlRequest -> msg)
 urlRequestMsg toMsg =
   toMsg << UrlRequestMsg
@@ -58,7 +63,6 @@ update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
 
         External url ->
           ( model, Nav.load url )
-
 
     UrlChangedMsg url ->
       let
