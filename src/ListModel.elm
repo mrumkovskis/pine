@@ -66,14 +66,7 @@ init toMsg searchPars l initPars =
       { searchParams = searchPars
       , list = l
       , stickyPos = Nothing
-      , sortCol =
-          initPars |>
-          Maybe.andThen (Utils.find (\(n, _) -> n == "sort")) |>
-          Maybe.map Tuple.second |>
-          Maybe.map
-            (\c ->
-              if String.startsWith "~" c then (String.dropLeft 1 c, False) else (c, True)
-            )
+      , sortCol = initSortCol initPars
       }
   , initPars |>
     Maybe.map
@@ -163,6 +156,12 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         Maybe.map (\(c, o) -> [ ("sort", (if o then "" else "~") ++ c) ]) |>
         Maybe.withDefault []
       )
+
+    fetchAndManageHistory toMessagemsg (hmsg, params) =
+      Cmd.batch
+      [ Ask.askBrowserKeymsg toMessagemsg hmsg
+      , JM.fetch (toMsg << ListMsg) params
+      ]
   in
     case msg of
       ParamsMsg data ->
@@ -198,12 +197,14 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
               List.filter (\(n, _) -> n /= c.offsetParamName)
             ) ++ [(c.offsetParamName, "0")] |>
             (\sp ->
-              if sp == d.searchParams then
-                toMsg << BrowserKeyMsg Nav.replaceUrl sp
-              else
-                toMsg << BrowserKeyMsg Nav.pushUrl sp
+              ( if sp == d.searchParams then
+                  toMsg << BrowserKeyMsg Nav.replaceUrl sp
+                else
+                  toMsg << BrowserKeyMsg Nav.pushUrl sp
+              , sp
+              )
             ) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
+            fetchAndManageHistory c.toMessagemsg
           )
         )
 
@@ -215,8 +216,8 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
               List.filter (\(n, _) -> n /= c.offsetParamName)
             ) ++
             [(c.offsetParamName, c.loadedCount d.data |> String.fromInt)] |>
-            (\sp -> toMsg << BrowserKeyMsg Nav.replaceUrl sp) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
+            (\sp -> (toMsg << BrowserKeyMsg Nav.replaceUrl sp, sp)) |>
+            fetchAndManageHistory c.toMessagemsg
           )
         )
 
@@ -229,12 +230,14 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
             ) ++
             [(name, value), (c.offsetParamName, "0")] |>
             (\sp ->
-              if sp == d.searchParams then
-                toMsg << BrowserKeyMsg Nav.replaceUrl sp
-              else
-                toMsg << BrowserKeyMsg Nav.pushUrl sp
+              ( if sp == d.searchParams then
+                  toMsg << BrowserKeyMsg Nav.replaceUrl sp
+                else
+                  toMsg << BrowserKeyMsg Nav.pushUrl sp
+              , sp
+              )
             ) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
+            fetchAndManageHistory c.toMessagemsg
           )
         )
 
@@ -294,3 +297,14 @@ subs toMsg loadMoreElId stickToElId stickId =
           stickId |>
         Maybe.withDefault Sub.none
       ]
+
+
+initSortCol: Maybe JM.SearchParams -> Maybe (String, Bool)
+initSortCol params =
+  params |>
+  Maybe.andThen (Utils.find (\(n, _) -> n == "sort")) |>
+  Maybe.map Tuple.second |>
+  Maybe.map
+    (\c ->
+      if String.startsWith "~" c then (String.dropLeft 1 c, False) else (c, True)
+    )
