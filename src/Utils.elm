@@ -2,7 +2,7 @@ module Utils exposing
   ( zip, at, find, findIdx, set, orElse
   , httpQuery, decodeHttpQuery, decodeUrlPath
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
-  , flip, curry, uncurry, httpErrorToString
+  , flip, curry, uncurry, httpErrorToString, eqElCount
   , searchParams, toList, styles
   )
 

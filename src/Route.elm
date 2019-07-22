@@ -71,51 +71,34 @@ update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
         path =
           Utils.decodeUrlPath url.path
 
+        params query =
+          query |> Maybe.map Utils.decodeHttpQuery |> Maybe.withDefault []
+
         cmd =
           activateMsg >> Task.succeed >> Task.perform identity
       in
         if activePage == path then
           ( model, Cmd.none ) -- page is already active
         else
-          ( Utils.eqElCount activePage path
-          , List.foldl
-              (\rt (c, r) ->
-                let
-                  x = Utils.eqElCount rt path
-                in
-                  if x > c && x == List.length rt then
-                    ( x, Just rt )
-                  else (c, r)
-              )
-              (0, Nothing)
-              (Set.toList routes)
-          ) |>
-          (\(x, (y, r)) ->
-            if x > y then
-              ( model, Cmd.none )
-            else
-
-          )
-          if (not <| String.isEmpty activePage) && String.startsWith activePage path then
-          ( model, Cmd.none ) -- page is already active, url is changed for history purposes
-        else if Set.member path routes then
-          ( { model | activePage = path }, cmd <| Route path [] [] )
-        else
-          let
-            route =
-              Set.toList routes |>
-              List.filter (\r -> String.startsWith r path) |>
-              List.head |>
-              Maybe.map
-                (\r ->
-                  Route
-                    r
-                    ( String.dropLeft (String.length r + 1) path |>
-                      String.split "/" |>
-                      List.filter (String.length >> (/=) 0)
-                    )
-                    (url.query |> Maybe.map Utils.decodeHttpQuery |> Maybe.withDefault [])
-                ) |>
-              Maybe.withDefault (Route (Url.toString url) [] [])
-          in
-            ( { model | activePage = route.route}, cmd route )
+          List.foldl
+            (\rt (c, r) ->
+              let
+                x = Utils.eqElCount rt path
+              in
+                if x > c && x == List.length rt then
+                  ( x, Just rt )
+                else (c, r)
+            )
+            (0, Nothing)
+            (Set.toList routes) |>
+          Tuple.second |>
+          Maybe.map
+            (\r ->
+              if r == activePage then
+                ( model, Cmd.none ) -- page is already active
+              else
+                ( { model | activePage = r }
+                , cmd <| Route (String.join "/" r) (List.drop (List.length r) path) <| params url.query
+                )
+            ) |>
+          Maybe.withDefault ( { model | activePage = [] }, cmd <| Route "" path <| params url.query )
