@@ -269,6 +269,21 @@ httpErrorToString err =
     Http.BadPayload msg resp -> msg ++ "; " ++ resp.body
 
 
+eqElCount: List a -> List a -> Int
+eqElCount list1 list2 =
+  let
+    x l1 l2 c =
+      case (l1, l2) of
+        (e1 :: t1, e2 :: t2) ->
+          if e1 == e2 then
+            x t1 t2 (c + 1)
+          else c
+
+        _ -> c
+  in
+    x list1 list2 0
+
+
 searchParams: List String -> List (a -> Maybe String) -> a -> List (String, String)
 searchParams names getters params =
   List.map2 (\name getter -> ( name, getter params )) names getters |>

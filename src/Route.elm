@@ -14,6 +14,8 @@ import Browser exposing (..)
 import Url exposing (..)
 import Task
 
+import Debug
+
 
 type alias Route =
   { route: String
@@ -25,8 +27,8 @@ type alias Route =
 type alias Routes msg =
   { key: Nav.Key
   , activateMsg: Route -> msg
-  , routes: Set String
-  , activePage: String
+  , routes: Set (List String)
+  , activePage: List String
   }
 
 
@@ -40,7 +42,7 @@ type alias Tomsg msg = Msg -> msg
 
 init: Nav.Key -> (Route -> msg) -> List String -> Routes msg
 init key activateMsg routes =
-  Routes key activateMsg (Set.fromList routes) ""
+  Routes key activateMsg (Set.fromList <| (List.map (String.split "/") routes)) []
 
 
 urlRequestMsg: Tomsg msg -> (UrlRequest -> msg)
@@ -67,13 +69,34 @@ update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
     UrlChangedMsg url ->
       let
         path =
-          Utils.decodeUrlPath url.path |>
-          String.join "/"
+          Utils.decodeUrlPath url.path
 
         cmd =
           activateMsg >> Task.succeed >> Task.perform identity
       in
-        if String.startsWith activePage path then
+        if activePage == path then
+          ( model, Cmd.none ) -- page is already active
+        else
+          ( Utils.eqElCount activePage path
+          , List.foldl
+              (\rt (c, r) ->
+                let
+                  x = Utils.eqElCount rt path
+                in
+                  if x > c && x == List.length rt then
+                    ( x, Just rt )
+                  else (c, r)
+              )
+              (0, Nothing)
+              (Set.toList routes)
+          ) |>
+          (\(x, (y, r)) ->
+            if x > y then
+              ( model, Cmd.none )
+            else
+
+          )
+          if (not <| String.isEmpty activePage) && String.startsWith activePage path then
           ( model, Cmd.none ) -- page is already active, url is changed for history purposes
         else if Set.member path routes then
           ( { model | activePage = path }, cmd <| Route path [] [] )
