@@ -1413,7 +1413,7 @@ update toMsg msg (Model modelData modelConf as same) =
     --model construction
     maybeWithNewData restart searchParams (Model _ mc) =
       let
-        offsetMore =
+        loadMore =
           List.partition (\(p, _) -> p == mc.offsetParamName || p == mc.limitParamName) >>
           (\(ol, rest) ->
             rest == modelData.searchParams &&
@@ -1424,7 +1424,7 @@ update toMsg msg (Model modelData modelConf as same) =
               )
           )
       in
-        if not restart && (searchParams == modelData.searchParams || offsetMore searchParams) then
+        if not restart && loadMore searchParams then
           same
         else let emptyData = mc.emptyData in
           Model { emptyData | searchParams = searchParams } mc
