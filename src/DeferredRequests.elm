@@ -142,11 +142,11 @@ subscribeOrAskCmd toMsg subscription deferredResponse toAskmsg toResmsg =
 onHttpErrorCmd: Tomsg msg -> Subscription msg -> Http.Error -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
 onHttpErrorCmd toMsg subscription error toAskmsg toResmsg =
   case error of
-    Http.BadPayload _ response ->
-      subscribeOrAskCmd toMsg subscription response.body toAskmsg toResmsg
+    Http.BadBody response ->
+      subscribeOrAskCmd toMsg subscription response toAskmsg toResmsg
 
-    Http.BadStatus response ->
-      askCmd toMsg response.body toAskmsg toResmsg
+    Http.BadStatus status ->
+      askCmd toMsg (String.fromInt status) toAskmsg toResmsg
 
     err ->
       Task.perform toResmsg <| Task.succeed False
@@ -190,8 +190,10 @@ update toMsg msg (Model reqs subs conf as model) =
           )
 
     cmd id toSubMsg =
-      Http.send toSubMsg <|
-        Http.get (conf.deferredResultBaseUri ++ "/" ++ id) JD.value
+      Http.get
+        { url = (conf.deferredResultBaseUri ++ "/" ++ id)
+        , expect = Http.expectJson toSubMsg JD.value
+        }
 
     processNotification id req =
       Maybe.map

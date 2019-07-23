@@ -264,9 +264,9 @@ httpErrorToString err =
 
     Http.NetworkError -> "Network error occurred"
 
-    Http.BadStatus resp -> resp.body
+    Http.BadStatus status -> String.fromInt status
 
-    Http.BadPayload msg resp -> msg ++ "; " ++ resp.body
+    Http.BadBody resp -> resp
 
 
 eqElCount: List a -> List a -> Int

@@ -1288,39 +1288,45 @@ fetchDeferredFromStart toMsg searchParams deferredHeader =
 {-| Low level function. Http data fetcher. This can be set as a dataFetcher function in model's configuration -}
 httpDataFetcher: DataFetcher msg value
 httpDataFetcher toMsg restart searchParams deferredHeader ((Model _ modelConf) as model) =
-  Http.send
-    (toMsg << DataMsg modelConf.typeName restart searchParams) <|
-    dataHttpRequest (modelConf.uri restart searchParams model) deferredHeader <|
+  Http.request <|
+    dataHttpRequest (modelConf.uri restart searchParams model) deferredHeader
+      (toMsg << DataMsg modelConf.typeName restart searchParams) <|
       modelConf.decoder modelConf.metadata modelConf.typeName
 
 
 {-| Low level function. Http count fetcher. This can be set as a countFetcher function in model's configuration -}
 httpCountFetcher: CountFetcher msg value
 httpCountFetcher toMsg searchParams deferredHeader ((Model _ modelConf) as model) =
-  Http.send
-    (toMsg << CountMsg modelConf.typeName searchParams) <|
-    dataHttpRequest (modelConf.countUri searchParams model) deferredHeader modelConf.countDecoder
+  Http.request <|
+    dataHttpRequest
+      (modelConf.countUri searchParams model)
+      deferredHeader
+      (toMsg << CountMsg modelConf.typeName searchParams)
+      modelConf.countDecoder
 
 
 {- Private method used in `httpDataFetcher`, `httpCountFetcher` -}
-dataHttpRequest: String -> Maybe DeferredHeader -> JD.Decoder value -> Http.Request value
-dataHttpRequest uri maybeHeader decoder =
-  maybeHeader |>
-    Maybe.map
-      (\(header, value) ->
-        Http.request
-          { method = "GET"
-          , headers =
-              [ Http.header header value
-              ]
-          , url = uri
-          , body = Http.emptyBody
-          , expect = Http.expectJson decoder
-          , timeout = Nothing
-          , withCredentials = False
-          }
-      ) |>
-    Maybe.withDefault (Http.get uri decoder)
+dataHttpRequest: String -> Maybe DeferredHeader -> (Result Http.Error value -> msg) -> JD.Decoder value ->
+  { method : String
+  , headers : List Http.Header
+  , url : String
+  , body : Http.Body
+  , expect : Http.Expect msg
+  , timeout : Maybe Float
+  , tracker : Maybe String
+  }
+dataHttpRequest uri maybeHeader toMsg decoder =
+  { method = "GET"
+  , headers =
+      maybeHeader |>
+      Maybe.map (\(header, value) -> [ Http.header header value ]) |>
+      Maybe.withDefault []
+  , url = uri
+  , body = Http.emptyBody
+  , expect = Http.expectJson toMsg decoder
+  , timeout = Nothing
+  , tracker = Nothing
+  }
 
 
 {-| Fetches mojoz view field definition enum values -}
@@ -1491,17 +1497,14 @@ update toMsg msg (Model modelData modelConf as same) =
         }
 
     mapJsonHttpResult decoder jsonResult = -- used for deferred result decoding
-      let
-        emptyHttpResponse = Http.Response "" { code = 200, message = "" } Dict.empty ""
-      in
-        jsonResult |>
-        Result.andThen
-          (\jdata ->
-            (Result.mapError
-              ((Utils.flip Http.BadPayload) emptyHttpResponse)
-              (Result.mapError JD.errorToString (JD.decodeValue decoder jdata))
-            )
+      jsonResult |>
+      Result.andThen
+        (\jdata ->
+          (Result.mapError
+            Http.BadBody
+            (Result.mapError JD.errorToString (JD.decodeValue decoder jdata))
           )
+        )
 
     maybeSubscribeOrAskDeferred integrity subscription yes err progressDone =
       let
@@ -1772,9 +1775,10 @@ update toMsg msg (Model modelData modelConf as same) =
 
             cmd =
               always <|
-                Http.send
-                  (toMsg << DataMsg modelConf.typeName False searchParams) <|
-                  Http.get (modelConf.createUri searchParams same) decoder
+                Http.get
+                  { url = modelConf.createUri searchParams same
+                  , expect = Http.expectJson (toMsg << DataMsg modelConf.typeName False searchParams) decoder
+                  }
 
             noInitCmd =
               always <| Task.perform toMsg <| Task.succeed <| CreateCmdMsg False searchParams

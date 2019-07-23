@@ -138,7 +138,7 @@ fetchMetadata uri =
             (maybeStringFieldDecoder "refViewName")
         )
   in
-    (Http.send ViewSingleMetadataMsg (Http.get uri viewDecoder)) |>
+    (Http.get { url = uri, expect = Http.expectJson ViewSingleMetadataMsg viewDecoder }) |>
     Cmd.map
       (\(ViewSingleMetadataMsg res) ->
         ViewMetadataMsg
