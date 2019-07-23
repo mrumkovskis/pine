@@ -1,6 +1,7 @@
 module Route exposing
   ( Route, Routes, Msg
-  , init, urlRequestMsg, urlChangedMsg
+  , init, activeRoute
+  , urlRequestMsg, urlChangedMsg
   , update
   )
 
@@ -54,6 +55,11 @@ urlRequestMsg toMsg =
 urlChangedMsg: Tomsg msg -> (Url -> msg)
 urlChangedMsg toMsg =
   toMsg << UrlChangedMsg
+
+
+activeRoute: Routes msg -> String
+activeRoute { activePage } =
+  String.join "/" activePage
 
 
 update: Tomsg msg -> Msg -> Routes msg -> (Routes msg, Cmd msg)
