@@ -280,12 +280,13 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                             )
                       in
                         ( model
-                        , Http.get
+                        , http
+                            toMsg
                             ( dataBaseUri ++ "/create/" ++ field.typeName ++
                               Utils.httpQuery [(field.name, cinp.value)]
                             )
-                            (subviewDecoder ()) |>
-                          http toMsg updateSingleStringFieldSubview
+                            (subviewDecoder ())
+                            updateSingleStringFieldSubview
                         )
                     else if field.isCollection then
                       ( JM.stringToJsonValue field.jsonType cinp.value |>
@@ -487,9 +488,9 @@ createMsg toMsg createParams createFun =
 
 {-| Creates model from http request.
 -}
-http: Tomsg msg model -> (() -> Maybe model) -> Http.Request model -> Cmd msg
-http toMsg maybeOnErr req =
-  Http.send (toMsg << HttpModelMsg maybeOnErr) req
+http: Tomsg msg model -> String -> JD.Decoder model -> (() -> Maybe model) -> Cmd msg
+http toMsg url decoder maybeOnErr =
+  Http.get { url = url, expect = Http.expectJson (toMsg << HttpModelMsg maybeOnErr) decoder }
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)

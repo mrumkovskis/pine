@@ -1474,27 +1474,25 @@ update toMsg msg (Model modelData modelConf as same) =
       in
         Cmd.map mapper <| modelConf.metadataFetcher (modelConf.metadataBaseUri ++ "/" ++ typeName)
 
-    saveHttpRequest uri method value decoder =
-      Http.request
-        { method = method
-        , headers = []
-        , url = uri
-        , body = Http.jsonBody value
-        , expect = Http.expectJson decoder
-        , timeout = Nothing
-        , withCredentials = False
-        }
+    saveHttpRequest uri method value toRespMsg decoder =
+      { method = method
+      , headers = []
+      , url = uri
+      , body = Http.jsonBody value
+      , expect = Http.expectJson toRespMsg decoder
+      , timeout = Nothing
+      , tracker = Nothing
+      }
 
-    deleteHttpRequest uri =
-      Http.request
-        { method = "DELETE"
-        , headers = []
-        , url = uri
-        , body = Http.emptyBody
-        , expect = Http.expectString
-        , timeout = Nothing
-        , withCredentials = False
-        }
+    deleteHttpRequest uri toRespMsg =
+      { method = "DELETE"
+      , headers = []
+      , url = uri
+      , body = Http.emptyBody
+      , expect = Http.expectString toRespMsg
+      , timeout = Nothing
+      , tracker = Nothing
+      }
 
     mapJsonHttpResult decoder jsonResult = -- used for deferred result decoding
       jsonResult |>
@@ -1757,9 +1755,13 @@ update toMsg msg (Model modelData modelConf as same) =
 
             cmd =
               always <|
-                Http.send
-                  (toMsg << DataMsg modelConf.typeName False searchParams) <|
-                  saveHttpRequest (modelConf.saveUri searchParams same) method value decoder
+                Http.request <|
+                  saveHttpRequest
+                    (modelConf.saveUri searchParams same)
+                    method
+                    value
+                    (toMsg << DataMsg modelConf.typeName False searchParams)
+                    decoder
 
             noInitCmd =
               always <| Task.perform toMsg <| Task.succeed <| SaveCmdMsg False searchParams
@@ -1792,9 +1794,10 @@ update toMsg msg (Model modelData modelConf as same) =
           let
             cmd =
               always <|
-                Http.send
-                  (toMsg << DeleteMsg modelConf.typeName searchParams) <|
-                  deleteHttpRequest <| modelConf.saveUri searchParams same
+                Http.request <|
+                  deleteHttpRequest
+                    (modelConf.saveUri searchParams same)
+                    (toMsg << DeleteMsg modelConf.typeName searchParams)
 
             noInitCmd =
               always <| Task.perform toMsg <| Task.succeed <| DeleteCmdMsg False searchParams
