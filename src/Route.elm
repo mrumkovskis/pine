@@ -27,6 +27,7 @@ type alias Route =
 type alias Routes msg =
   { key: Nav.Key
   , activateMsg: Route -> msg
+  , syncMsg: Route -> msg
   , routes: Set (List String)
   , activePage: List String
   }
@@ -40,9 +41,9 @@ type Msg
 type alias Tomsg msg = Msg -> msg
 
 
-init: Nav.Key -> (Route -> msg) -> List String -> Routes msg
-init key activateMsg routes =
-  Routes key activateMsg (Set.fromList <| (List.map (String.split "/") routes)) []
+init: Nav.Key -> (Route -> msg) -> (Route -> msg) -> List String -> Routes msg
+init key activateMsg syncMsg routes =
+  Routes key activateMsg syncMsg (Set.fromList <| (List.map (String.split "/") routes)) []
 
 
 urlRequestMsg: Tomsg msg -> (UrlRequest -> msg)
@@ -56,7 +57,7 @@ urlChangedMsg toMsg =
 
 
 update: Tomsg msg -> Msg -> Routes msg -> (Routes msg, Cmd msg)
-update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
+update toMsg msg ({ key, activateMsg, syncMsg, routes, activePage } as model) =
   case msg of
     UrlRequestMsg urlRequest ->
       case urlRequest of
@@ -74,11 +75,14 @@ update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
         params query =
           query |> Maybe.map Utils.decodeHttpQuery |> Maybe.withDefault []
 
-        cmd =
+        activateCmd =
           activateMsg >> Task.succeed >> Task.perform identity
+
+        syncCmd =
+          syncMsg >> Task.succeed >> Task.perform identity
       in
         if activePage == path then
-          ( model, Cmd.none ) -- page is already active
+          ( model, syncCmd <| Route (String.join "/" path) [] <| params url.query ) -- page is already active - sync
         else
           List.foldl
             (\rt (c, r) ->
@@ -94,11 +98,19 @@ update toMsg msg ({ key, activateMsg, routes, activePage } as model) =
           Tuple.second |>
           Maybe.map
             (\r ->
-              if r == activePage then
-                ( model, Cmd.none ) -- page is already active
-              else
-                ( { model | activePage = r }
-                , cmd <| Route (String.join "/" r) (List.drop (List.length r) path) <| params url.query
-                )
+              let
+                route =
+                  Route
+                    (String.join "/" r)
+                    (List.drop (List.length r) path) <|
+                    params url.query
+              in
+                if r == activePage then
+                  ( model, syncCmd route ) -- page is already active - sync
+                else
+                  ( { model | activePage = r }, activateCmd route )
             ) |>
-          Maybe.withDefault ( { model | activePage = [] }, cmd <| Route "" path <| params url.query )
+          Maybe.withDefault
+            ( { model | activePage = [] }
+            , activateCmd <| Route "" path <| params url.query
+            )
