@@ -1,5 +1,5 @@
 module Utils exposing
-  ( zip, at, find, findIdx, set, orElse
+  ( zip, at, find, findIdx, set, groupBy, orElse
   , httpQuery, decodeHttpQuery, decodeUrlPath
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
   , flip, curry, uncurry, httpErrorToString, eqElCount
@@ -15,7 +15,7 @@ module Utils exposing
 
 
 import Http
-import Dict
+import Dict exposing (..)
 import Json.Decode as JD
 import Json.Encode as JE
 import Url.Builder as UB
@@ -83,6 +83,23 @@ set idx el list =
     list |>
   Tuple.first |>
   List.reverse
+
+{-| Partitions list into a dict of lists according to some discriminator function.
+-}
+groupBy: (a -> comparable) -> List a -> Dict comparable (List a)
+groupBy f l =
+  List.foldl
+    (\a r ->
+      f a |>
+      (\b ->
+        Dict.get b r |>
+        Maybe.map (\pl -> Dict.insert b (a :: pl) r) |>
+        Maybe.withDefault (Dict.insert b [ a ] r)
+      )
+    )
+    Dict.empty
+    l |>
+  Dict.map (\k x -> List.reverse x)
 
 
 {-| Returns first `Just` value `Maybe`
