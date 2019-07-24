@@ -1413,10 +1413,12 @@ update toMsg msg (Model modelData modelConf as same) =
     --model construction
     maybeWithNewData restart searchParams (Model _ mc) =
       let
+        lop p = p == mc.offsetParamName || p == mc.limitParamName
+
         loadMore =
-          List.partition (\(p, _) -> p == mc.offsetParamName || p == mc.limitParamName) >>
+          List.partition (\(p, _) -> lop p) >>
           (\(ol, rest) ->
-            rest == modelData.searchParams &&
+            (rest == modelData.searchParams) &&
               ( Utils.find (\(p, _) -> p == mc.offsetParamName) ol |>
                 Maybe.andThen (Tuple.second >> String.toInt) |>
                 Maybe.map ((==) <| mc.loadedCount modelData.data) |>
@@ -1427,7 +1429,9 @@ update toMsg msg (Model modelData modelConf as same) =
         if not restart && loadMore searchParams then
           same
         else let emptyData = mc.emptyData in
-          Model { emptyData | searchParams = searchParams } mc
+          Model
+            { emptyData | searchParams = searchParams |> List.filter (\(p, _) -> not <| lop p) }
+            mc
 
     withProgress pr (Model d c) = Model { d | progress = pr } c
 
