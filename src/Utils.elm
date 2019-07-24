@@ -84,6 +84,7 @@ set idx el list =
   Tuple.first |>
   List.reverse
 
+
 {-| Partitions list into a dict of lists according to some discriminator function.
 -}
 groupBy: (a -> comparable) -> List a -> Dict comparable (List a)
