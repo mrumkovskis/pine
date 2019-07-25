@@ -80,7 +80,7 @@ import Regex
 import ViewMetadata as VM
 import DeferredRequests as DR
 import Ask
-import Utils
+import Utils exposing (..)
 
 import Debug exposing (log, toString)
 
@@ -1238,7 +1238,7 @@ appendPath begin end =
 -}
 fetch: Tomsg msg value -> SearchParams -> Cmd msg
 fetch toMsg searchParams =
-  Task.perform identity <| Task.succeed <| fetchMsg toMsg searchParams
+  domsg <| fetchMsg toMsg searchParams
 
 
 fetchMsg: Tomsg msg value -> SearchParams -> msg
@@ -1252,7 +1252,7 @@ fetchMsg toMsg searchParams =
 -}
 fetchFromStart: Tomsg msg value -> SearchParams -> Cmd msg
 fetchFromStart toMsg searchParams =
-  Task.perform identity <| Task.succeed <| fetchFromStartMsg toMsg searchParams
+  domsg <| fetchFromStartMsg toMsg searchParams
 
 
 fetchFromStartMsg: Tomsg msg value -> SearchParams -> msg
@@ -1262,7 +1262,7 @@ fetchFromStartMsg toMsg searchParams =
 
 fetchWithParam: Tomsg msg value -> String -> String -> Cmd msg
 fetchWithParam toMsg name param =
-  Task.perform identity <| Task.succeed  <| fetchWithParamMsg toMsg name param
+  domsg <| fetchWithParamMsg toMsg name param
 
 
 fetchWithParamMsg: Tomsg msg value -> String -> String -> msg
@@ -1274,7 +1274,7 @@ fetchWithParamMsg toMsg name param =
 -}
 fetchDeferred: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
 fetchDeferred toMsg searchParams deferredHeader =
-  Task.perform toMsg <| Task.succeed <| DataCmdMsg True False searchParams <| Just deferredHeader
+  do toMsg <| DataCmdMsg True False searchParams <| Just deferredHeader
 
 
 {-| Fetch view data with deferred header set starting from first record.
@@ -1282,7 +1282,7 @@ fetchDeferred toMsg searchParams deferredHeader =
 -}
 fetchDeferredFromStart: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
 fetchDeferredFromStart toMsg searchParams deferredHeader =
-  Task.perform toMsg <| Task.succeed <| DataCmdMsg True True searchParams <| Just deferredHeader
+  do toMsg <| DataCmdMsg True True searchParams <| Just deferredHeader
 
 
 {-| Low level function. Http data fetcher. This can be set as a dataFetcher function in model's configuration -}
@@ -1340,7 +1340,7 @@ enumFetcher viewName fieldName mapper toMsg _ _ _ (Model _ modelConf) =
       Maybe.map (List.map mapper) |>
       Maybe.withDefault []
   in
-    Task.perform (toMsg << DataMsg modelConf.typeName True []) <| Task.succeed <| Ok values
+    do (toMsg << DataMsg modelConf.typeName True []) <| Ok values
 
 
 {-| Fetch record count. Command is available if [`countBaseUri`](#countBaseUri)
@@ -1348,7 +1348,7 @@ enumFetcher viewName fieldName mapper toMsg _ _ _ (Model _ modelConf) =
 -}
 fetchCount: Tomsg msg value -> SearchParams -> Cmd msg
 fetchCount toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| CountCmdMsg True searchParams Nothing
+  do toMsg <| CountCmdMsg True searchParams Nothing
 
 
 {-| Fetch record count with deferred header set.
@@ -1356,35 +1356,35 @@ fetchCount toMsg searchParams =
 -}
 fetchCountDeferred: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
 fetchCountDeferred toMsg searchParams deferredHeader =
-  Task.perform toMsg <| Task.succeed <| CountCmdMsg True searchParams <| Just deferredHeader
+  do toMsg <| CountCmdMsg True searchParams <| Just deferredHeader
 
 
 {-| Fetch view metadata.
 -}
 fetchMetadata: Tomsg msg value -> Cmd msg
 fetchMetadata toMsg =
-  Task.perform toMsg <| Task.succeed <| MetadataMsgCmd Nothing
+  do toMsg <| MetadataMsgCmd Nothing
 
 
 {-| Set model value.
 -}
 set: Tomsg msg value -> value -> Cmd msg
 set toMsg value =
-  Task.perform toMsg <| Task.succeed <| UpdateCmdMsg True value
+  do toMsg <| UpdateCmdMsg True value
 
 
 {-| Edit `JsonValue` model.
 -}
 edit: Tomsg msg value -> Path -> JsonValue -> Cmd msg
 edit toMsg path value =
-  Task.perform toMsg <| Task.succeed <| EditMsg path value
+  do toMsg <| EditMsg path value
 
 
 {-| Save model.
 -}
 save: Tomsg msg value -> SearchParams -> Cmd msg
 save toMsg searchParams =
-  Task.perform identity <| Task.succeed <| saveMsg toMsg searchParams
+  domsg <| saveMsg toMsg searchParams
 
 
 saveMsg: Tomsg msg value -> SearchParams -> msg
@@ -1396,14 +1396,14 @@ saveMsg toMsg searchParams =
 -}
 create: Tomsg msg value -> SearchParams -> Cmd msg
 create toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| CreateCmdMsg True searchParams
+  do toMsg <| CreateCmdMsg True searchParams
 
 
 {-| Delete model.
 -}
 delete: Tomsg msg value -> SearchParams -> Cmd msg
 delete toMsg searchParams =
-  Task.perform toMsg <| Task.succeed <| DeleteCmdMsg True searchParams
+  do toMsg <| DeleteCmdMsg True searchParams
 
 
 {-| Model updater. -}
@@ -1467,7 +1467,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
     -- metadata fetch
     fetchMd andThen =
-      Task.perform toMsg <| Task.succeed <| MetadataMsgCmd andThen
+      do toMsg <| MetadataMsgCmd andThen
 
     initializeAndCmd noInitCmd cmd =
       if unInitialized then fetchMd <| Just <| noInitCmd () else cmd ()
@@ -1518,14 +1518,14 @@ update toMsg msg (Model modelData modelConf as same) =
             (\question ((defhn, defhv) as defheader) ->
               let
                 yescmd =
-                  Task.perform (toMsg << yes) <| Task.succeed <|
+                  do (toMsg << yes) <|
                     ( maybeTimeout |>
                       Maybe.map (\t -> (defhn, t)) |>
                       Utils.orElse (Just defheader)
                     )
 
                 nocmd =
-                  Task.perform (toMsg << DoneMsg) <| Task.succeed progressDone
+                  do (toMsg << DoneMsg) progressDone
               in
                 Ask.askmsg modelConf.toMessagemsg question yescmd <| Just nocmd
             )
@@ -1552,7 +1552,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
     maybeUnqueueCmd (Model _ mc) =
       mc.queuedCmd |>
-      Maybe.map (\qmsg -> Task.perform toMsg <| Task.succeed qmsg) |>
+      Maybe.map (\qmsg -> do toMsg qmsg) |>
       Maybe.withDefault Cmd.none
 
     errorResponse pr err =
@@ -1689,12 +1689,12 @@ update toMsg msg (Model modelData modelConf as same) =
           let
             cmd =
               always <|
-                Task.perform
+                do
                   (toMsg << DataMsg modelConf.typeName True modelData.searchParams)
-                  (Task.succeed <| Ok value)
+                  (Ok value)
 
             noInitCmd =
-              always <| Task.perform toMsg <| Task.succeed <| UpdateCmdMsg False value
+              always <| do toMsg <| UpdateCmdMsg False value
           in
             ( (same |> withEmptyQueue |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
 
@@ -1709,9 +1709,8 @@ update toMsg msg (Model modelData modelConf as same) =
 
             noInitCmd =
               always <|
-                Task.perform toMsg <|
-                  Task.succeed <|
-                    DataCmdMsg False restart searchParams deferredHeader
+                do toMsg <|
+                  DataCmdMsg False restart searchParams deferredHeader
 
             newModel = same |> withEmptyQueue |> withProgress fetchProgress
           in
@@ -1722,7 +1721,7 @@ update toMsg msg (Model modelData modelConf as same) =
         , modelData.searchParams |>
           List.filter (\(n, _) -> n /= name) |>
           (::) (name, param) |>
-          (\p -> Task.perform toMsg <| Task.succeed <| DataCmdMsg True True p Nothing)
+          (\p -> do toMsg <| DataCmdMsg True True p Nothing)
         )
 
       CountCmdMsg check searchParams deferredHeader ->
@@ -1737,9 +1736,8 @@ update toMsg msg (Model modelData modelConf as same) =
 
             noInitCmd =
               always <|
-                Task.perform toMsg <|
-                  Task.succeed <|
-                    CountCmdMsg False searchParams deferredHeader
+                do toMsg <|
+                  CountCmdMsg False searchParams deferredHeader
           in
 
           ( same |> withEmptyQueue |> withProgress countProgress
@@ -1768,7 +1766,7 @@ update toMsg msg (Model modelData modelConf as same) =
                     decoder
 
             noInitCmd =
-              always <| Task.perform toMsg <| Task.succeed <| SaveCmdMsg False searchParams
+              always <| do toMsg <| SaveCmdMsg False searchParams
           in
             ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
 
@@ -1787,7 +1785,7 @@ update toMsg msg (Model modelData modelConf as same) =
                   }
 
             noInitCmd =
-              always <| Task.perform toMsg <| Task.succeed <| CreateCmdMsg False searchParams
+              always <| do toMsg <| CreateCmdMsg False searchParams
           in
             ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
 
@@ -1804,7 +1802,7 @@ update toMsg msg (Model modelData modelConf as same) =
                     (toMsg << DeleteMsg modelConf.typeName searchParams)
 
             noInitCmd =
-              always <| Task.perform toMsg <| Task.succeed <| DeleteCmdMsg False searchParams
+              always <| do toMsg <| DeleteCmdMsg False searchParams
           in
             ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
 

@@ -11,7 +11,7 @@ import JsonModel as JM
 import EditModel as EM
 import ViewMetadata as VM
 import ScrollEvents as SE
-import Utils
+import Utils exposing (..)
 import Ask
 
 import Dict exposing (Dict)
@@ -97,7 +97,7 @@ loadMsg toMsg =
 
 load: Tomsg msg -> Cmd msg
 load toMsg =
-  Task.perform identity <| Task.succeed <| loadMsg toMsg
+  domsg <| loadMsg toMsg
 
 
 loadMoreMsg: Tomsg msg -> msg
@@ -107,7 +107,7 @@ loadMoreMsg toMsg =
 
 loadMore: Tomsg msg -> Cmd msg
 loadMore toMsg =
-  Task.perform identity <| Task.succeed <| loadMoreMsg toMsg
+  domsg <| loadMoreMsg toMsg
 
 
 loadWithParamMsg: Tomsg msg -> String -> String -> msg
@@ -117,7 +117,7 @@ loadWithParamMsg toMsg name value =
 
 loadWithParam: Tomsg msg -> String -> String -> Cmd msg
 loadWithParam toMsg name value =
-  Task.perform identity <| Task.succeed <| loadWithParamMsg toMsg name value
+  domsg <| loadWithParamMsg toMsg name value
 
 
 sortMsg: Tomsg msg -> String -> msg
@@ -127,7 +127,7 @@ sortMsg toMsg col =
 
 sort: Tomsg msg -> String -> Cmd msg
 sort toMsg col =
-  Task.perform identity <| Task.succeed <| sortMsg toMsg col
+  domsg <| sortMsg toMsg col
 
 
 selectMsg: Tomsg msg -> (Bool -> JM.JsonValue -> msg) -> Bool -> JM.JsonValue -> msg
@@ -137,7 +137,7 @@ selectMsg toMsg selectAction multiSelect val =
 
 select: Tomsg msg -> (Bool -> JM.JsonValue -> msg) -> Bool -> JM.JsonValue -> Cmd msg
 select toMsg selectAction multiSelect val =
-  Task.perform identity <| Task.succeed <| selectMsg toMsg selectAction multiSelect val
+  domsg <| selectMsg toMsg selectAction multiSelect val
 
 
 syncMsg: Tomsg msg -> JM.SearchParams -> msg
@@ -147,7 +147,7 @@ syncMsg toMsg params =
 
 sync: Tomsg msg -> JM.SearchParams -> Cmd msg
 sync toMsg params =
-  Task.perform identity <| Task.succeed <| syncMsg toMsg params
+  domsg <| syncMsg toMsg params
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
@@ -259,7 +259,7 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
           ) |>
           (\(is_selected, newdata, newlist) ->
             ( Model { model | list = JM.setData newlist model.list }
-            , Task.perform (selmsg is_selected) <| Task.succeed newdata
+            , do (selmsg is_selected) <| newdata
             )
           )
 

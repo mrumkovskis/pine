@@ -33,7 +33,7 @@ import JsonModel as JM
 import ViewMetadata as VM
 import Ask
 import Select exposing (..)
-import Utils
+import Utils exposing (..)
 
 import Html exposing (Attribute)
 import Html.Attributes as Attrs
@@ -465,7 +465,7 @@ fetchMsg toMsg fid =
 -}
 set: Tomsg msg model -> (model -> model) -> Cmd msg
 set toMsg editFun =
-  Task.perform identity <| Task.succeed <| setMsg toMsg editFun
+  domsg <| setMsg toMsg editFun
 
 
 setMsg: Tomsg msg model -> (model -> model) -> msg
@@ -478,7 +478,7 @@ After that call function `createFun` on received data.
 -}
 create: Tomsg msg model -> JM.SearchParams -> (model -> model) -> Cmd msg
 create toMsg createParams createFun =
-  Task.perform identity <| Task.succeed <| createMsg toMsg createParams createFun
+  domsg <| createMsg toMsg createParams createFun
 
 
 createMsg: Tomsg msg model -> JM.SearchParams -> (model -> model) -> msg
@@ -811,7 +811,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 Dict.values |>
                 List.head |>
                 Maybe.andThen (\i -> Dict.get i.name ctrls) |>
-                Maybe.map (\c -> Task.perform toMsg <| Task.succeed <| OnFocusMsg c True) |> -- restore select box if present
+                Maybe.map (\c -> do toMsg <| OnFocusMsg c True) |> -- restore select box if present
                 Maybe.withDefault Cmd.none
               )
             ) |>

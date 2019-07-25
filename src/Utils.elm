@@ -4,6 +4,7 @@ module Utils exposing
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
   , flip, curry, uncurry, httpErrorToString, eqElCount
   , searchParams, toList, styles
+  , do, domsg
   )
 
 
@@ -22,6 +23,7 @@ import Url.Builder as UB
 import Url
 import Html
 import Html.Attributes as Attributes
+import Task
 
 import Debug exposing (log, toString)
 
@@ -316,3 +318,13 @@ toList getters param =
 styles: List (String, String) -> List (Html.Attribute msg)
 styles list =
   list |> List.map (\(k, v) -> Attributes.style k v)
+
+
+do: (a -> msg) -> a -> Cmd msg
+do toMsg a =
+  Task.perform toMsg <| Task.succeed a
+
+
+domsg: msg -> Cmd msg
+domsg =
+  do identity

@@ -11,7 +11,7 @@ module Ask exposing
 @docs MsgType, Msg, Tomsg, ask, info, warn, error, text
 -}
 
-import Utils
+import Utils exposing (..)
 import DeferredRequests as DR exposing (Tomsg)
 import CmdChain exposing (Tomsg)
 import ScrollEvents as SE exposing (Tomsg)
@@ -55,7 +55,7 @@ askmsg toMsg question cmdYes maybeCmdNo =
 -}
 ask: Tomsg msg -> String -> Cmd msg -> Maybe (Cmd msg) -> Cmd msg
 ask toMsg question cmdYes maybeCmdNo =
-  Task.perform toMsg <| Task.succeed <| Question question cmdYes maybeCmdNo
+  do toMsg <| Question question cmdYes maybeCmdNo
 
 
 {-| Sends `Info` message
@@ -84,23 +84,23 @@ unauthorized toMsg message = msgInternal toMsg Unauthorized message
 {-| Ask for `DeferredRequests.Msg` constructor -}
 askToDeferredmsg: Tomsg msg -> (DR.Tomsg msg -> msg) -> Cmd msg
 askToDeferredmsg toMsg subscription =
-  Task.perform (toMsg << SubscribeToDeferredMsg) <| Task.succeed subscription
+  do (toMsg << SubscribeToDeferredMsg) <| subscription
 
 
 {-| Ask for `CmdChain.Msg` constructor -}
 askToCmdChainmsg: Tomsg msg -> (CmdChain.Tomsg msg -> msg) -> Cmd msg
 askToCmdChainmsg toMsg subscription =
-  Task.perform (toMsg << SubscribeToCmdChainMsg) <| Task.succeed subscription
+  do (toMsg << SubscribeToCmdChainMsg) <| subscription
 
 
 askBrowserKeymsg: Tomsg msg -> (Key -> msg) -> Cmd msg
 askBrowserKeymsg toMsg keymsg =
-  Task.perform (toMsg << BrowserKey) <| Task.succeed keymsg
+  do (toMsg << BrowserKey) <| keymsg
 
 
 askToScrollEventsmsg: Tomsg msg -> (SE.Tomsg msg -> msg) -> Cmd msg
 askToScrollEventsmsg toMsg subscription =
-  Task.perform (toMsg << SubscribeToScrollEventsMsg) <| Task.succeed subscription
+  do (toMsg << SubscribeToScrollEventsMsg) <| subscription
 
 
 {-| Sends http `Error` or `Unauthorized` on http message -}
@@ -130,4 +130,4 @@ text msg =
 
 msgInternal: Tomsg msg -> MsgType -> String -> Cmd msg
 msgInternal toMsg msgType message =
-  Task.perform toMsg <| Task.succeed <| Message msgType message
+  do toMsg <| Message msgType message

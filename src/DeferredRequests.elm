@@ -22,7 +22,7 @@ module DeferredRequests exposing
 -}
 
 
-import Utils exposing (uncurry)
+import Utils exposing (uncurry, domsg, do)
 
 import Json.Decode as JD
 import Dict exposing (Dict)
@@ -123,20 +123,20 @@ third argument `deferredResponse` corresponds following json pattern:
 -}
 subscribeCmd: Tomsg msg -> Subscription msg -> String -> (Bool -> msg) -> Cmd msg
 subscribeCmd toMsg subscription deferredResponse toResmsg =
-  Task.perform toMsg <|
-    Task.succeed <| MaybeSubscribeMsg deferredResponse subscription toResmsg
+  do toMsg <|
+    MaybeSubscribeMsg deferredResponse subscription toResmsg
 
 
 askCmd: Tomsg msg -> String -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
 askCmd toMsg deferredResponse toAskmsg toResmsg =
-  Task.perform toMsg <|
-    Task.succeed <| MaybeAskMsg deferredResponse toAskmsg toResmsg
+  do toMsg <|
+    MaybeAskMsg deferredResponse toAskmsg toResmsg
 
 
 subscribeOrAskCmd: Tomsg msg -> Subscription msg -> String -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
 subscribeOrAskCmd toMsg subscription deferredResponse toAskmsg toResmsg =
-  Task.perform toMsg <|
-    Task.succeed <| MaybeSubscribeOrAskMsg deferredResponse subscription toAskmsg toResmsg
+  do toMsg <|
+    MaybeSubscribeOrAskMsg deferredResponse subscription toAskmsg toResmsg
 
 
 onHttpErrorCmd: Tomsg msg -> Subscription msg -> Http.Error -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
@@ -149,7 +149,7 @@ onHttpErrorCmd toMsg subscription error toAskmsg toResmsg =
       askCmd toMsg (String.fromInt status) toAskmsg toResmsg
 
     err ->
-      Task.perform toResmsg <| Task.succeed False
+      do toResmsg <| False
 
 
 {-| Model update.
@@ -216,7 +216,7 @@ update toMsg msg (Model reqs subs conf as model) =
         ( Model reqs (Dict.insert id toSubMsg subs) conf, Cmd.none ) -- insert subscription
 
     resultCmd toResmsg res =
-      Task.perform toResmsg <| Task.succeed res
+      do toResmsg <| res
 
     maybeSubscribeCmd subscr deferredResponse toResmsg =
       JD.decodeString conf.decoder deferredResponse |>
@@ -224,7 +224,7 @@ update toMsg msg (Model reqs subs conf as model) =
         (\did ->
           Cmd.batch
             [ resultCmd toResmsg True
-            , Task.perform toMsg <| Task.succeed <| SubscribeMsg did subscr
+            , do toMsg <| SubscribeMsg did subscr
             ]
         )
 
@@ -233,8 +233,7 @@ update toMsg msg (Model reqs subs conf as model) =
         Ok <|
           Cmd.batch
             [ resultCmd toResmsg True
-            , Task.perform identity <|
-                Task.succeed <| toAskmsg conf.timeoutQuestion conf.deferredHeader
+            , domsg <| toAskmsg conf.timeoutQuestion conf.deferredHeader
             ]
       else Err <| "Not timeout response: " ++ deferredResponse
 

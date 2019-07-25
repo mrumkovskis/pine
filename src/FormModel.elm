@@ -10,7 +10,7 @@ module FormModel exposing
 import EditModel as EM
 import JsonModel as JM
 import Ask
-import Utils
+import Utils exposing (..)
 
 import Task
 
@@ -49,7 +49,7 @@ createMsg toMsg searchParams createFun =
 
 create: Tomsg msg -> JM.SearchParams -> (JM.JsonValue -> JM.JsonValue) -> Cmd msg
 create toMsg searchParams createFun =
-  Task.perform identity <| Task.succeed <| createMsg toMsg searchParams createFun
+  domsg <| createMsg toMsg searchParams createFun
 
 
 saveMsg: Tomsg msg -> Maybe msg -> msg
@@ -59,7 +59,7 @@ saveMsg toMsg maybeSuccessmsg =
 
 save: Tomsg msg -> Maybe msg -> Cmd msg
 save toMsg maybeSuccessmsg =
-  Task.perform identity <| Task.succeed <| saveMsg toMsg maybeSuccessmsg
+  domsg <| saveMsg toMsg maybeSuccessmsg
 
 
 editMsg: Tomsg msg -> JM.JsonValue -> msg
@@ -69,7 +69,7 @@ editMsg toMsg data =
 
 edit: Tomsg msg -> JM.JsonValue -> Cmd msg
 edit toMsg data =
-  Task.perform identity <| Task.succeed <| editMsg toMsg data
+  domsg <| editMsg toMsg data
 
 
 cancelMsg: Tomsg msg -> Bool -> msg
@@ -79,7 +79,7 @@ cancelMsg toMsg ask =
 
 cancel: Tomsg msg -> Bool -> Cmd msg
 cancel toMsg ask =
-    Task.perform identity <| Task.succeed <| cancelMsg toMsg ask
+  domsg <| cancelMsg toMsg ask
 
 
 deleteMsg: Tomsg msg -> Maybe msg -> Int -> msg
@@ -89,7 +89,7 @@ deleteMsg toMsg maybeSuccessmsg id =
 
 delete: Tomsg msg -> Maybe msg -> Int -> Cmd msg
 delete toMsg maybeSuccessmsg id =
-    Task.perform identity <| Task.succeed <| deleteMsg toMsg maybeSuccessmsg id
+    domsg <| deleteMsg toMsg maybeSuccessmsg id
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)

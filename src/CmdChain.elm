@@ -3,6 +3,8 @@ module CmdChain exposing
   )
 
 
+import Utils exposing (..)
+
 import Task
 
 import Debug exposing (log, toString)
@@ -39,7 +41,7 @@ isDone (Model { done }) = done
 
 exec: Tomsg msg -> List (Cmd msg) -> Cmd msg
 exec toMsg cmds =
-  Task.perform (toMsg << ExecMsg) <| Task.succeed cmds
+  do (toMsg << ExecMsg) <| cmds
 
 
 update: Tomsg msg -> Msg msg -> Model msg model -> model -> (model, Cmd msg)
@@ -60,6 +62,6 @@ update toMsg msg (Model ({ updater, modelUpdater, cmdChain } as cmodel)) model =
       Tuple.mapSecond
         (\cmd ->
           if cmd == Cmd.none then
-            Task.perform (toMsg << ExecMsg) <| Task.succeed cmdChain
+            do (toMsg << ExecMsg) <| cmdChain
           else Cmd.map (toMsg << DoNextMsg) cmd
         )

@@ -22,6 +22,7 @@ module Messages exposing
 
 
 import Ask
+import Utils exposing (..)
 
 import Dict exposing (Dict)
 import Task
@@ -91,7 +92,7 @@ unauthorized (Messages m) =
 -}
 add: Tomsg msg flags -> Ask.Msg msg -> flags -> Cmd msg
 add toMsg msg msgflags =
-  Task.perform (toMsg << Add msg) <| Task.succeed msgflags
+  do (toMsg << Add msg) <| msgflags
 
 
 {-| Remove message.
@@ -120,18 +121,18 @@ no toMsg msg =
 -}
 clear: Tomsg msg flags -> Cmd msg
 clear toMsg =
-  Task.perform toMsg <| Task.succeed Clear
+  do toMsg <| Clear
 
 
 {-| Updates messages flags -}
 flags: Tomsg msg flags -> String -> flags -> Cmd msg
 flags toMsg msg msgflags =
-  Task.perform (toMsg << Flags msg) <| Task.succeed msgflags
+  do (toMsg << Flags msg) <| msgflags
 
 
 msgInternal: Tomsg msg flags -> (String -> Msg msg flags) -> String -> Cmd msg
 msgInternal toMsg stringTomsg msg =
-  Task.perform (toMsg << stringTomsg) <| Task.succeed msg
+  do (toMsg << stringTomsg) <| msg
 
 
 {-| Model update -}

@@ -11,7 +11,7 @@ module Select exposing
 
 import JsonModel as JM
 import SelectEvents as SE
-import Utils
+import Utils exposing (..)
 
 import Html exposing (Attribute)
 import Html.Events exposing (onInput, onMouseDown)
@@ -82,7 +82,7 @@ onMouseSelect toMsg idx = [ onMouseDown (toMsg <| SetActiveAndSelect idx) ]
 {-| Search command.
 -}
 search: Tomsg msg value -> String -> Cmd msg
-search toMsg text = Task.perform (toMsg << Search) <| Task.succeed text
+search toMsg text = do (toMsg << Search) <| text
 
 
 {-| Model update -}
@@ -91,7 +91,7 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
   let
     selectCmd idx =
       Utils.at idx (JM.data model) |>
-      Maybe.map (\value -> Task.perform toSelectedmsg <| Task.succeed value) |>
+      Maybe.map (\value -> do toSelectedmsg <| value) |>
       Maybe.withDefault Cmd.none
 
     findIdx newModel =
@@ -122,7 +122,7 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
             in
               ( if active then { same | activeIdx = idx } else same
               , if not active then -- if list collapsed try search
-                  Task.perform (toMsg << Search) <| Task.succeed same.search
+                  do (toMsg << Search) <| same.search
                 else Cmd.none
               )
         in
@@ -138,7 +138,7 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
 
             SE.Select ->
               ( same
-              , if active then Task.perform toMsg <| Task.succeed Select else Cmd.none
+              , if active then do toMsg <| Select else Cmd.none
               )
 
       Search text ->
@@ -150,7 +150,7 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
 
       SetActiveAndSelect idx ->
         ( { same | activeIdx = Just idx }
-        , Task.perform toMsg <| Task.succeed Select
+        , do toMsg <| Select
         )
 
       Select ->
