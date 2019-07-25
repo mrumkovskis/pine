@@ -82,10 +82,10 @@ update toMsg msg ({ key, activateMsg, syncMsg, routes, activePage } as model) =
           query |> Maybe.map Utils.decodeHttpQuery |> Maybe.withDefault []
 
         activateCmd =
-          activateMsg >> Task.succeed >> Task.perform identity
+          activateMsg >> Utils.domsg
 
         syncCmd =
-          syncMsg >> Task.succeed >> Task.perform identity
+          syncMsg >> Utils.domsg
       in
         if activePage == path then
           ( model, syncCmd <| Route (String.join "/" path) [] <| params url.query ) -- page is already active - sync
