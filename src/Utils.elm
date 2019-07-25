@@ -321,8 +321,8 @@ styles list =
 
 
 do: (a -> msg) -> a -> Cmd msg
-do toMsg a =
-  Task.perform toMsg <| Task.succeed a
+do toMsg =
+  Task.succeed >> Task.perform toMsg
 
 
 domsg: msg -> Cmd msg
