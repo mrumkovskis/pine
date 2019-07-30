@@ -1018,7 +1018,7 @@ jsonValueToString jsValue =
 
     JsNull -> ""
 
-    x -> "" -- empty string for complex type
+    x -> toString x
 
 
 stringToJsonValue: String -> String -> Maybe JsonValue
