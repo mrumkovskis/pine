@@ -17,7 +17,7 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
-  , traverseJson, jsonValues, stringValues, pathMatch
+  , traverseJson, jsonValues, stringValues, jsonQueryObj, pathMatch
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2081,15 +2081,37 @@ jsonValues pattern source =
 stringValues: String -> JsonValue -> List (String, String)
 stringValues pattern source =
   jsonValues pattern source |>
-  List.concatMap
-    (\(p, v) ->
-      [ ( p
-        , case v of
+  List.map
+    ( Tuple.mapSecond
+        (\v ->
+          case v of
             JsString s -> s
 
             JsNumber n -> String.fromFloat n
 
             x -> toString x
         )
-      ]
     )
+
+
+jsonQueryObj: String -> JsonValue -> JsonValue
+jsonQueryObj pattern source =
+  let
+    lastPathEl ps =
+      JD.decodeString pathDecoder ps |>
+      Result.toMaybe |>
+      Maybe.andThen
+        (\p ->
+          case reversePath p of
+            Name n _ -> Just n
+
+            Idx i _ -> Just <| String.fromInt i
+
+            _ -> Nothing
+        )
+  in
+    jsonValues pattern source |>
+    List.concatMap
+      (\(k, v) -> lastPathEl k |> Maybe.map (\e -> [(e, v)]) |> Maybe.withDefault []) |>
+    Dict.fromList |>
+    JsObject
