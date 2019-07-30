@@ -1,5 +1,6 @@
 module Utils exposing
-  ( zip, at, find, findIdx, set, groupBy, orElse
+  ( zip, at, find, findIdx, set, groupBy, transpose
+  , orElse
   , httpQuery, decodeHttpQuery, decodeUrlPath
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
   , flip, curry, uncurry, httpErrorToString, eqElCount
@@ -103,6 +104,19 @@ groupBy f l =
     Dict.empty
     l |>
   Dict.map (\k x -> List.reverse x)
+
+
+{-| Transposes list. -}
+transpose: List (List a) -> List (List a)
+transpose list =
+  List.foldl
+    (\l r ->
+      zip l r |>
+      List.map (\(e, row) -> e :: row)
+    )
+    (List.head list |> Maybe.map (\l -> List.repeat (List.length l) []) |> Maybe.withDefault [[]])
+    list |>
+  List.map List.reverse
 
 
 {-| Returns first `Just` value `Maybe`
