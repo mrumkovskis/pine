@@ -5,7 +5,7 @@ module EditModel exposing
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, http, save, saveMsg, delete
-  , id, data, inp, inps, inpsByPattern
+  , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
   )
@@ -612,6 +612,13 @@ inpsByPattern pattern toMsg staticAttrs { controllers, inputs } =
       Maybe.map List.singleton |>
       Maybe.withDefault []
     )
+
+
+inpsTableByPattern: Tomsg msg model -> List (String, List (Attribute msg)) -> EditModel msg model -> List (List (Input msg))
+inpsTableByPattern toMsg patternAndAttrs model =
+  patternAndAttrs |>
+  List.map (\(p, a) -> inpsByPattern p toMsg a model) |>
+  Utils.transpose
 
 
 inpInternal: Tomsg msg model -> List (Attribute msg) ->  Controller msg model -> Input msg -> Input msg
