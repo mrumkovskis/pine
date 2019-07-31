@@ -1025,7 +1025,10 @@ stringToJsonValue: String -> String -> Maybe JsonValue
 stringToJsonValue jsonType value =
   case jsonType of
     "string" ->
-      Just <| JsString value
+      if String.isEmpty value then
+        Just <| JsString value
+      else
+        Just JsNull
 
     "number" ->
       String.toFloat value |> Maybe.map JsNumber
