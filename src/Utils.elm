@@ -110,7 +110,7 @@ groupBy f l =
 transpose: List (List a) -> List (List a)
 transpose listOfLists =
   List.foldr
-    (List.map2 (::))
+    ( List.map2 (::) )
     ( List.head listOfLists |>
       Maybe.map (\l -> List.repeat (List.length l) []) |>
       Maybe.withDefault [[]]
