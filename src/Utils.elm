@@ -108,15 +108,14 @@ groupBy f l =
 
 {-| Transposes list. -}
 transpose: List (List a) -> List (List a)
-transpose list =
-  List.foldl
-    (\l r ->
-      zip l r |>
-      List.map (\(e, row) -> e :: row)
+transpose listOfLists =
+  List.foldr
+    (List.map2 (::))
+    ( List.head listOfLists |>
+      Maybe.map (\l -> List.repeat (List.length l) []) |>
+      Maybe.withDefault [[]]
     )
-    (List.head list |> Maybe.map (\l -> List.repeat (List.length l) []) |> Maybe.withDefault [[]])
-    list |>
-  List.map List.reverse
+    listOfLists
 
 
 {-| Returns first `Just` value `Maybe`
