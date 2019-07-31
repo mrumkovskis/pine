@@ -154,7 +154,7 @@ update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
 update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
   let
     searchPars params =
-      JM.searchParsFromJson params ++
+      (JM.searchParsFromJson params |> List.filter (\(n, _) -> n /= "sort")) ++
       ( sortCol |>
         Maybe.map (\(c, o) -> [ ("sort", (if o then "" else "~") ++ c) ]) |>
         Maybe.withDefault []
