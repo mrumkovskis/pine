@@ -1026,9 +1026,9 @@ stringToJsonValue jsonType value =
   case jsonType of
     "string" ->
       if String.isEmpty value then
-        Just <| JsString value
-      else
         Just JsNull
+      else
+        Just <| JsString value
 
     "number" ->
       String.toFloat value |> Maybe.map JsNumber
