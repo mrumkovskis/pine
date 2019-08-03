@@ -490,8 +490,9 @@ createMsg toMsg createParams createFun =
   toMsg <| NewModelMsg createParams createFun
 
 
-{-| Creates model from http request. Setter function's first argument is data result, second argument
-is existing model. The result can be a product from both new and existing model.
+{-| Creates model from http request. Setter function's returns optional model update function
+(see [`set`](#set)) which gets existing model as an argument thus the result can be a product from
+both new and existing model.
 If Result is Ok and setter function returns Nothing, model remains unchanged, if Result is Err
 and setter function returns Nothing, http error message is propagated to Ask module.
 -}
