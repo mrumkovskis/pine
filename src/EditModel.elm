@@ -171,7 +171,7 @@ type Msg msg model
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
-  | HttpModelMsg (() -> Maybe model) (Result Http.Error model)
+  | HttpModelMsg (Result Http.Error model -> Maybe (model -> model)) (Result Http.Error model)
 
 
 {-| Edit model message constructor -}
@@ -253,7 +253,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                   in
                     if field.isComplexType then
                       let
-                        subviewDecoder () =
+                        subviewDecoder _ =
                           JM.jsonDecoder |>
                           JD.map
                             (\val ->
@@ -265,7 +265,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                                 JM.jsonEditor path val model
                             )
 
-                        updateSingleStringFieldSubview () =
+                        updateSingleStringFieldSubview initmod =
                           Dict.get field.typeName metadata |>
                           Maybe.map .fields |>
                           Maybe.map (List.filter (\f -> f.jsonType == "string")) |>
@@ -277,7 +277,8 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                                     Dict.fromList [(f.name, JM.JsString cinp.value)]
 
                               _ -> Nothing
-                            )
+                            ) |>
+                          Maybe.withDefault initmod
                       in
                         ( model
                         , http
@@ -286,7 +287,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                               Utils.httpQuery [(field.name, cinp.value)]
                             )
                             (subviewDecoder ())
-                            updateSingleStringFieldSubview
+                            (Result.toMaybe >> Maybe.map always >> Utils.orElse (Just updateSingleStringFieldSubview))
                         )
                     else if field.isCollection then
                       ( JM.stringToJsonValue field.jsonType cinp.value |>
@@ -486,11 +487,14 @@ createMsg toMsg createParams createFun =
   toMsg <| NewModelMsg createParams createFun
 
 
-{-| Creates model from http request.
+{-| Creates model from http request. Setter function's first argument is data result, second argument
+is existing model. The result can be a product from both new and existing model.
+If Result is Ok and setter function returns Nothing, model remains unchanged, if Result is Err
+and setter function returns Nothing, http error message is propagated to Ask module.
 -}
-http: Tomsg msg model -> String -> JD.Decoder model -> (() -> Maybe model) -> Cmd msg
-http toMsg url decoder maybeOnErr =
-  Http.get { url = url, expect = Http.expectJson (toMsg << HttpModelMsg maybeOnErr) decoder }
+http: Tomsg msg model -> String -> JD.Decoder model -> (Result Http.Error model -> Maybe (model -> model)) -> Cmd msg
+http toMsg url decoder setter =
+  Http.get { url = url, expect = Http.expectJson (toMsg << HttpModelMsg setter) decoder }
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
@@ -881,16 +885,20 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       NewModelMsg searchParams createFun ->
         ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
 
-      HttpModelMsg onErr httpResult ->
+      HttpModelMsg setter httpResult ->
         let
+          mod = JM.data model
+
           result =
             case httpResult of
-              Ok r ->
-                set toMsg (always r)
+              Ok _ ->
+                setter httpResult |>
+                Maybe.map (set toMsg) |>
+                Maybe.withDefault Cmd.none
 
               Err e ->
-                onErr () |>
-                Maybe.map (\r -> set toMsg (always r)) |>
+                setter httpResult |>
+                Maybe.map (set toMsg) |>
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
