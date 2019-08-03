@@ -170,8 +170,11 @@ type Msg msg model
   | OnSelectMsg (Controller msg model) String
   -- update entire model
   | EditModelMsg (model -> model)
+  | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result Http.Error model -> Maybe (model -> model)) (Result Http.Error model)
+  | CmdChainMsg (List (Msg msg model)) (Cmd msg)
+  | ExecCmdChainMsg (List (Msg msg model)) (Cmd msg) (Msg msg model)
 
 
 {-| Edit model message constructor -}
@@ -702,7 +705,10 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           ctrl.updateModel toMsg input mod |>
           (\(nm, cmd) ->
             ( { same | inputs = updateInputsFromModel nm newInputs } --update inputs if updater has changed other fields
-            , if cmd == Cmd.none then JM.set (toMsg << UpdateModelMsg False) nm else cmd
+            , if cmd == Cmd.none then
+                do toMsg <| SetModelMsg nm
+              else
+                do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd
             )
           )
 
@@ -882,6 +888,9 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       EditModelMsg editFun ->
         ( same, JM.set (toMsg << UpdateModelMsg True) <| editFun <| JM.data model )
 
+      SetModelMsg mod ->
+        ( same, JM.set (toMsg << UpdateModelMsg False) mod )
+
       NewModelMsg searchParams createFun ->
         ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
 
@@ -902,3 +911,23 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
+
+      CmdChainMsg msgs cmd ->
+        ( same
+        , case msgs of
+            [] ->
+              cmd
+
+            modelmsg :: rest ->
+              do (toMsg << ExecCmdChainMsg rest cmd) modelmsg
+        )
+
+      ExecCmdChainMsg msgs cmd modelmsg ->
+        update (toMsg << ExecCmdChainMsg msgs cmd) modelmsg same |>
+        Tuple.mapSecond
+          (\updcmd ->
+            if updcmd == Cmd.none then
+              do toMsg <| CmdChainMsg msgs cmd
+            else
+              updcmd
+          )
