@@ -706,10 +706,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           ctrl.updateModel toMsg input mod |>
           (\(nm, cmd) ->
             ( { same | inputs = updateInputsFromModel nm newInputs } --update inputs if updater has changed other fields
-            , if cmd == Cmd.none then
-                do toMsg <| SetModelMsg nm
-              else
-                do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd
+            , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd
             )
           )
 
