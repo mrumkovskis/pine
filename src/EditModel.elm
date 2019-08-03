@@ -4,7 +4,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, setMsg, create, createMsg, http, save, saveMsg, delete
+  , fetch, set, setMsg, create, createMsg, http, httpStraight, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
@@ -499,6 +499,11 @@ and setter function returns Nothing, http error message is propagated to Ask mod
 http: Tomsg msg model -> String -> JD.Decoder model -> (Result Http.Error model -> Maybe (model -> model)) -> Cmd msg
 http toMsg url decoder setter =
   Http.get { url = url, expect = Http.expectJson (toMsg << HttpModelMsg setter) decoder }
+
+
+httpStraight: Tomsg msg model -> String -> JD.Decoder model -> Cmd msg
+httpStraight toMsg url decoder =
+  http toMsg url decoder (Result.toMaybe >> Maybe.map always)
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
