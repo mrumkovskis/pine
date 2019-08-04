@@ -173,8 +173,7 @@ type Msg msg model
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result Http.Error model -> Maybe (model -> model)) (Result Http.Error model)
-  | CmdChainMsg (List (Msg msg model)) (Cmd msg)
-  | ExecCmdChainMsg (List (Msg msg model)) (Cmd msg) (Msg msg model)
+  | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
 
 
 {-| Edit model message constructor -}
@@ -711,7 +710,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           ctrl.updateModel toMsg input mod |>
           (\(nm, cmd) ->
             ( { same | inputs = updateInputsFromModel nm newInputs } --update inputs if updater has changed other fields
-            , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd
+            , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
             )
           )
 
@@ -915,22 +914,25 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         in
           ( same, result )
 
-      CmdChainMsg msgs cmd ->
-        ( same
-        , case msgs of
-            [] ->
-              cmd
+      CmdChainMsg msgs cmd mmsg ->
+        mmsg |>
+        Maybe.map
+          (\modmsg ->
+              update (toMsg << CmdChainMsg msgs cmd << Just) modmsg same |>
+              Tuple.mapSecond
+                (\updcmd ->
+                  if updcmd == Cmd.none then
+                    do toMsg <| CmdChainMsg msgs cmd Nothing
+                  else
+                    updcmd
+                )
+          ) |>
+        Maybe.withDefault
+          ( same
+          , case msgs of
+              [] ->
+                cmd
 
-            modelmsg :: rest ->
-              do (toMsg << ExecCmdChainMsg rest cmd) modelmsg
-        )
-
-      ExecCmdChainMsg msgs cmd modelmsg ->
-        update (toMsg << ExecCmdChainMsg msgs cmd) modelmsg same |>
-        Tuple.mapSecond
-          (\updcmd ->
-            if updcmd == Cmd.none then
-              do toMsg <| CmdChainMsg msgs cmd
-            else
-              updcmd
+              modmsg :: rest ->
+                do (toMsg << CmdChainMsg rest cmd << Just) modmsg
           )

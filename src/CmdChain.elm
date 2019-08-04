@@ -14,8 +14,7 @@ type alias Updater msg model = msg -> model -> (model, Cmd msg)
 
 
 type Msg msg
-  = ExecMsg (List (Cmd msg))
-  | DoNextMsg (List (Cmd msg)) msg
+  = ExecMsg (List (Cmd msg)) (Maybe msg)
 
 
 type alias Tomsg msg = Msg msg -> msg
@@ -23,26 +22,32 @@ type alias Tomsg msg = Msg msg -> msg
 
 exec: Tomsg msg -> List (Cmd msg) -> Cmd msg
 exec toMsg cmds =
-  do (toMsg << ExecMsg) <| cmds
+  do (toMsg << ExecMsg cmds) Nothing
 
 
 update: Updater msg model -> Tomsg msg -> Msg msg -> model -> (model, Cmd msg)
 update updater toMsg msg model =
   case msg of
-    ExecMsg cmds ->
-      case cmds of
-        [] ->
-          ( model, Cmd.none )
+    ExecMsg cmds mmsg ->
+      mmsg |>
+      Maybe.map
+        (\modmsg ->
+            updater modmsg model |>
+            Tuple.mapSecond
+              (\cmd ->
+                if cmd == Cmd.none then
+                  do (toMsg << ExecMsg cmds) Nothing
+                else
+                  Cmd.map (toMsg << ExecMsg cmds << Just) cmd
+              )
 
-        cmd :: rest ->
-          ( model, Cmd.map (toMsg << DoNextMsg rest) cmd)
+        ) |>
+      Maybe.withDefault
+        ( model
+        , case cmds of
+            [] ->
+              Cmd.none
 
-    DoNextMsg cmds nmsg ->
-      updater nmsg model |>
-      Tuple.mapSecond
-        (\cmd ->
-          if cmd == Cmd.none then
-            do (toMsg << ExecMsg) cmds
-          else
-            Cmd.map (toMsg << DoNextMsg cmds) cmd
+            cmd :: rest ->
+              Cmd.map (toMsg << ExecMsg rest << Just) cmd
         )
