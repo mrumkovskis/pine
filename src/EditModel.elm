@@ -4,7 +4,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, setMsg, create, createMsg, http, httpStraight, save, saveMsg, delete
+  , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
@@ -283,7 +283,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                           Maybe.withDefault initmod
                       in
                         ( model
-                        , http
+                        , httpWithSetter
                             toMsg
                             ( dataBaseUri ++ "/create/" ++ field.typeName ++
                               Utils.httpQuery [(field.name, cinp.value)]
@@ -495,14 +495,14 @@ both new and existing model.
 If Result is Ok and setter function returns Nothing, model remains unchanged, if Result is Err
 and setter function returns Nothing, http error message is propagated to Ask module.
 -}
-http: Tomsg msg model -> String -> JD.Decoder model -> (Result Http.Error model -> Maybe (model -> model)) -> Cmd msg
-http toMsg url decoder setter =
+httpWithSetter: Tomsg msg model -> String -> JD.Decoder model -> (Result Http.Error model -> Maybe (model -> model)) -> Cmd msg
+httpWithSetter toMsg url decoder setter =
   Http.get { url = url, expect = Http.expectJson (toMsg << HttpModelMsg setter) decoder }
 
 
-httpStraight: Tomsg msg model -> String -> JD.Decoder model -> Cmd msg
-httpStraight toMsg url decoder =
-  http toMsg url decoder (Result.toMaybe >> Maybe.map always)
+http: Tomsg msg model -> String -> JD.Decoder model -> Cmd msg
+http toMsg url decoder =
+  httpWithSetter toMsg url decoder (Result.toMaybe >> Maybe.map always)
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
