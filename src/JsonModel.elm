@@ -1516,7 +1516,7 @@ update toMsg msg (Model modelData modelConf as same) =
                 yescmd =
                   do (toMsg << yes) <|
                     ( maybeTimeout |>
-                      Maybe.map (\t -> (defhn, t)) |>
+                      Maybe.map (Tuple.pair defhn) |>
                       Utils.orElse (Just defheader)
                     )
 
@@ -1548,7 +1548,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
     maybeUnqueueCmd (Model _ mc) =
       mc.queuedCmd |>
-      Maybe.map (\qmsg -> do toMsg qmsg) |>
+      Maybe.map (do toMsg) |>
       Maybe.withDefault Cmd.none
 
     errorResponse pr err =
