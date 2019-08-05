@@ -29,6 +29,14 @@ import Task
 import Debug exposing (log, toString)
 
 
+type HttpError body
+  = BadUrl String
+  | Timeout
+  | NetworkError
+  | BadStatus Http.Metadata body
+  | BadBody Http.Metadata body String
+
+
 {-| Zip together to lists. If lists are various size resulting list size
 equals to shortest one. This is reverse operation to `List.unzip` function from
 core package.
@@ -341,3 +349,24 @@ do toMsg =
 domsg: msg -> Cmd msg
 domsg =
   do identity
+
+
+httpResult: JD.Decoder a -> Http.Response String -> Result (HttpError String) a
+httpResult decoder response =
+  case response of
+    Http.BadUrl_ url ->
+      Err <| BadUrl url
+
+    Http.Timeout_ ->
+      Err <| Timeout
+
+    Http.NetworkError_ ->
+      Err <| NetworkError
+
+    Http.BadStatus_ metadata str ->
+      Err <| BadStatus metadata str
+
+    Http.GoodStatus_ metadata str ->
+      JD.decodeString decoder str |>
+      Result.mapError
+        (BadBody metadata str << Debug.toString)
