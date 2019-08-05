@@ -1,12 +1,13 @@
 module Utils exposing
-  ( zip, at, find, findIdx, set, groupBy, transpose
+  ( HttpError (..)
+  , zip, at, find, findIdx, set, groupBy, transpose
   , orElse
   , httpQuery, decodeHttpQuery, decodeUrlPath
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
   , flip, curry, uncurry, httpErrorToString, eqElCount
   , searchParams, toList, styles
   , do, domsg
-  , expectJson
+  , expectJson, expectString, badHttpBody
   )
 
 
@@ -30,12 +31,12 @@ import Task
 import Debug exposing (log, toString)
 
 
-type HttpError body
+type HttpError
   = BadUrl String
   | Timeout
   | NetworkError
-  | BadStatus Http.Metadata body
-  | BadBody Http.Metadata body String
+  | BadStatus Http.Metadata String
+  | BadBody Http.Metadata String String
 
 
 {-| Zip together to lists. If lists are various size resulting list size
@@ -297,18 +298,18 @@ uncurry f (a,b) =
 
 {-| Converts Http Error to string and logs full error using `Debug` module
 -}
-httpErrorToString: Http.Error -> String
+httpErrorToString: HttpError -> String
 httpErrorToString err =
   case log "Http error occurred" err of
-    Http.BadUrl msg -> msg
+    BadUrl msg -> msg
 
-    Http.Timeout -> "Timeout occurred"
+    Timeout -> "Timeout occurred"
 
-    Http.NetworkError -> "Network error occurred"
+    NetworkError -> "Network error occurred"
 
-    Http.BadStatus status -> String.fromInt status
+    BadStatus _ body -> body
 
-    Http.BadBody resp -> resp
+    BadBody _ body msg -> msg
 
 
 eqElCount: List a -> List a -> Int
@@ -352,26 +353,41 @@ domsg =
   do identity
 
 
-expectJson: (Result (HttpError String) a -> msg) -> JD.Decoder a -> Http.Expect msg
+expectJson: (Result HttpError a -> msg) -> JD.Decoder a -> Http.Expect msg
 expectJson toMsg decoder =
   let
-    httpResult response =
-      case response of
-        Http.BadUrl_ url ->
-          Err <| BadUrl url
-
-        Http.Timeout_ ->
-          Err <| Timeout
-
-        Http.NetworkError_ ->
-          Err <| NetworkError
-
-        Http.BadStatus_ metadata str ->
-          Err <| BadStatus metadata str
-
-        Http.GoodStatus_ metadata str ->
-          JD.decodeString decoder str |>
-          Result.mapError
-            (BadBody metadata str << Debug.toString)
+    httpdec metadata resp =
+      JD.decodeString decoder resp |>
+      Result.mapError
+        (BadBody metadata resp << JD.errorToString)
   in
-    Http.expectStringResponse toMsg httpResult
+    Http.expectStringResponse toMsg <| httpResult httpdec
+
+
+expectString: (Result HttpError String -> msg) -> Http.Expect msg
+expectString toMsg =
+  Http.expectStringResponse toMsg <| httpResult (\_ resp -> Ok resp)
+
+
+badHttpBody: String -> HttpError
+badHttpBody msg =
+  BadBody { url = "", statusCode = 0, statusText = "", headers = Dict.empty } "" msg
+
+
+httpResult: (Http.Metadata -> String -> Result HttpError a) -> Http.Response String -> Result HttpError a
+httpResult decoder response =
+  case response of
+    Http.BadUrl_ url ->
+      Err <| BadUrl url
+
+    Http.Timeout_ ->
+      Err <| Timeout
+
+    Http.NetworkError_ ->
+      Err <| NetworkError
+
+    Http.BadStatus_ metadata str ->
+      Err <| BadStatus metadata str
+
+    Http.GoodStatus_ metadata str ->
+      decoder metadata str

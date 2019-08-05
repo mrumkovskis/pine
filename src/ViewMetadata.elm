@@ -56,10 +56,10 @@ type alias Field =
 
 
 {-| metadata message with view and children name set -}
-type Msg = ViewMetadataMsg (Result Http.Error View) (Set String)
+type Msg = ViewMetadataMsg (Result HttpError View) (Set String)
 
 
-type MsgInternal = ViewSingleMetadataMsg (Result Http.Error View)
+type MsgInternal = ViewSingleMetadataMsg (Result HttpError View)
 
 
 {-| Fetch view metadata.
@@ -138,7 +138,7 @@ fetchMetadata uri =
             (maybeStringFieldDecoder "refViewName")
         )
   in
-    (Http.get { url = uri, expect = Http.expectJson ViewSingleMetadataMsg viewDecoder }) |>
+    (Http.get { url = uri, expect = expectJson ViewSingleMetadataMsg viewDecoder }) |>
     Cmd.map
       (\(ViewSingleMetadataMsg res) ->
         ViewMetadataMsg

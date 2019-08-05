@@ -243,9 +243,9 @@ type Path
 {-| Message for model update. -}
 type Msg msg value
   = MetadataMsg (Maybe (Cmd msg)) VM.Msg
-  | DataMsg TypeName Bool SearchParams (Result Http.Error value)
-  | CountMsg TypeName SearchParams (Result Http.Error Int)
-  | DeleteMsg TypeName SearchParams (Result Http.Error String)
+  | DataMsg TypeName Bool SearchParams (Result HttpError value)
+  | CountMsg TypeName SearchParams (Result HttpError Int)
+  | DeleteMsg TypeName SearchParams (Result HttpError String)
   | EditMsg Path JsonValue
   | MetadataMsgCmd (Maybe (Cmd msg))
   | UpdateCmdMsg Bool value
@@ -257,7 +257,7 @@ type Msg msg value
   | DeleteCmdMsg Bool SearchParams
   | DoneMsg Progress
   | DeferredSubscriptionMsg (DR.Tomsg msg -> Cmd msg) (DR.Tomsg msg)
-  | DeferredResponseMsg Progress Http.Error Bool
+  | DeferredResponseMsg Progress HttpError Bool
 
 
 {-| Json model message constructor -}
@@ -1309,7 +1309,7 @@ httpCountFetcher toMsg searchParams deferredHeader ((Model _ modelConf) as model
 
 
 {- Private method used in `httpDataFetcher`, `httpCountFetcher` -}
-dataHttpRequest: String -> Maybe DeferredHeader -> (Result Http.Error value -> msg) -> JD.Decoder value ->
+dataHttpRequest: String -> Maybe DeferredHeader -> (Result HttpError value -> msg) -> JD.Decoder value ->
   { method : String
   , headers : List Http.Header
   , url : String
@@ -1326,7 +1326,7 @@ dataHttpRequest uri maybeHeader toMsg decoder =
       Maybe.withDefault []
   , url = uri
   , body = Http.emptyBody
-  , expect = Http.expectJson toMsg decoder
+  , expect = expectJson toMsg decoder
   , timeout = Nothing
   , tracker = Nothing
   }
@@ -1486,7 +1486,7 @@ update toMsg msg (Model modelData modelConf as same) =
       , headers = []
       , url = uri
       , body = Http.jsonBody value
-      , expect = Http.expectJson toRespMsg decoder
+      , expect = expectJson toRespMsg decoder
       , timeout = Nothing
       , tracker = Nothing
       }
@@ -1496,20 +1496,13 @@ update toMsg msg (Model modelData modelConf as same) =
       , headers = []
       , url = uri
       , body = Http.emptyBody
-      , expect = Http.expectString toRespMsg
+      , expect = expectString toRespMsg
       , timeout = Nothing
       , tracker = Nothing
       }
 
-    mapJsonHttpResult decoder jsonResult = -- used for deferred result decoding
-      jsonResult |>
-      Result.andThen
-        (\jdata ->
-          (Result.mapError
-            Http.BadBody
-            (Result.mapError JD.errorToString (JD.decodeValue decoder jdata))
-          )
-        )
+    mapJsonHttpResult decoder = -- used for deferred result decoding
+      Result.andThen (JD.decodeValue decoder >> Result.mapError (JD.errorToString >> badHttpBody))
 
     maybeSubscribeOrAskDeferred integrity subscription yes err progressDone =
       let
@@ -1784,7 +1777,7 @@ update toMsg msg (Model modelData modelConf as same) =
               always <|
                 Http.get
                   { url = modelConf.createUri searchParams same
-                  , expect = Http.expectJson (toMsg << DataMsg modelConf.typeName False searchParams) decoder
+                  , expect = expectJson (toMsg << DataMsg modelConf.typeName False searchParams) decoder
                   }
 
             noInitCmd =

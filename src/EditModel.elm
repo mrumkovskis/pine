@@ -172,7 +172,7 @@ type Msg msg model
   | EditModelMsg (model -> model)
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
-  | HttpModelMsg (Result Http.Error model -> Maybe (model -> model)) (Result Http.Error model)
+  | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
   | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
 
 
@@ -495,9 +495,9 @@ both new and existing model.
 If Result is Ok and setter function returns Nothing, model remains unchanged, if Result is Err
 and setter function returns Nothing, http error message is propagated to Ask module.
 -}
-httpWithSetter: Tomsg msg model -> String -> JD.Decoder model -> (Result Http.Error model -> Maybe (model -> model)) -> Cmd msg
+httpWithSetter: Tomsg msg model -> String -> JD.Decoder model -> (Result HttpError model -> Maybe (model -> model)) -> Cmd msg
 httpWithSetter toMsg url decoder setter =
-  Http.get { url = url, expect = Http.expectJson (toMsg << HttpModelMsg setter) decoder }
+  Http.get { url = url, expect = expectJson (toMsg << HttpModelMsg setter) decoder }
 
 
 http: Tomsg msg model -> String -> JD.Decoder model -> Cmd msg

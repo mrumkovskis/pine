@@ -104,12 +104,12 @@ askToScrollEventsmsg toMsg subscription =
 
 
 {-| Sends http `Error` or `Unauthorized` on http message -}
-errorOrUnauthorized: Tomsg msg -> Http.Error -> Cmd msg
+errorOrUnauthorized: Tomsg msg -> HttpError -> Cmd msg
 errorOrUnauthorized toMsg err =
   case err of
-    Http.BadStatus status ->
-      if status == 401 then
-        unauthorized toMsg "Unauthorized"
+    BadStatus { statusCode, statusText } _ ->
+      if statusCode == 401 then
+        unauthorized toMsg (if String.isEmpty statusText then "Unauthorized" else statusText)
       else
         error toMsg <| Utils.httpErrorToString err
 

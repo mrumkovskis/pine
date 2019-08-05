@@ -22,7 +22,7 @@ module DeferredRequests exposing
 -}
 
 
-import Utils exposing (uncurry, domsg, do)
+import Utils exposing (..)
 
 import Json.Decode as JD
 import Dict exposing (Dict)
@@ -58,7 +58,7 @@ type alias Tomsg msg = Msg msg -> msg
 
 {-| Subscription to deferred result.
 -}
-type alias Subscription msg = (Result Http.Error JD.Value) -> msg
+type alias Subscription msg = (Result HttpError JD.Value) -> msg
 
 
 type alias DeferredQuestion msg = String -> DeferredHeader -> msg
@@ -139,14 +139,14 @@ subscribeOrAskCmd toMsg subscription deferredResponse toAskmsg toResmsg =
     MaybeSubscribeOrAskMsg deferredResponse subscription toAskmsg toResmsg
 
 
-onHttpErrorCmd: Tomsg msg -> Subscription msg -> Http.Error -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
+onHttpErrorCmd: Tomsg msg -> Subscription msg -> HttpError -> DeferredQuestion msg -> (Bool -> msg) -> Cmd msg
 onHttpErrorCmd toMsg subscription error toAskmsg toResmsg =
   case error of
-    Http.BadBody response ->
+    BadBody _ response _ ->
       subscribeOrAskCmd toMsg subscription response toAskmsg toResmsg
 
-    Http.BadStatus status ->
-      askCmd toMsg (String.fromInt status) toAskmsg toResmsg
+    BadStatus _ response ->
+      askCmd toMsg response toAskmsg toResmsg
 
     err ->
       do toResmsg <| False
@@ -192,7 +192,7 @@ update toMsg msg (Model reqs subs conf as model) =
     cmd id toSubMsg =
       Http.get
         { url = (conf.deferredResultBaseUri ++ "/" ++ id)
-        , expect = Http.expectJson toSubMsg JD.value
+        , expect = expectJson toSubMsg JD.value
         }
 
     processNotification id req =
