@@ -6,6 +6,7 @@ module Utils exposing
   , flip, curry, uncurry, httpErrorToString, eqElCount
   , searchParams, toList, styles
   , do, domsg
+  , expectJson
   )
 
 
@@ -351,22 +352,26 @@ domsg =
   do identity
 
 
-httpResult: JD.Decoder a -> Http.Response String -> Result (HttpError String) a
-httpResult decoder response =
-  case response of
-    Http.BadUrl_ url ->
-      Err <| BadUrl url
+expectJson: (Result (HttpError String) a -> msg) -> JD.Decoder a -> Http.Expect msg
+expectJson toMsg decoder =
+  let
+    httpResult response =
+      case response of
+        Http.BadUrl_ url ->
+          Err <| BadUrl url
 
-    Http.Timeout_ ->
-      Err <| Timeout
+        Http.Timeout_ ->
+          Err <| Timeout
 
-    Http.NetworkError_ ->
-      Err <| NetworkError
+        Http.NetworkError_ ->
+          Err <| NetworkError
 
-    Http.BadStatus_ metadata str ->
-      Err <| BadStatus metadata str
+        Http.BadStatus_ metadata str ->
+          Err <| BadStatus metadata str
 
-    Http.GoodStatus_ metadata str ->
-      JD.decodeString decoder str |>
-      Result.mapError
-        (BadBody metadata str << Debug.toString)
+        Http.GoodStatus_ metadata str ->
+          JD.decodeString decoder str |>
+          Result.mapError
+            (BadBody metadata str << Debug.toString)
+  in
+    Http.expectStringResponse toMsg httpResult
