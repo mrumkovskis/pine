@@ -1,8 +1,8 @@
 module FormModel exposing
   ( Model, Msg, Tomsg
   , init, toModelMsg
-  , createMsg, saveMsg, editMsg, cancelMsg, deleteMsg
-  , create, save, edit, cancel, delete
+  , createMsg, saveMsg, editMsg, cancelMsg, deleteMsg, setMsg
+  , create, save, edit, cancel, delete, set
   , update
   )
 
@@ -101,6 +101,7 @@ setMsg toMsg =
 set: Tomsg msg -> JM.JsonValue -> Cmd msg
 set toMsg =
   domsg << setMsg toMsg
+
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
 update toMsg msg ({ form, toMessagemsg } as model) =
