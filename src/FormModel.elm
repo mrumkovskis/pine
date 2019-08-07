@@ -134,7 +134,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
               (\f m ->
                 domsg <| m <| JM.data f.model
               )
-              model.form
+              newmod.form
               maybeSuccessmsg |>
             Maybe.withDefault Cmd.none
           )
