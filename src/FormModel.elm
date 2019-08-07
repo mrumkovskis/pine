@@ -27,14 +27,15 @@ type Msg msg
   | CancelEditMsg Bool
   | SaveMsg (Maybe (JM.JsonValue -> msg)) (EM.JsonEditMsg msg)
   | DeleteMsg (Maybe (JM.JsonValue -> msg)) Int
+  | SetMsg JM.JsonValue
 
 
 type alias Tomsg msg = Msg msg -> msg
 
 
 init: (() -> EM.JsonEditModel msg) -> Ask.Tomsg msg -> Model msg
-init initializer toMessagemsg =
-  Model initializer Nothing toMessagemsg
+init initializer =
+  Model initializer Nothing
 
 
 toModelMsg: Tomsg msg -> (EM.JsonEditMsg msg -> msg)
@@ -43,13 +44,13 @@ toModelMsg toMsg =
 
 
 createMsg: Tomsg msg -> JM.SearchParams -> (JM.JsonValue -> JM.JsonValue) -> msg
-createMsg toMsg searchParams createFun =
-  EM.createMsg (toModelMsg toMsg) searchParams createFun
+createMsg toMsg searchParams =
+  EM.createMsg (toModelMsg toMsg) searchParams
 
 
 create: Tomsg msg -> JM.SearchParams -> (JM.JsonValue -> JM.JsonValue) -> Cmd msg
-create toMsg searchParams createFun =
-  domsg <| createMsg toMsg searchParams createFun
+create toMsg searchParams =
+  domsg << createMsg toMsg searchParams
 
 
 saveMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
@@ -58,39 +59,48 @@ saveMsg toMsg maybeSuccessmsg =
 
 
 save: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
-save toMsg maybeSuccessmsg =
-  domsg <| saveMsg toMsg maybeSuccessmsg
+save toMsg =
+  domsg << saveMsg toMsg
 
 
 editMsg: Tomsg msg -> JM.JsonValue -> msg
-editMsg toMsg data =
-  toMsg <| EditMsg data
+editMsg toMsg =
+  toMsg << EditMsg
 
 
 edit: Tomsg msg -> JM.JsonValue -> Cmd msg
-edit toMsg data =
-  domsg <| editMsg toMsg data
+edit toMsg =
+  domsg << editMsg toMsg
 
 
 cancelMsg: Tomsg msg -> Bool -> msg
-cancelMsg toMsg ask =
-  toMsg <| CancelEditMsg ask
+cancelMsg toMsg =
+  toMsg << CancelEditMsg
 
 
 cancel: Tomsg msg -> Bool -> Cmd msg
-cancel toMsg ask =
-  domsg <| cancelMsg toMsg ask
+cancel toMsg =
+  domsg << cancelMsg toMsg
 
 
 deleteMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> msg
-deleteMsg toMsg maybeSuccessmsg id =
-  toMsg <| DeleteMsg maybeSuccessmsg id
+deleteMsg toMsg maybeSuccessmsg =
+  toMsg << DeleteMsg maybeSuccessmsg
 
 
 delete: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> Cmd msg
-delete toMsg maybeSuccessmsg id =
-    domsg <| deleteMsg toMsg maybeSuccessmsg id
+delete toMsg maybeSuccessmsg =
+  domsg << deleteMsg toMsg maybeSuccessmsg
 
+
+setMsg: Tomsg msg -> JM.JsonValue -> msg
+setMsg toMsg =
+  toMsg << SetMsg
+
+
+set: Tomsg msg -> JM.JsonValue -> Cmd msg
+set toMsg =
+  domsg << setMsg toMsg
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
 update toMsg msg ({ form, toMessagemsg } as model) =
@@ -149,3 +159,6 @@ update toMsg msg ({ form, toMessagemsg } as model) =
           "Vai dzēst ierakstu?"
           (EM.delete (toMsg << SaveMsg maybeSuccessmsg) id)
           Nothing
+
+    SetMsg data ->
+      ( model, EM.set (toMsg << CreateMsg) <| always data )
