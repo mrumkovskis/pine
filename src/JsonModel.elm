@@ -1077,7 +1077,12 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
             (\f res ->
               Dict.get f.name values |>
               Maybe.withDefault
-                (if f.isComplexType && f.isCollection then JsList [] else JsNull) |>
+                ( if f.isComplexType && f.isCollection then
+                    JsList []
+                  else if f.isComplexType then
+                    JsObject Dict.empty
+                  else JsNull
+                ) |>
               (\v ->
                 let
                   fpath = Name f.name path
