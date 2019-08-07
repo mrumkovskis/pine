@@ -25,8 +25,8 @@ type Msg msg
   = CreateMsg (EM.JsonEditMsg msg)
   | EditMsg JM.JsonValue
   | CancelEditMsg Bool
-  | SaveMsg (Maybe msg) (EM.JsonEditMsg msg)
-  | DeleteMsg (Maybe msg) Int
+  | SaveMsg (Maybe (JM.JsonValue -> msg)) (EM.JsonEditMsg msg)
+  | DeleteMsg (Maybe (JM.JsonValue -> msg)) Int
 
 
 type alias Tomsg msg = Msg msg -> msg
@@ -52,12 +52,12 @@ create toMsg searchParams createFun =
   domsg <| createMsg toMsg searchParams createFun
 
 
-saveMsg: Tomsg msg -> Maybe msg -> msg
+saveMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
 saveMsg toMsg maybeSuccessmsg =
   EM.saveMsg (toMsg << SaveMsg maybeSuccessmsg)
 
 
-save: Tomsg msg -> Maybe msg -> Cmd msg
+save: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
 save toMsg maybeSuccessmsg =
   domsg <| saveMsg toMsg maybeSuccessmsg
 
@@ -82,12 +82,12 @@ cancel toMsg ask =
   domsg <| cancelMsg toMsg ask
 
 
-deleteMsg: Tomsg msg -> Maybe msg -> Int -> msg
+deleteMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> msg
 deleteMsg toMsg maybeSuccessmsg id =
   toMsg <| DeleteMsg maybeSuccessmsg id
 
 
-delete: Tomsg msg -> Maybe msg -> Int -> Cmd msg
+delete: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> Cmd msg
 delete toMsg maybeSuccessmsg id =
     domsg <| deleteMsg toMsg maybeSuccessmsg id
 
@@ -130,9 +130,12 @@ update toMsg msg ({ form, toMessagemsg } as model) =
       (\(newmod, cmd) ->
         if cmd == Cmd.none then
           ( { model | form = Nothing }
-          , maybeSuccessmsg |>
-            Maybe.map Task.succeed |>
-            Maybe.map (Task.perform identity) |>
+          , Maybe.map2
+              (\f m ->
+                domsg <| m <| JM.data f.model
+              )
+              model.form
+              maybeSuccessmsg |>
             Maybe.withDefault Cmd.none
           )
         else ( newmod, cmd )
