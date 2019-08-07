@@ -1076,32 +1076,32 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
           List.foldl
             (\f res ->
               Dict.get f.name values |>
-              Maybe.map
-                (\v ->
-                  let
-                    fpath = Name f.name path
-                  in
-                    if f.isComplexType then
-                      Dict.get f.typeName metadata |>
-                      Maybe.map (\vmd -> flatten vmd fpath v res) |>
-                      Maybe.map (\r -> (fpath, f, v) :: r) |>
-                      Maybe.withDefault res
-                    else
-                      if f.isCollection then
-                        case v of
-                          JsList rows ->
-                            List.foldl
-                              (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
-                              (res, 0)
-                              rows |>
-                            Tuple.first |>
-                            (::) (fpath, f, v)
+              Maybe.withDefault
+                (if f.isComplexType && f.isCollection then JsList [] else JsNull) |>
+              (\v ->
+                let
+                  fpath = Name f.name path
+                in
+                  if f.isComplexType then
+                    Dict.get f.typeName metadata |>
+                    Maybe.map (\vmd -> flatten vmd fpath v res) |>
+                    Maybe.map (\r -> (fpath, f, v) :: r) |>
+                    Maybe.withDefault res
+                  else
+                    if f.isCollection then
+                      case v of
+                        JsList rows ->
+                          List.foldl
+                            (\fv (nres, i) -> ((Idx i fpath, f, fv) :: nres, i + 1))
+                            (res, 0)
+                            rows |>
+                          Tuple.first |>
+                          (::) (fpath, f, v)
 
-                          _ -> res --unexpected match, structure not according to metadata
-                      else
-                        (fpath, f, v) :: res
-                ) |>
-              Maybe.withDefault ((Name f.name path, f, JsNull) :: res) -- set value to JsNull if field no present
+                        _ -> res --unexpected match, structure not according to metadata
+                    else
+                      (fpath, f, v) :: res
+              )
             )
             result
 
