@@ -17,7 +17,7 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
-  , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, pathMatch
+  , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, pathMatch, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -1910,11 +1910,29 @@ jsonEditor path value model =
     transform path model
 
 
+stringToPath: String -> Maybe Path
+stringToPath path =
+  let
+    strToJson =
+      String.words >>
+      List.map
+        (\s ->
+          String.toInt s |>
+          Maybe.map (String.fromInt) |>
+          Maybe.withDefault (String.concat ["\"", s, "\""])
+        ) >>
+      String.join "," >>
+      (\s -> String.concat ["[", s, "]"])
+  in
+    String.trim path |>
+    (\p -> if String.startsWith "[" p then p else strToJson p) |>
+    JD.decodeString pathDecoder |>
+    Result.toMaybe
+
+
 jsonEdit: String -> JsonValue -> JsonValue -> JsonValue
 jsonEdit path value model =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.map (\p -> jsonEditor p value model) |>
   Maybe.withDefault model
 
@@ -1952,9 +1970,7 @@ jsonReader path value =
 
 jsonString: String -> JsonValue -> Maybe String
 jsonString path source =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.andThen (\p -> jsonReader p source) |>
   Maybe.andThen
     (\v -> case v of
@@ -1973,9 +1989,7 @@ jsonString path source =
 
 jsonInt: String -> JsonValue -> Maybe Int
 jsonInt path source =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.andThen (\p -> jsonReader p source) |>
   Maybe.andThen
     (\v -> case v of
@@ -1988,9 +2002,7 @@ jsonInt path source =
 
 jsonFloat: String -> JsonValue -> Maybe Float
 jsonFloat path source =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.andThen (\p -> jsonReader p source) |>
   Maybe.andThen
     (\v -> case v of
@@ -2003,9 +2015,7 @@ jsonFloat path source =
 
 jsonBool: String -> JsonValue -> Maybe Bool
 jsonBool path source =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.andThen (\p -> jsonReader p source) |>
   Maybe.andThen
     (\v -> case v of
@@ -2018,9 +2028,7 @@ jsonBool path source =
 
 jsonList: String -> JsonValue -> Maybe (List JsonValue)
 jsonList path source =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.andThen (\p -> jsonReader p source) |>
   Maybe.andThen
     (\v -> case v of
@@ -2033,9 +2041,7 @@ jsonList path source =
 
 jsonObject: String -> JsonValue -> Maybe (Dict String JsonValue)
 jsonObject path source =
-  (if String.startsWith "[" path then path else String.concat ["\"", path, "\""]) |>
-  JD.decodeString pathDecoder |>
-  Result.toMaybe |>
+  stringToPath path |>
   Maybe.andThen (\p -> jsonReader p source) |>
   Maybe.andThen
     (\v -> case v of
