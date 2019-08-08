@@ -1,8 +1,8 @@
 module FormModel exposing
   ( Model, Msg, Tomsg
   , init, toModelMsg
-  , createMsg, saveMsg, editMsg, cancelMsg, deleteMsg, setMsg
-  , create, save, edit, cancel, delete, set
+  , createMsg, saveMsg, fetchMsg, editMsg, cancelMsg, deleteMsg, setMsg
+  , create, save, fetch, edit, cancel, delete, set
   , update
   )
 
@@ -13,6 +13,7 @@ import Ask
 import Utils exposing (..)
 
 import Task
+import Dict
 
 type alias Model msg =
   { init: () -> EM.JsonEditModel msg
@@ -61,6 +62,16 @@ saveMsg toMsg maybeSuccessmsg =
 save: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
 save toMsg =
   domsg << saveMsg toMsg
+
+
+fetchMsg: Tomsg msg -> Int -> msg
+fetchMsg toMsg id =
+  editMsg toMsg <| JM.jsonEdit "id" (JM.JsNumber <| toFloat id) JM.jsonEmptyObj
+
+
+fetch: Tomsg msg -> Int -> Cmd msg
+fetch toMsg =
+  domsg << fetchMsg toMsg
 
 
 editMsg: Tomsg msg -> JM.JsonValue -> msg

@@ -17,7 +17,7 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
-  , traverseJson, jsonValues, stringValues, jsonQueryObj, pathMatch
+  , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, pathMatch
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2116,3 +2116,13 @@ jsonQueryObj pattern source =
       (\(k, v) -> lastPathEl k |> Maybe.map (\e -> [(e, v)]) |> Maybe.withDefault []) |>
     Dict.fromList |>
     JsObject
+
+
+jsonEmptyObj: JsonValue
+jsonEmptyObj =
+  JsObject Dict.empty
+
+
+jsonEmptyList: JsonValue
+jsonEmptyList =
+  JsList []
