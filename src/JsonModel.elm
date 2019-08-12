@@ -17,7 +17,8 @@ module JsonModel exposing
   -- utility functions
   , jsonDataDecoder, jsonDecoder, jsonEncoder
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
-  , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, pathMatch, stringToPath
+  , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
+  , pathMatch, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2132,3 +2133,23 @@ jsonEmptyObj =
 jsonEmptyList: JsonValue
 jsonEmptyList =
   JsList []
+
+
+isEmptyObj: JsonValue -> Bool
+isEmptyObj json =
+  case json of
+    JsObject obj ->
+      Dict.isEmpty obj
+
+    _ ->
+      True
+
+
+isEmptyList: JsonValue -> Bool
+isEmptyList json =
+  case json of
+    JsList list ->
+      List.isEmpty list
+
+    _ ->
+      True
