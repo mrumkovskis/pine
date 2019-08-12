@@ -1,7 +1,7 @@
 module Utils exposing
   ( HttpError (..)
   , zip, at, find, findIdx, set, groupBy, transpose
-  , orElse
+  , orElse, filter
   , httpQuery, decodeHttpQuery, decodeUrlPath
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
   , flip, curry, uncurry, httpErrorToString, eqElCount
@@ -130,8 +130,14 @@ transpose listOfLists =
 
 {-| Returns first `Just` value `Maybe`
 -}
-orElse: Maybe.Maybe a -> Maybe.Maybe a -> Maybe.Maybe a
+orElse: Maybe a -> Maybe a -> Maybe a
 orElse mb2 mb1 = if mb1 == Nothing then mb2 else mb1
+
+
+filter: (a -> Bool) -> Maybe a -> Maybe a
+filter cond mb =
+  mb |>
+  Maybe.andThen (\a -> if cond a then Just a else Nothing)
 
 
 {-| Forms http query string from key value list.
