@@ -1910,7 +1910,14 @@ jsonEditor path value model =
   in
     transform path model
 
-
+{-| Transforms string into `Path` for json reading and editing.
+    Syntax:
+      1. Primitive paths (1 element) like `name` or `1`
+      2. Complex paths
+          a) json syntax (can be cumbersome because of quotes) - `["name", 1]`
+          b) space separated syntax - `name 1` or `name $`
+      3. End index marker - `$`.
+-}
 stringToPath: String -> Maybe Path
 stringToPath path =
   let
