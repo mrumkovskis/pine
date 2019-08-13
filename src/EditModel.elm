@@ -146,6 +146,7 @@ type alias EditModel msg model =
   , isDeleting: Bool
   --, isValidating: Bool
   , isEditable: Bool
+  , isDirty: Bool
   }
 
 
@@ -209,6 +210,7 @@ init model ctrlList toMessagemsg =
       False
       False
       True
+      False
 
 
 initJsonForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
@@ -389,6 +391,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
       False
       False
       True
+      False
 
 
 jsonController: JsonController msg
@@ -709,7 +712,10 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         else
           ctrl.updateModel toMsg input mod |>
           (\(nm, cmd) ->
-            ( { same | inputs = updateInputsFromModel nm newInputs } --update inputs if updater has changed other fields
+            ( { same |
+                inputs = updateInputsFromModel nm newInputs
+              , isDirty = True
+              } --update inputs if updater has changed other fields
             , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
             )
           )
@@ -732,7 +738,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       Maybe.map (\input -> (Dict.insert ctrl.name input newInputs, Just input)) |>
       Maybe.withDefault (newInputs, Nothing)
 
-    applyInput toSelectmsg ctrl value = -- OnMsg
+    onInput toSelectmsg ctrl value = -- OnMsg
       updateInput ctrl value inputs |>
       Tuple.mapBoth
         (\newInputs -> { same | inputs = newInputs })
@@ -785,7 +791,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           ) |>
         Maybe.withDefault ( same, Cmd.none )
 
-    applySelect ctrl toSelmsg selMsg = -- SelectMsg
+    onSelect ctrl toSelmsg selMsg = -- SelectMsg
       let
         input = Dict.get ctrl.name inputs
       in
@@ -849,11 +855,13 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
       FetchModelMsg value ->
         JM.update (toMsg << FetchModelMsg) value model |>
-        updateModel True (\_ nm -> nm)
+        updateModel True (\_ nm -> nm) |>
+        Tuple.mapFirst (\nm -> { nm | isDirty = False })
 
       SaveModelMsg value ->
         JM.update (toMsg << SaveModelMsg) value model |>
-        updateModel True (\c nm -> { nm | isSaving = c /= Cmd.none })
+        updateModel True (\c nm -> { nm | isSaving = c /= Cmd.none }) |>
+        Tuple.mapFirst (\nm -> { nm | isDirty = False })
 
       CreateModelMsg createFun value ->
         JM.update (toMsg << CreateModelMsg createFun) value model |>
@@ -865,15 +873,16 @@ update toMsg msg ({ model, inputs, controllers } as same) =
 
       DeleteModelMsg value ->
         JM.update (toMsg << DeleteModelMsg) value model |>
-        updateModel True (\c nm -> { nm | isDeleting = c /= Cmd.none })
+        updateModel True (\c nm -> { nm | isDeleting = c /= Cmd.none }) |>
+        Tuple.mapFirst (\nm -> { nm | isDirty = False })
 
       -- Select messages
       SelectMsg (Controller ctrl) selMsg -> -- field select list messages
-        applySelect ctrl (toMsg << SelectMsg (Controller ctrl)) selMsg
+        onSelect ctrl (toMsg << SelectMsg (Controller ctrl)) selMsg
 
       -- user input messages
       OnMsg (Controller ctrl) value ->
-        applyInput (toMsg << SelectMsg (Controller ctrl)) ctrl value
+        onInput (toMsg << SelectMsg (Controller ctrl)) ctrl value
 
       OnFocusMsg (Controller ctrl) focus ->
         setEditing ctrl focus

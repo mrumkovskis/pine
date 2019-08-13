@@ -133,7 +133,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
       )
 
     CancelEditMsg ask ->
-      if ask && model.form /= Nothing then
+      if ask && (model.form |> Maybe.map .isDirty |> Maybe.withDefault False) then
         ( model
         , Ask.ask
             toMessagemsg
