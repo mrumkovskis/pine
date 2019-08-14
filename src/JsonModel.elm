@@ -954,7 +954,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
               ) |>
             Maybe.withDefault []
           ) |>
-        JE.object
+        (\d -> if List.isEmpty d then JE.null else JE.object d)
 
       _ -> JE.null -- unexpected element, encode as null
 
@@ -1005,7 +1005,10 @@ jsonEncoder value =
       JE.list jsonEncoder v
 
     JsObject v ->
-      JE.dict identity jsonEncoder v
+      if Dict.isEmpty v then
+        JE.null
+      else
+        JE.dict identity jsonEncoder v
 
 
 jsonValueToString: JsonValue -> String
