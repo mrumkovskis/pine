@@ -1165,7 +1165,8 @@ pathDecoder: JD.Decoder Path
 pathDecoder =
   let
     nameEndIdxDec =
-      JD.string |> JD.map (\s -> if s == "$" then EndIdx End else Name s End)
+      JD.string |>
+      JD.map (\s -> if s == "" then End else if s == "$" then EndIdx End else Name s End)
 
     idxDec = JD.int |> JD.map ((Utils.flip Idx) End)
 
@@ -1920,6 +1921,7 @@ jsonEditor path value model =
           a) json syntax (can be cumbersome because of quotes) - `["name", 1]`
           b) space separated syntax - `name 1` or `name $`
       3. End index marker - `$`.
+      4. if string is empty - "" it is decoded as `End`
 -}
 stringToPath: String -> Maybe Path
 stringToPath path =
