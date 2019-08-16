@@ -108,20 +108,20 @@ initAddress address =
 {-| Initialize [`Select`](Select)
 backed by [`addresses`](https://github.com/mrumkovskis/addresses) service.
 -}
-init: String -> Select.Tomsg msg String -> Ask.Tomsg msg -> String -> (String -> msg) -> (Select.SelectModel msg String, Cmd msg)
+init: String -> Select.Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> (Select.SelectModel msg JM.JsonValue, Cmd msg)
 init uri toSelectmsg toMessagemsg search toAddressmsg =
   ( Select.init
       (JM.initList
         "/metadata"
         uri
         "address"
-        (JD.field "address" JD.string)
+        (JD.field "address" JD.string |> JD.map JM.JsString)
         (always JE.null)
         toMessagemsg
       )
       "search"
       search
-      toAddressmsg
-      identity
+      (JM.jsonString "" >> Maybe.withDefault "<nav>" >> toAddressmsg)
+      (JM.jsonString "" >> Maybe.withDefault "<nav>")
   , Cmd.none
   )
