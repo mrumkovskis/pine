@@ -1342,7 +1342,7 @@ dataHttpRequest uri maybeHeader toMsg decoder =
 
 
 {-| Fetches mojoz view field definition enum values -}
-enumFetcher: String -> String -> (String -> String) -> DataFetcher msg (List String)
+enumFetcher: String -> String -> (String -> value) -> DataFetcher msg (List value)
 enumFetcher viewName fieldName mapper toMsg _ _ _ (Model _ modelConf) =
   let
     values =
