@@ -54,7 +54,7 @@ type alias Input msg =
   , editing: Bool
   , clearmsg: Maybe msg
   , error: Maybe String
-  , select: Maybe (SelectModel msg String)
+  , select: Maybe (SelectModel msg JM.JsonValue)
   , attrs: Attributes msg
   , idx: Int -- index of input in metadata fields list, used for JsonValue model
   , field: Maybe VM.Field
@@ -96,11 +96,11 @@ type alias JsonFormatter = Formatter JM.JsonValue -> JM.JsonValue -> String
 
 
 type alias SelectInitializer msg =
-  Select.Tomsg msg String -> -- toSelectmsg
+  Select.Tomsg msg JM.JsonValue -> -- toSelectmsg
   Ask.Tomsg msg -> -- toMessagemsg
   String -> -- search string
   (String -> msg) -> -- select msg
-  (SelectModel msg String, Cmd msg)
+  (SelectModel msg JM.JsonValue, Cmd msg)
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
@@ -164,7 +164,7 @@ type Msg msg model
   | CreateModelMsg (model -> model) (JM.FormMsg msg model)
   | DeleteModelMsg (JM.FormMsg msg model)
   -- select components messages
-  | SelectMsg (Controller msg model) (Select.Msg msg String)
+  | SelectMsg (Controller msg model) (Select.Msg msg JM.JsonValue)
   -- input fields event messages
   | OnMsg (Controller msg model) String
   | OnFocusMsg (Controller msg model) Bool
