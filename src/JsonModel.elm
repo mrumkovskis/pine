@@ -1082,9 +1082,9 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
               Dict.get f.name values |>
               Maybe.withDefault
                 ( if f.isComplexType && f.isCollection then
-                    JsList []
+                    jsonEmptyList
                   else if f.isComplexType then
-                    JsObject Dict.empty
+                    jsonEmptyObj
                   else JsNull
                 ) |>
               (\v ->
@@ -1093,7 +1093,10 @@ flattenJsonForm fieldGetter (Model _ { typeName, metadata } as m) =
                 in
                   if f.isComplexType then
                     Dict.get f.typeName metadata |>
-                    Maybe.map (\vmd -> flatten vmd fpath v res) |>
+                    Maybe.map
+                      (\vmd ->
+                        flatten vmd fpath (if v == JsNull then jsonEmptyObj else v) res
+                      ) |>
                     Maybe.map (\r -> (fpath, f, v) :: r) |>
                     Maybe.withDefault res
                   else
