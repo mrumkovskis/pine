@@ -14,7 +14,8 @@ import SelectEvents as SE
 import Utils exposing (..)
 
 import Html exposing (Attribute)
-import Html.Events exposing (onInput, onMouseDown)
+import Html.Events exposing (..)
+import Json.Decode as JD
 import Task
 
 import Debug exposing (log)
@@ -37,6 +38,7 @@ type alias SelectModel msg value =
 type Msg msg value
   = Navigate SE.Msg
   | Search String
+  | SetActive Int
   | SetActiveAndSelect Int
   | Select
   | ModelMsg (JM.ListMsg msg value)
@@ -76,7 +78,10 @@ onSelectInput toMsg = [ SE.onNavigation (toMsg << Navigate) ]
 {-| Mouse down listener on list item specified with idx parameter.
 -}
 onMouseSelect: Tomsg msg value -> Int -> List (Attribute msg)
-onMouseSelect toMsg idx = [ onMouseDown (toMsg <| SetActiveAndSelect idx) ]
+onMouseSelect toMsg idx =
+  [ preventDefaultOn "mousedown" <| JD.succeed (toMsg <| SetActive idx, True) -- prevent from loosing input focus, but mark active item
+  , onMouseUp <| toMsg <| SetActiveAndSelect idx
+  ]
 
 
 {-| Search command.
@@ -148,9 +153,17 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
             [(same.searchParamName, text)] ++ same.additionalParams
         )
 
-      SetActiveAndSelect idx ->
+      SetActive idx ->
         ( { same | activeIdx = Just idx }
-        , do toMsg <| Select
+        , Cmd.none
+        )
+
+      SetActiveAndSelect idx ->
+        ( same
+        , activeIdx |>
+          Utils.filter ((==) idx) |>
+          Maybe.map (\_ -> do toMsg <| Select) |>
+          Maybe.withDefault Cmd.none
         )
 
       Select ->
