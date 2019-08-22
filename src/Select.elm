@@ -73,16 +73,16 @@ updateSearch text model =
 
 {-| Key listeners. Listens to key up, down, esc, enter.
 -}
-onSelectInput: Tomsg msg value -> List (Attribute msg)
-onSelectInput toMsg = [ SE.onNavigation <| navigationMsg toMsg ]
+onSelectInput: (SE.Msg -> msg) -> List (Attribute msg)
+onSelectInput toMsg = [ SE.onNavigation toMsg ]
 
 
 {-| Mouse down listener on list item specified with idx parameter.
 -}
-onMouseSelect: Tomsg msg value -> Int -> List (Attribute msg)
-onMouseSelect toMsg idx =
-  [ preventDefaultOn "mousedown" <| JD.succeed (setActiveMsg toMsg idx, True) -- prevent from loosing input focus, but mark active item
-  , onMouseUp <| selectMsg toMsg idx
+onMouseSelect: (Int -> msg) -> (Int -> msg) -> Int -> List (Attribute msg)
+onMouseSelect setActive select idx =
+  [ preventDefaultOn "mousedown" <| JD.succeed (setActive idx, True) -- prevent from loosing input focus, but mark active item
+  , onMouseUp <| select idx
   ]
 
 

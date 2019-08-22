@@ -1,5 +1,5 @@
 module EditModel exposing
-  ( Input, Controller, Attributes, ModelUpdater, InputValidator, Formatter, SelectInitializer
+  ( Input, Controller, ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
@@ -53,10 +53,8 @@ type alias Input msg =
   { name: String
   , value: String
   , editing: Bool
-  , clearmsg: Maybe msg
   , error: Maybe String
   , select: Maybe (SelectModel msg JM.JsonValue)
-  , attrs: Attributes msg
   , msgs: Maybe (Msgs msg)
   , idx: Int -- index of input in metadata fields list, used for JsonValue model
   , field: Maybe VM.Field
@@ -126,27 +124,19 @@ type alias JsonController msg =
   }
 
 
-{-| Input together with proposed html input element attributes and with
-mouse selection attributes of select component.
--}
-type alias Attributes msg =
-  { mouseSelectAttrs: Int -> List (Attribute msg)
-  , attrs: List (Attribute msg)
-  }
-
-
 type alias Msgs msg =
   { onInput: String -> msg
   , onFocus: msg
   , onBlur: msg
-  , selectMsgs: Maybe (SelectMsgs msg)
+  , clearmsg: Maybe msg
+  , selectmsgs: Maybe (SelectMsgs msg)
   }
 
 
 type alias SelectMsgs msg =
-  { navigationMsg: SE.Msg -> msg
-  , setActiveMsg: Int -> msg
-  , selectMsg: Int -> msg
+  { navigationmsg: SE.Msg -> msg
+  , setActivemsg: Int -> msg
+  , selectmsg: Int -> msg
   }
 
 
@@ -208,14 +198,11 @@ init model ctrlList toMessagemsg =
       List.map (\(k, Controller c) -> (toString k, Controller { c | name = toString k })) |>
       Dict.fromList
 
-    emptyAttrs =
-      Attributes (always []) []
-
     inputs =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing Nothing emptyAttrs Nothing -1 Nothing
+          Input k "" False Nothing Nothing Nothing -1 Nothing
         )
   in
     EditModel
@@ -253,7 +240,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
             stringVal = JM.jsonValueToString value
 
             input =
-              Input key stringVal False Nothing Nothing Nothing (Attributes (always []) []) Nothing i <| Just field
+              Input key stringVal False Nothing Nothing Nothing i <| Just field
 
             ctrl =
               let
@@ -611,79 +598,73 @@ controller updateModel formatter selectInitializer validator inputCmd =
 {-| Gets input from model for rendering. Function furnishes input with attributes
     using `InputAttrs`
 -}
-inp: key -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> Maybe (Input msg)
-inp key toMsg staticAttrs { controllers, inputs } =
+inp: key -> Tomsg msg model -> EditModel msg model -> Maybe (Input msg)
+inp key toMsg { controllers, inputs } =
   let
     ks = toString key
   in
-    Maybe.map2 (inpInternal toMsg staticAttrs)
+    Maybe.map2 (inpInternal toMsg)
       (Dict.get ks controllers)
       (Dict.get ks inputs)
 
 
 {-| Gets inputs from model for rendering
 -}
-inps: List (key, List (Attribute msg)) -> Tomsg msg model -> EditModel msg model -> List (Input msg)
+inps: List key -> Tomsg msg model -> EditModel msg model -> List (Input msg)
 inps keys toMsg model =
   List.foldl
-    (\(k, ia) r -> inp k toMsg ia model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
+    (\k r -> inp k toMsg model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
     []
     keys |>
   List.reverse
 
 
-inpsByPattern: String -> Tomsg msg model -> List (Attribute msg) -> EditModel msg model -> List (Input msg)
-inpsByPattern pattern toMsg staticAttrs { controllers, inputs } =
+inpsByPattern: String -> Tomsg msg model -> EditModel msg model -> List (Input msg)
+inpsByPattern pattern toMsg { controllers, inputs } =
   Dict.filter (\k _ -> JM.pathMatch pattern k) inputs |>
   Dict.values |>
   List.sortBy .idx |>
   List.concatMap
     (\i ->
       Dict.get i.name controllers |>
-      Maybe.map (\c -> inpInternal toMsg staticAttrs c i) |>
+      Maybe.map (\c -> inpInternal toMsg c i) |>
       Maybe.map List.singleton |>
       Maybe.withDefault []
     )
 
 
-inpsTableByPattern: Tomsg msg model -> List (String, List (Attribute msg)) -> EditModel msg model -> List (List (Input msg))
-inpsTableByPattern toMsg patternAndAttrs model =
-  patternAndAttrs |>
-  List.map (\(p, a) -> inpsByPattern p toMsg a model) |>
+inpsTableByPattern: Tomsg msg model -> List String -> EditModel msg model -> List (List (Input msg))
+inpsTableByPattern toMsg patterns model =
+  patterns |>
+  List.map (\p -> inpsByPattern p toMsg model) |>
   Utils.transpose
 
 
-inpInternal: Tomsg msg model -> List (Attribute msg) ->  Controller msg model -> Input msg -> Input msg
-inpInternal toMsg staticAttrs ctl input =
+inpInternal: Tomsg msg model -> Controller msg model -> Input msg -> Input msg
+inpInternal toMsg ctl input =
   let
-    inputEventAttrs =
-      [ onInput <| toMsg << OnMsg ctl
-      , onFocus <| toMsg <| OnFocusMsg ctl True
-      , onBlur <| toMsg <| OnFocusMsg ctl False
-      ]
-
-    selectEventAttrs =
-      input.select |>
-      Maybe.map
-        ( always
-            ( Select.onSelectInput <| toMsg << SelectMsg ctl
-            , Select.onMouseSelect <| toMsg << SelectMsg ctl
+    msgs =
+      { onInput = toMsg << OnMsg ctl
+      , onFocus = toMsg <| OnFocusMsg ctl True
+      , onBlur = toMsg <| OnFocusMsg ctl False
+      , clearmsg =
+          ctl |>
+          (\(Controller { selectInitializer }) ->
+            selectInitializer |> Maybe.map (\_ -> toMsg <| OnSelectMsg ctl "")
+          )
+      , selectmsgs =
+          input.select |>
+          Maybe.map
+            ( let toSMsg = toMsg << SelectMsg ctl in
+                always
+                  { navigationmsg = navigationMsg toSMsg
+                  , setActivemsg = setActiveMsg toSMsg
+                  , selectmsg =  selectMsg toSMsg
+                  }
             )
-        ) |>
-      Maybe.withDefault ([], always [])
-
-    attrs =
-      inputEventAttrs ++
-      (Attrs.value input.value :: staticAttrs) ++
-      Tuple.first selectEventAttrs
-
-    clearmsg =
-      ctl |>
-      (\(Controller { selectInitializer }) ->
-        selectInitializer |> Maybe.map (\_ -> toMsg <| OnSelectMsg ctl "")
-      )
+      }
   in
-    { input | attrs = Attributes (Tuple.second selectEventAttrs) attrs, clearmsg = clearmsg }
+    { input | msgs = Just msgs }
 
 
 {-| Produces `OnMsg` input message. This can be used to set or clear text in input field.
