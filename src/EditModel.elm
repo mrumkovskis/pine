@@ -36,10 +36,6 @@ import Select exposing (..)
 import SelectEvents as SE
 import Utils exposing (..)
 
-import Html exposing (Attribute)
-import Html.Attributes as Attrs
-import Html.Events exposing (..)
-import Task
 import Http
 import Dict exposing (..)
 import Json.Encode as JE
