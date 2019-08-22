@@ -1,6 +1,6 @@
 module EditModel exposing
   ( Input, Controller, ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController
+  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, Msgs, SelectMsgs
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
