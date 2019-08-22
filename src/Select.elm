@@ -1,6 +1,8 @@
 module Select exposing
   ( SelectModel, Msg, Tomsg, init, additionalParams, updateSearch
-  , onSelectInput, onMouseSelect, search, update
+  , onSelectInput, onMouseSelect
+  , navigationMsg, setActiveMsg, selectMsg
+  , search, update
   )
 
 {-| Model and controller for typeahead (a.k.a autocomplete, suggestion) data.
@@ -72,16 +74,30 @@ updateSearch text model =
 {-| Key listeners. Listens to key up, down, esc, enter.
 -}
 onSelectInput: Tomsg msg value -> List (Attribute msg)
-onSelectInput toMsg = [ SE.onNavigation (toMsg << Navigate) ]
+onSelectInput toMsg = [ SE.onNavigation <| navigationMsg toMsg ]
 
 
 {-| Mouse down listener on list item specified with idx parameter.
 -}
 onMouseSelect: Tomsg msg value -> Int -> List (Attribute msg)
 onMouseSelect toMsg idx =
-  [ preventDefaultOn "mousedown" <| JD.succeed (toMsg <| SetActive idx, True) -- prevent from loosing input focus, but mark active item
-  , onMouseUp <| toMsg <| SetActiveAndSelect idx
+  [ preventDefaultOn "mousedown" <| JD.succeed (setActiveMsg toMsg idx, True) -- prevent from loosing input focus, but mark active item
+  , onMouseUp <| selectMsg toMsg idx
   ]
+
+
+navigationMsg: Tomsg msg value -> SE.Msg -> msg
+navigationMsg toMsg = toMsg << Navigate
+
+
+setActiveMsg: Tomsg msg value -> Int -> msg
+setActiveMsg toMsg =
+  toMsg << SetActive
+
+
+selectMsg: Tomsg msg value -> Int -> msg
+selectMsg toMsg =
+  toMsg << SetActiveAndSelect
 
 
 {-| Search command.

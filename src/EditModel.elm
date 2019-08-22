@@ -33,6 +33,7 @@ import JsonModel as JM
 import ViewMetadata as VM
 import Ask
 import Select exposing (..)
+import SelectEvents as SE
 import Utils exposing (..)
 
 import Html exposing (Attribute)
@@ -56,6 +57,7 @@ type alias Input msg =
   , error: Maybe String
   , select: Maybe (SelectModel msg JM.JsonValue)
   , attrs: Attributes msg
+  , msgs: Maybe (Msgs msg)
   , idx: Int -- index of input in metadata fields list, used for JsonValue model
   , field: Maybe VM.Field
   }
@@ -133,6 +135,21 @@ type alias Attributes msg =
   }
 
 
+type alias Msgs msg =
+  { onInput: String -> msg
+  , onFocus: msg
+  , onBlur: msg
+  , selectMsgs: Maybe (SelectMsgs msg)
+  }
+
+
+type alias SelectMsgs msg =
+  { navigationMsg: SE.Msg -> msg
+  , setActiveMsg: Int -> msg
+  , selectMsg: Int -> msg
+  }
+
+
 {-| Edit model -}
 type alias EditModel msg model =
   { model: JM.FormModel msg model
@@ -198,7 +215,7 @@ init model ctrlList toMessagemsg =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing Nothing emptyAttrs -1 Nothing
+          Input k "" False Nothing Nothing Nothing emptyAttrs Nothing -1 Nothing
         )
   in
     EditModel
@@ -236,7 +253,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
             stringVal = JM.jsonValueToString value
 
             input =
-              Input key stringVal False Nothing Nothing Nothing (Attributes (always []) []) i <| Just field
+              Input key stringVal False Nothing Nothing Nothing (Attributes (always []) []) Nothing i <| Just field
 
             ctrl =
               let
