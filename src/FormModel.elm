@@ -2,7 +2,7 @@ module FormModel exposing
   ( Model, Msg, Tomsg
   , init, toModelMsg
   , createMsg, saveMsg, fetchMsg, editMsg, cancelMsg, deleteMsg, setMsg
-  , create, save, fetch, edit, cancel, delete, set
+  , create, save, fetch, edit, cancel, delete, set, map
   , update
   )
 
@@ -112,6 +112,13 @@ setMsg toMsg =
 set: Tomsg msg -> JM.JsonValue -> Cmd msg
 set toMsg =
   domsg << setMsg toMsg
+
+
+map: (JM.JsonValue -> a) -> a -> Model msg -> a
+map mapper default model =
+  model.form |>
+  Maybe.map (.model >> JM.data >> mapper) |>
+  Maybe.withDefault default
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
