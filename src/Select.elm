@@ -1,7 +1,7 @@
 module Select exposing
   ( SelectModel, Msg, Tomsg, init, additionalParams, updateSearch
   , onSelectInput, onMouseSelect
-  , navigationMsg, setActiveMsg, selectMsg
+  , navigationMsg, setActiveMsg, selectMsg, searchMsg
   , search, update
   )
 
@@ -100,10 +100,15 @@ selectMsg toMsg =
   toMsg << SetActiveAndSelect
 
 
+searchMsg: Tomsg msg value -> String -> msg
+searchMsg toMsg =
+  toMsg << Search
+
+
 {-| Search command.
 -}
 search: Tomsg msg value -> String -> Cmd msg
-search toMsg text = do (toMsg << Search) <| text
+search toMsg = domsg << searchMsg toMsg
 
 
 {-| Model update -}
