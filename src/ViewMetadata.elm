@@ -4,6 +4,7 @@ module ViewMetadata exposing
   , Msg (..)
   , fetchMetadata
   , field
+  , initField
   )
 
 
@@ -158,3 +159,24 @@ field name view =
   view.fields |>
   List.filter (\f -> f.name == name) |>
   List.head
+
+
+initField: String -> String -> Field
+initField name label =
+  { name = name
+  , label = label
+  , typeName = ""
+  , jsonType = "string"
+  , nullable = True
+  , required = False
+  , visible = True
+  , sortable = False
+  , enum = Nothing
+  , length = Nothing
+  , totalDigits = Nothing
+  , fractionDigits = Nothing
+  , isCollection = False
+  , isComplexType = False
+  , comments = ""
+  , refViewName = Nothing
+  }
