@@ -15,7 +15,7 @@ module JsonModel exposing
   , columnLabels, visibleColumnLabels, fieldLabels, visibleFieldLabels
   , field
   -- utility functions
-  , jsonDataDecoder, jsonDecoder, jsonEncoder
+  , jsonDataDecoder, jsonDecoder, jsonEncoder, jsonValue
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
   , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
   , pathMatch, stringToPath
@@ -1998,10 +1998,15 @@ jsonReader path value =
       Just value
 
 
+jsonValue: String -> JsonValue -> Maybe JsonValue
+jsonValue path source =
+  stringToPath path |>
+  Maybe.andThen (\p -> jsonReader p source)
+
+
 jsonString: String -> JsonValue -> Maybe String
 jsonString path source =
-  stringToPath path |>
-  Maybe.andThen (\p -> jsonReader p source) |>
+  jsonValue path source |>
   Maybe.andThen
     (\v -> case v of
       JsNumber n ->
@@ -2019,8 +2024,7 @@ jsonString path source =
 
 jsonInt: String -> JsonValue -> Maybe Int
 jsonInt path source =
-  stringToPath path |>
-  Maybe.andThen (\p -> jsonReader p source) |>
+  jsonValue path source |>
   Maybe.andThen
     (\v -> case v of
       JsNumber n ->
@@ -2032,8 +2036,7 @@ jsonInt path source =
 
 jsonFloat: String -> JsonValue -> Maybe Float
 jsonFloat path source =
-  stringToPath path |>
-  Maybe.andThen (\p -> jsonReader p source) |>
+  jsonValue path source |>
   Maybe.andThen
     (\v -> case v of
       JsNumber n ->
@@ -2045,8 +2048,7 @@ jsonFloat path source =
 
 jsonBool: String -> JsonValue -> Maybe Bool
 jsonBool path source =
-  stringToPath path |>
-  Maybe.andThen (\p -> jsonReader p source) |>
+  jsonValue path source |>
   Maybe.andThen
     (\v -> case v of
       JsBool b ->
@@ -2058,8 +2060,7 @@ jsonBool path source =
 
 jsonList: String -> JsonValue -> Maybe (List JsonValue)
 jsonList path source =
-  stringToPath path |>
-  Maybe.andThen (\p -> jsonReader p source) |>
+  jsonValue path source |>
   Maybe.andThen
     (\v -> case v of
       JsList l ->
@@ -2071,8 +2072,7 @@ jsonList path source =
 
 jsonObject: String -> JsonValue -> Maybe (Dict String JsonValue)
 jsonObject path source =
-  stringToPath path |>
-  Maybe.andThen (\p -> jsonReader p source) |>
+  jsonValue path source |>
   Maybe.andThen
     (\v -> case v of
       JsObject o ->
