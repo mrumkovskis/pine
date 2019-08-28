@@ -3,6 +3,7 @@ module ListModel exposing
   , init, config, toParamsMsg, toListMsg
   , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg, syncMsg
   , load, loadMore, sort, select, loadWithParam, sync
+  , map
   , update, subs
   )
 
@@ -148,6 +149,11 @@ syncMsg toMsg params =
 sync: Tomsg msg -> JM.SearchParams -> Cmd msg
 sync toMsg params =
   domsg <| syncMsg toMsg params
+
+
+map: (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
+map mapper (Model model) =
+  Model { model | list = JM.mapList mapper model.list }
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)

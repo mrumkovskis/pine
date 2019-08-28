@@ -114,11 +114,12 @@ set toMsg =
   domsg << setMsg toMsg
 
 
-map: (JM.JsonValue -> a) -> a -> Model msg -> a
-map mapper default model =
+map: (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
+map mapper model =
   model.form |>
-  Maybe.map (.model >> JM.data >> mapper) |>
-  Maybe.withDefault default
+  Maybe.map (\f -> { f | model = JM.map mapper f.model }) |>
+  Maybe.map (\f -> { model | form = Just f}) |>
+  Maybe.withDefault model
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
