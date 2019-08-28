@@ -22,6 +22,7 @@ module JsonModel exposing
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
+  , map, mapList
   -- commands
   , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParam, fetchWithParamMsg, fetchDeferred
   , fetchDeferredFromStart, fetchCount, fetchCountDeferred, fetchMetadata
@@ -759,6 +760,19 @@ notInitialized (Model d { metadata }) =
 ready: Model msg value -> Bool
 ready (Model d _) =
   d.ready
+
+
+{-| Maps data value. NOTE: may not by synchronized with searchParams -}
+map: (value -> value) -> Model msg value -> Model msg value
+map mapper (Model d c) =
+  Model { d | data = mapper d.data } c
+
+
+{-| Maps list data values. NOTE: may not by synchronized with searchParams -}
+mapList: (value -> value) -> ListModel msg value -> ListModel msg value
+mapList mapper (Model d c) =
+  Model { d | data = List.map mapper d.data } c
+
 
 -- metadata examination
 
