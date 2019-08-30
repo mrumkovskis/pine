@@ -1,6 +1,6 @@
 module ListModel exposing
-  ( Model (..), Config, Msg, Tomsg
-  , init, config, toParamsMsg, toListMsg
+  ( Model (..), Msg, Tomsg
+  , init, toParamsMsg, toListMsg
   , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg, syncMsg
   , load, loadMore, sort, select, loadWithParam, sync
   , map
@@ -29,20 +29,6 @@ type Model msg =
     , stickyPos: Maybe SE.StickyElPos
     , sortCol: Maybe (String, Bool)
     }
-
-
-type alias Config msg =
-  { colFilter: VM.Field -> Bool
-  , colOrder: Maybe String
-  , rowAttrs: JM.JsonValue -> List (Attribute msg)
-  , headers: Dict String (String -> Html msg)
-  , cells: Dict String (JM.JsonValue -> Html msg)
-  , tableAttrs: List (Attribute msg)
-  , selectedMsg: Maybe (Bool -> JM.JsonValue -> msg)
-  , multiSelect: Bool
-  , loadMoreElId: Maybe String
-  , stickId: Maybe String
-  }
 
 
 type Msg msg
@@ -74,11 +60,6 @@ init toMsg searchPars l initPars =
     Maybe.map (sync toMsg) |>
     Maybe.withDefault (EM.set (toMsg << ParamsMsg) identity) -- initialize query form metadata
   )
-
-
-config: Config msg
-config =
-  Config (\_ -> True) Nothing (\_ -> []) Dict.empty Dict.empty [] Nothing False Nothing Nothing
 
 
 toParamsMsg: Tomsg msg -> (EM.JsonEditMsg msg -> msg)
