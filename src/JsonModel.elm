@@ -1587,7 +1587,10 @@ update toMsg msg (Model modelData modelConf as same) =
         else
           case res of
             Ok metadata ->
-              ( Model modelData { modelConf | metadata = metadata }, Cmd.none )
+              ( Model modelData { modelConf | metadata = metadata } |>
+                withProgress metadataDone
+              , maybeCmd |> Maybe.withDefault Cmd.none
+              )
 
             Err err ->
               errorResponse allDone err

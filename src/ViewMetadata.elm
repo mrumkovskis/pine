@@ -176,7 +176,7 @@ fetchMetadataTask urlBase viewName =
           Task.andThen tasks
       )
   in
-    tasks Dict.empty |>
+    tasks (Dict.fromList [(viewName, Nothing)]) |>
     Task.map
       ( Dict.foldl
           (\n mv r -> mv |> Maybe.map (\v -> Dict.insert n v r) |> Maybe.withDefault r)
