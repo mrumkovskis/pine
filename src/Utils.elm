@@ -7,7 +7,7 @@ module Utils exposing
   , flip, curry, uncurry, httpErrorToString, eqElCount
   , searchParams, toList, styles
   , do, domsg
-  , expectJson, expectString, badHttpBody
+  , expectJson, resolveJson, expectString, resolveString, badHttpBody
   )
 
 
@@ -370,9 +370,25 @@ expectJson toMsg decoder =
     Http.expectStringResponse toMsg <| httpResult httpdec
 
 
+resolveJson: JD.Decoder a -> Http.Resolver HttpError a
+resolveJson decoder =
+  let
+    httpdec metadata resp =
+      JD.decodeString decoder resp |>
+      Result.mapError
+        (BadBody metadata resp << JD.errorToString)
+  in
+    Http.stringResolver <| httpResult httpdec
+
+
 expectString: (Result HttpError String -> msg) -> Http.Expect msg
 expectString toMsg =
   Http.expectStringResponse toMsg <| httpResult (\_ resp -> Ok resp)
+
+
+resolveString: Http.Resolver HttpError String
+resolveString =
+  Http.stringResolver <| httpResult (\_ resp -> Ok resp)
 
 
 badHttpBody: String -> HttpError
