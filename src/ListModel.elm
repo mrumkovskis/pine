@@ -2,7 +2,7 @@ module ListModel exposing
   ( Model (..), Msg, Tomsg
   , init, toParamsMsg, toListMsg
   , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg, submitAndLoadMsg, syncMsg
-  , load, loadMore, sort, select, loadWithParam, sync
+  , load, loadMore, sort, select, loadWithParam, sync, submitAndLoad
   , map
   , update, subs
   )
@@ -138,6 +138,11 @@ submitAndLoadMsg toMsg =
   EM.submitMsg (toMsg << SubmitAndLoadMsg)
 
 
+submitAndLoad: Tomsg msg -> Cmd msg
+submitAndLoad =
+  domsg << submitAndLoadMsg
+
+
 map: (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
 map mapper (Model model) =
   Model { model | list = JM.mapList mapper model.list }
@@ -159,7 +164,7 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         Tuple.mapFirst (\s -> Model { model | searchParams = s })
 
       SubmitAndLoadMsg data ->
-        EM.update (toMsg << ParamsMsg) data searchParams |>
+        EM.update (toMsg << SubmitAndLoadMsg) data searchParams |>
         Tuple.mapBoth
           (\s -> Model { model | searchParams = s })
           (\c -> if c == Cmd.none then load toMsg else c)
