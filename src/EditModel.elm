@@ -4,7 +4,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, delete
+  , fetch, set, setMsg, create, createMsg, submitMsg, http, httpWithSetter, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
@@ -177,6 +177,8 @@ type Msg msg model
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
+  | OnSubmitMsg
+  --
   | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
 
 
@@ -492,6 +494,14 @@ createMsg toMsg createParams createFun =
   toMsg <| NewModelMsg createParams createFun
 
 
+{-| Usually is set as onSubmit listener on form when form is submited with Enter key so
+    that model can be updated with value from active input field.
+-}
+submitMsg: Tomsg msg model -> msg
+submitMsg toMsg =
+  toMsg OnSubmitMsg
+
+
 {-| Creates model from http request. Setter function's returns optional model update function
 (see [`set`](#set)) which gets existing model as an argument thus the result can be a product from
 both new and existing model.
@@ -697,16 +707,16 @@ jsonDeleteMsg toMsg path =
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
-    updateModelFromInput newInputs ctrl input =
+    updateModelFromInput newModel newInputs ctrl input =
       let
-        mod = JM.data model
+        mod = JM.data newModel.model
       in
         if ctrl.formatter mod == input.value then
-          ( { same | inputs = newInputs }, Cmd.none )
+          ( { newModel | inputs = newInputs }, Cmd.none )
         else
           ctrl.updateModel toMsg input mod |>
           (\(nm, cmd) ->
-            ( { same |
+            ( { newModel |
                 inputs = updateInputsFromModel nm newInputs
               , isDirty = True
               } --update inputs if updater has changed other fields
@@ -775,7 +785,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           if focus then
             ( { same | inputs = newInputs }, selCmd )
           else
-            updateModelFromInput newInputs ctrl input
+            updateModelFromInput same newInputs ctrl input
       in
         Dict.get ctrl.name inputs |>
         Maybe.map processFocusSelect |>
@@ -885,7 +895,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         updateInput ctrl value inputs |>
         (\(newInputs, maybeInp) ->
           maybeInp |>
-          Maybe.map (updateModelFromInput newInputs ctrl) |>
+          Maybe.map (updateModelFromInput same newInputs ctrl) |>
           Maybe.withDefault ( same, Cmd.none )
         )
 
@@ -916,6 +926,23 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
+
+      OnSubmitMsg ->
+        inputs |>
+        Dict.filter (\_ i -> i.editing) |>
+        Dict.foldl
+          (\n i (mod, cmds) ->
+            mod.controllers |>
+            Dict.get i.name |>
+            Maybe.map
+              (\(Controller c) ->
+                updateModelFromInput mod mod.inputs c i |>
+                Tuple.mapSecond (\cmd -> cmd :: cmds)
+              ) |>
+            Maybe.withDefault (mod, cmds)
+          )
+          (same, []) |>
+        Tuple.mapSecond Cmd.batch
 
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
