@@ -164,11 +164,7 @@ fetchMetadataTask urlBase viewName =
                 (\view res ->
                   (.fields >> List.filter .isComplexType >> List.map .typeName) view |>
                   List.foldl
-                    (\view_name res1 ->
-                      Dict.get view_name res1 |>
-                      Maybe.map (\_ -> res1) |>
-                      Maybe.withDefault (Dict.insert view_name Nothing res1)
-                    )
+                    (\view_name -> Dict.update view_name (Utils.orElse <| Just Nothing))
                     (Dict.insert view.typeName (Just view) res)
                 )
                 result
