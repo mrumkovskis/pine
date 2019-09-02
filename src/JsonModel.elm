@@ -161,7 +161,6 @@ type alias Config msg value =
   , createUri: SearchParams -> Model msg value -> String
   , metadata: Dict String VM.View
   , fieldGetter: VM.View -> List VM.Field
-  , metadataFetcher: String -> Cmd VM.Msg
   , dataFetcher: DataFetcher msg value
   , countFetcher: CountFetcher msg value
   , deferredConfig: Maybe DeferredConfig
@@ -244,7 +243,7 @@ type Path
 
 {-| Message for model update. -}
 type Msg msg value
-  = MetadataMsg (Maybe (Cmd msg)) VM.Msg
+  = MetadataMsg (Maybe (Cmd msg)) (Result HttpError (Dict String VM.View))
   | DataMsg TypeName Bool SearchParams (Result HttpError value)
   | CountMsg TypeName SearchParams (Result HttpError Int)
   | DeleteMsg TypeName SearchParams (Result HttpError String)
@@ -394,7 +393,6 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , createUri = \_ _ -> ""
       , metadata = Dict.empty
       , fieldGetter = .fields
-      , metadataFetcher = VM.fetchMetadata
       , dataFetcher = httpDataFetcher
       , countFetcher = httpCountFetcher
       , deferredConfig = Nothing
@@ -586,7 +584,6 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , createUri = createUri
       , metadata = Dict.empty
       , fieldGetter = fieldGetter
-      , metadataFetcher = VM.fetchMetadata
       , dataFetcher = httpDataFetcher
       , countFetcher = httpCountFetcher
       , deferredConfig = Nothing
@@ -1503,10 +1500,7 @@ update toMsg msg (Model modelData modelConf as same) =
       if unInitialized then fetchMd <| Just <| noInitCmd () else cmd ()
 
     metadataHttpRequest maybeAndThen typeName =
-      let
-        mapper = MetadataMsg maybeAndThen >> toMsg
-      in
-        Cmd.map mapper <| modelConf.metadataFetcher (modelConf.metadataBaseUri ++ "/" ++ typeName)
+      VM.fetchMetadata (toMsg << MetadataMsg maybeAndThen) modelConf.metadataBaseUri typeName
 
     saveHttpRequest uri method value toRespMsg decoder =
       { method = method
@@ -1586,30 +1580,17 @@ update toMsg msg (Model modelData modelConf as same) =
         )
   in
     case msg of
-      MetadataMsg maybeCmd (VM.ViewMetadataMsg (Ok view) children) ->
+      MetadataMsg maybeCmd res ->
         if not isMetadataProgress then
           -- integrity violation metadata fetch must be in progress
           ( same, Cmd.none )
         else
-          let
-            newMetadata =
-              Set.toList children |>
-              List.map (\n -> (n, VM.View "" [] [])) |>
-              Dict.fromList |>
-              Dict.union (Dict.insert view.typeName view modelConf.metadata)
-            newModel = Model modelData { modelConf | metadata = newMetadata }
-            maybeNewMetadataCmd =
-              Dict.filter (\_ v -> String.isEmpty v.typeName) newMetadata |>
-              Dict.keys |>
-              List.head |>
-              Maybe.map (metadataHttpRequest maybeCmd)
-          in
-            maybeNewMetadataCmd |>
-            Maybe.map (Tuple.pair newModel) |>
-            Maybe.withDefault
-              ( newModel |> withProgress metadataDone
-              , maybeCmd |> Maybe.withDefault Cmd.none
-              )
+          case res of
+            Ok metadata ->
+              ( Model modelData { modelConf | metadata = metadata }, Cmd.none )
+
+            Err err ->
+              errorResponse allDone err
 
       DataMsg name restart searchParams (Ok newdata) ->
         let
@@ -1670,8 +1651,6 @@ update toMsg msg (Model modelData modelConf as same) =
           countDone
 
       DeleteMsg _ _ (Err err) -> errorResponse fetchDone err
-
-      MetadataMsg _ (VM.ViewMetadataMsg (Err err) _) -> errorResponse allDone err
 
       EditMsg path value ->
         if unInitialized then

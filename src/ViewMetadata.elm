@@ -1,7 +1,6 @@
 module ViewMetadata exposing
   ( View
   , Field
-  , Msg (..)
   , fetchMetadata
   , field
   , initField
@@ -25,7 +24,7 @@ import Http
 import Set exposing (Set)
 import Task exposing (..)
 import Dict exposing (..)
-import Url exposing (percentDecode)
+import Url exposing (percentEncode)
 
 
 {-| View definition.
@@ -59,102 +58,12 @@ type alias Field =
   }
 
 
-{-| metadata message with view and children name set -}
-type Msg = ViewMetadataMsg (Result HttpError View) (Set String)
-
-
-type MsgInternal = ViewSingleMetadataMsg (Result HttpError View)
-
-
 {-| Fetch view metadata.
-    fetchMetadata "/metadata/view-name"
+    fetchMetadata toMsg "/metadata" "view-name"
 -}
-fetchMetadata: String -> Cmd Msg
-fetchMetadata uri =
-  let
-    viewDecoder =
-      JD.map3
-        View
-        (JD.field "name" JD.string)
-        (JD.field "fields" <| JD.list fieldDecoder)
-        (JD.field "filter" <| JD.list filterDecoder)
-
-    stringFieldDecoder name = JD.field name JD.string
-
-    optionalStringFieldDecoder name =
-      JD.field name (JD.oneOf [JD.string, JD.null ""])
-
-    maybeStringFieldDecoder name =
-      JD.maybe <| JD.field name <| JD.oneOf [ JD.string, JD.fail "knipis" ]
-
-    boolFieldDecoder name = JD.field name JD.bool
-
-    optionalIntFieldDecoder name =
-      JD.maybe <| JD.field name  JD.int
-
-    fieldDecoder =
-      JD.map8
-        Field
-        (stringFieldDecoder "name")
-        (optionalStringFieldDecoder "label")
-        (stringFieldDecoder "type")
-        (stringFieldDecoder "jsonType")
-        (boolFieldDecoder "nullable")
-        (boolFieldDecoder "required")
-        (boolFieldDecoder "visible")
-        (boolFieldDecoder "sortable") |>
-      JD.andThen
-        (\v ->
-          JD.map8
-            v
-            (JD.maybe <| JD.field "enum" <| JD.list JD.string)
-            (optionalIntFieldDecoder "length")
-            (optionalIntFieldDecoder "totalDigits")
-            (optionalIntFieldDecoder "fractionDigits")
-            (boolFieldDecoder "isCollection")
-            (boolFieldDecoder "isComplexType")
-            (optionalStringFieldDecoder "comments")
-            (maybeStringFieldDecoder "refViewName")
-        )
-
-    filterDecoder =
-      JD.map8
-        Field
-        (stringFieldDecoder "name")
-        (optionalStringFieldDecoder "label")
-        (stringFieldDecoder "type")
-        (stringFieldDecoder "jsonType")
-        (boolFieldDecoder "nullable")
-        (boolFieldDecoder "required")
-        (JD.succeed True)
-        (JD.succeed False) |>
-      JD.andThen
-        (\v ->
-          JD.map8
-            v
-            (JD.maybe <| JD.field "enum" <| JD.list JD.string)
-            (JD.succeed Nothing)
-            (JD.succeed Nothing)
-            (JD.succeed Nothing)
-            (JD.succeed False)
-            (JD.succeed False)
-            (JD.succeed "")
-            (maybeStringFieldDecoder "refViewName")
-        )
-  in
-    (Http.get { url = uri, expect = expectJson ViewSingleMetadataMsg viewDecoder }) |>
-    Cmd.map
-      (\(ViewSingleMetadataMsg res) ->
-        ViewMetadataMsg
-          res
-          ( Result.toMaybe res |>
-            Maybe.map .fields |>
-            Maybe.map (List.filter .isComplexType) |>
-            Maybe.map (List.map .typeName) |>
-            Maybe.map Set.fromList |>
-            Maybe.withDefault Set.empty
-          )
-      )
+fetchMetadata: (Result HttpError (Dict String View) -> msg) -> String -> String -> Cmd msg
+fetchMetadata toMsg urlBase viewName =
+  Task.attempt toMsg <| fetchMetadataTask urlBase viewName
 
 
 fetchMetadataTask: String -> String -> Task HttpError (Dict String View)
@@ -230,41 +139,50 @@ fetchMetadataTask urlBase viewName =
             (maybeStringFieldDecoder "refViewName")
         )
 
-{-
-    tasks result =
-      Dict.filter (\_ v -> v == Nothing) |>
-      (\)
--}
-  in
-    Task.succeed Dict.empty
-{-
-    tasks <| Dict.fromList [(viewName, Nothing)]
-
-
-    ( Http.task
+    task name =
+      Http.task
         { method = "GET"
         , headers = []
-        , url = url
+        , url = urlBase ++ "/" ++ percentEncode name
         , body = Http.emptyBody
         , resolver = resolveJson viewDecoder
         , timeout = Nothing
         }
-    ) |>
-    Task.andThen (.fields >> List.filter .isComplexType >> List.map .typeName)
-    (Http.get { url = url, expect = expectJson ViewSingleMetadataMsg viewDecoder }) |>
-    Cmd.map
-      (\(ViewSingleMetadataMsg res) ->
-        ViewMetadataMsg
-          res
-          ( Result.toMaybe res |>
-            Maybe.map .fields |>
-            Maybe.map (List.filter .isComplexType) |>
-            Maybe.map (List.map .typeName) |>
-            Maybe.map Set.fromList |>
-            Maybe.withDefault Set.empty
-          )
+
+    tasks result =
+      Dict.filter (\_ v -> v == Nothing) result |>
+      (\rest ->
+        if Dict.isEmpty rest then
+          Task.succeed result
+        else
+          rest |>
+          Dict.keys |>
+          List.map task |>
+          Task.sequence |>
+          Task.map
+            ( List.foldl
+                (\view res ->
+                  (.fields >> List.filter .isComplexType >> List.map .typeName) view |>
+                  List.foldl
+                    (\view_name res1 ->
+                      Dict.get view_name res1 |>
+                      Maybe.map (\_ -> res1) |>
+                      Maybe.withDefault (Dict.insert view_name Nothing res1)
+                    )
+                    (Dict.insert view.typeName (Just view) res)
+                )
+                result
+            ) |>
+          Task.andThen tasks
       )
--}
+  in
+    tasks Dict.empty |>
+    Task.map
+      ( Dict.foldl
+          (\n mv r -> mv |> Maybe.map (\v -> Dict.insert n v r) |> Maybe.withDefault r)
+          (Dict.empty)
+      )
+
 
 field: String -> View -> Maybe Field
 field name view =
