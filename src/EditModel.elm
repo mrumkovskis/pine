@@ -180,7 +180,6 @@ type Msg msg model
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
-  | SubmitModelMsg
   | SyncModelMsg
   --
   | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
@@ -523,7 +522,7 @@ save =
 
 saveMsg: Tomsg msg model -> msg
 saveMsg toMsg =
-  toMsg <| SubmitModelMsg
+  JM.saveMsg (toMsg << SaveModelMsg) []
 
 
 sync: Tomsg msg model -> Cmd msg
@@ -659,7 +658,7 @@ inpInternal toMsg ctl input =
       { onInput = toMsg << OnMsg ctl
       , onFocus = toMsg <| OnFocusMsg ctl True
       , onBlur = toMsg <| OnFocusMsg ctl False
-      , onEnter = toMsg <| SyncModelMsg
+      , onEnter = syncMsg toMsg
       , clearmsg =
           ctl |>
           (\(Controller { selectInitializer }) ->
@@ -942,13 +941,6 @@ update toMsg msg ({ model, inputs, controllers } as same) =
                 Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
         in
           ( same, result )
-
-      SubmitModelMsg ->
-        {- first update model from editing input if one exists, then save, make sure that
-          potential controller updateModel command is executed before save -}
-        updateModelFromActiveInput
-          (toMsg << CmdChainMsg [] (JM.save (toMsg << SaveModelMsg) []) << Just)
-          inputs
 
       SyncModelMsg ->
         updateModelFromActiveInput toMsg inputs
