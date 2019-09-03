@@ -1,8 +1,8 @@
 module ListModel exposing
   ( Model (..), Msg, Tomsg
   , init, toParamsMsg, toListMsg
-  , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg, submitAndLoadMsg, syncMsg
-  , load, loadMore, sort, select, loadWithParam, sync, submitAndLoad
+  , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg, syncMsg
+  , load, loadMore, sort, select, loadWithParam, sync
   , map
   , update, subs
   )
@@ -133,16 +133,6 @@ sync toMsg params =
   domsg <| syncMsg toMsg params
 
 
-submitAndLoadMsg: Tomsg msg -> msg
-submitAndLoadMsg toMsg =
-  EM.submitMsg (toMsg << SubmitAndLoadMsg)
-
-
-submitAndLoad: Tomsg msg -> Cmd msg
-submitAndLoad =
-  domsg << submitAndLoadMsg
-
-
 map: (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
 map mapper (Model model) =
   Model { model | list = JM.mapList mapper model.list }
@@ -167,7 +157,24 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         EM.update (toMsg << SubmitAndLoadMsg) data searchParams |>
         Tuple.mapBoth
           (\s -> Model { model | searchParams = s })
-          (\c -> if c == Cmd.none then load toMsg else c)
+          (\cmd ->
+            if cmd == Cmd.none then
+              list |>
+              (\(JM.Model d c) ->
+                ( searchPars searchParams.model |>
+                  List.filter (\(n, _) -> n /= c.offsetParamName)
+                ) ++ [(c.offsetParamName, "0")] |>
+                (\sp ->
+                  if sp == d.searchParams then
+                    toMsg << BrowserKeyMsg Nav.replaceUrl sp
+                  else
+                    toMsg << BrowserKeyMsg Nav.pushUrl sp
+                ) |>
+                Ask.askBrowserKeymsg c.toMessagemsg
+              )
+            else
+              cmd
+          )
 
       ListMsg data ->
         JM.update (toMsg << ListMsg) data model.list |>
@@ -192,19 +199,7 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
 
       LoadMsg ->
         ( same
-        , list |>
-          (\(JM.Model d c) ->
-            ( searchPars searchParams.model |>
-              List.filter (\(n, _) -> n /= c.offsetParamName)
-            ) ++ [(c.offsetParamName, "0")] |>
-            (\sp ->
-              if sp == d.searchParams then
-                toMsg << BrowserKeyMsg Nav.replaceUrl sp
-              else
-                toMsg << BrowserKeyMsg Nav.pushUrl sp
-            ) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
-          )
+        , EM.submit (toMsg << SubmitAndLoadMsg)
         )
 
       LoadMoreMsg ->

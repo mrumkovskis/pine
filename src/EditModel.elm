@@ -4,7 +4,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, setMsg, create, createMsg, submitMsg, http, httpWithSetter, save, saveMsg, delete
+  , fetch, set, setMsg, create, createMsg, submitMsg, submit, http, httpWithSetter, save, saveMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
@@ -500,6 +500,11 @@ createMsg toMsg createParams createFun =
 submitMsg: Tomsg msg model -> msg
 submitMsg toMsg =
   toMsg OnSubmitMsg
+
+
+submit: Tomsg msg model -> Cmd msg
+submit =
+  domsg << submitMsg
 
 
 {-| Creates model from http request. Setter function's returns optional model update function
