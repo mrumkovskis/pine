@@ -33,7 +33,6 @@ type Model msg =
 
 type Msg msg
   = ParamsMsg (EM.JsonEditMsg msg)
-  | SubmitAndLoadMsg (EM.JsonEditMsg msg)
   | ListMsg (JM.JsonListMsg msg)
   | LoadMsg
   | LoadMoreMsg -- load more element visibility subscription message
@@ -153,29 +152,6 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         EM.update (toMsg << ParamsMsg) data searchParams |>
         Tuple.mapFirst (\s -> Model { model | searchParams = s })
 
-      SubmitAndLoadMsg data ->
-        EM.update (toMsg << SubmitAndLoadMsg) data searchParams |>
-        Tuple.mapBoth
-          (\s -> Model { model | searchParams = s })
-          (\cmd ->
-            if cmd == Cmd.none then
-              list |>
-              (\(JM.Model d c) ->
-                ( searchPars searchParams.model |>
-                  List.filter (\(n, _) -> n /= c.offsetParamName)
-                ) ++ [(c.offsetParamName, "0")] |>
-                (\sp ->
-                  if sp == d.searchParams then
-                    toMsg << BrowserKeyMsg Nav.replaceUrl sp
-                  else
-                    toMsg << BrowserKeyMsg Nav.pushUrl sp
-                ) |>
-                Ask.askBrowserKeymsg c.toMessagemsg
-              )
-            else
-              cmd
-          )
-
       ListMsg data ->
         JM.update (toMsg << ListMsg) data model.list |>
         Tuple.mapFirst (\m -> Model { model | list = m })
@@ -199,7 +175,19 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
 
       LoadMsg ->
         ( same
-        , EM.submit (toMsg << SubmitAndLoadMsg)
+        , list |>
+          (\(JM.Model d c) ->
+            ( searchPars searchParams.model |>
+              List.filter (\(n, _) -> n /= c.offsetParamName)
+            ) ++ [(c.offsetParamName, "0")] |>
+            (\sp ->
+              if sp == d.searchParams then
+                toMsg << BrowserKeyMsg Nav.replaceUrl sp
+              else
+                toMsg << BrowserKeyMsg Nav.pushUrl sp
+            ) |>
+            Ask.askBrowserKeymsg c.toMessagemsg
+          )
         )
 
       LoadMoreMsg ->

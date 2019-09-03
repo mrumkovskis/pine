@@ -4,7 +4,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, setMsg, create, createMsg, submitMsg, submit, http, httpWithSetter, save, saveMsg, delete
+  , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
   , update
@@ -61,7 +61,9 @@ type alias ModelInitializer msg model =
   JM.FormModel msg model -> Maybe (Dict String (Controller msg model), Dict String (Input msg))
 
 
-{-| Updates model from `Input` optionally emiting command. -}
+{-| Updates model from `Input` optionally emiting command.
+    NOTE: Avoid using batch command since it may cause multiple save call!
+-}
 type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 
 
@@ -124,6 +126,7 @@ type alias Msgs msg =
   { onInput: String -> msg
   , onFocus: msg
   , onBlur: msg
+  , onEnter: msg
   , clearmsg: Maybe msg
   , selectmsgs: Maybe (SelectMsgs msg)
   }
@@ -177,8 +180,8 @@ type Msg msg model
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
-  | OnSubmitMsg
   | SubmitModelMsg
+  | SyncModelMsg
   --
   | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
 
@@ -495,19 +498,6 @@ createMsg toMsg createParams createFun =
   toMsg <| NewModelMsg createParams createFun
 
 
-{-| Usually is set as onSubmit listener on form when form is submited with Enter key so
-    that model can be updated with value from active input field.
--}
-submitMsg: Tomsg msg model -> msg
-submitMsg toMsg =
-  toMsg OnSubmitMsg
-
-
-submit: Tomsg msg model -> Cmd msg
-submit =
-  domsg << submitMsg
-
-
 {-| Creates model from http request. Setter function's returns optional model update function
 (see [`set`](#set)) which gets existing model as an argument thus the result can be a product from
 both new and existing model.
@@ -527,13 +517,23 @@ http toMsg url decoder =
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
 -}
 save: Tomsg msg model -> Cmd msg
-save toMsg =
-  JM.save (toMsg << SaveModelMsg) []
+save =
+  domsg << saveMsg
 
 
 saveMsg: Tomsg msg model -> msg
 saveMsg toMsg =
-  JM.saveMsg (toMsg << SaveModelMsg) []
+  toMsg <| SubmitModelMsg
+
+
+sync: Tomsg msg model -> Cmd msg
+sync =
+  domsg << syncMsg
+
+
+syncMsg: Tomsg msg model -> msg
+syncMsg toMsg =
+  toMsg <| SyncModelMsg
 
 
 {-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
@@ -659,6 +659,7 @@ inpInternal toMsg ctl input =
       { onInput = toMsg << OnMsg ctl
       , onFocus = toMsg <| OnFocusMsg ctl True
       , onBlur = toMsg <| OnFocusMsg ctl False
+      , onEnter = toMsg <| SyncModelMsg
       , clearmsg =
           ctl |>
           (\(Controller { selectInitializer }) ->
@@ -713,16 +714,16 @@ jsonDeleteMsg toMsg path =
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
-    updateModelFromInput toUpdMsg newModel newInputs ctrl input =
+    updateModelFromInput toUpdMsg newInputs ctrl input =
       let
-        mod = JM.data newModel.model
+        mod = JM.data model
       in
         if ctrl.formatter mod == input.value then
-          ( { newModel | inputs = newInputs }, Cmd.none )
+          ( { same | inputs = newInputs }, Cmd.none )
         else
           ctrl.updateModel toUpdMsg input mod |>
           (\(nm, cmd) ->
-            ( { newModel |
+            ( { same |
                 inputs = updateInputsFromModel nm newInputs
               , isDirty = True
               } --update inputs if updater has changed other fields
@@ -736,7 +737,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
       List.head >>
       Maybe.andThen
         (\input -> Dict.get input.name controllers |> Maybe.map (\(Controller c) -> (c, input))) >>
-      Maybe.map (\(c, input) -> updateModelFromInput toUpdMsg same inputs c input) >>
+      Maybe.map (\(c, input) -> updateModelFromInput toUpdMsg inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
     updateInput ctrl value newInputs =
@@ -800,7 +801,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           if focus then
             ( { same | inputs = newInputs }, selCmd )
           else
-            updateModelFromInput toMsg same newInputs ctrl input
+            updateModelFromInput toMsg newInputs ctrl input
       in
         Dict.get ctrl.name inputs |>
         Maybe.map processFocusSelect |>
@@ -910,7 +911,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         updateInput ctrl value inputs |>
         (\(newInputs, maybeInp) ->
           maybeInp |>
-          Maybe.map (updateModelFromInput toMsg same newInputs ctrl) |>
+          Maybe.map (updateModelFromInput toMsg newInputs ctrl) |>
           Maybe.withDefault ( same, Cmd.none )
         )
 
@@ -949,22 +950,8 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           (toMsg << CmdChainMsg [] (JM.save (toMsg << SaveModelMsg) []) << Just)
           inputs
 
-      OnSubmitMsg ->
-        inputs |>
-        Dict.filter (\_ i -> i.editing) |>
-        Dict.foldl
-          (\n i (mod, cmds) ->
-            mod.controllers |>
-            Dict.get i.name |>
-            Maybe.map
-              (\(Controller c) ->
-                updateModelFromInput toMsg mod mod.inputs c i |>
-                Tuple.mapSecond (\cmd -> cmd :: cmds)
-              ) |>
-            Maybe.withDefault (mod, cmds)
-          )
-          (same, []) |>
-        Tuple.mapSecond Cmd.batch
+      SyncModelMsg ->
+        updateModelFromActiveInput toMsg inputs
 
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
