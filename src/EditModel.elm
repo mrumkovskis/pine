@@ -178,6 +178,7 @@ type Msg msg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
   | OnSubmitMsg
+  | SubmitModelMsg
   --
   | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
 
@@ -712,22 +713,31 @@ jsonDeleteMsg toMsg path =
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers } as same) =
   let
-    updateModelFromInput newModel newInputs ctrl input =
+    updateModelFromInput toUpdMsg newModel newInputs ctrl input =
       let
         mod = JM.data newModel.model
       in
         if ctrl.formatter mod == input.value then
           ( { newModel | inputs = newInputs }, Cmd.none )
         else
-          ctrl.updateModel toMsg input mod |>
+          ctrl.updateModel toUpdMsg input mod |>
           (\(nm, cmd) ->
             ( { newModel |
                 inputs = updateInputsFromModel nm newInputs
               , isDirty = True
               } --update inputs if updater has changed other fields
-            , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
+            , do toUpdMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
             )
           )
+
+    updateModelFromActiveInput toUpdMsg =
+      Dict.values >>
+      List.filter .editing >>
+      List.head >>
+      Maybe.andThen
+        (\input -> Dict.get input.name controllers |> Maybe.map (\(Controller c) -> (c, input))) >>
+      Maybe.map (\(c, input) -> updateModelFromInput toUpdMsg same inputs c input) >>
+      Maybe.withDefault (same, Cmd.none)
 
     updateInput ctrl value newInputs =
       Dict.get ctrl.name newInputs |>
@@ -790,7 +800,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           if focus then
             ( { same | inputs = newInputs }, selCmd )
           else
-            updateModelFromInput same newInputs ctrl input
+            updateModelFromInput toMsg same newInputs ctrl input
       in
         Dict.get ctrl.name inputs |>
         Maybe.map processFocusSelect |>
@@ -900,7 +910,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         updateInput ctrl value inputs |>
         (\(newInputs, maybeInp) ->
           maybeInp |>
-          Maybe.map (updateModelFromInput same newInputs ctrl) |>
+          Maybe.map (updateModelFromInput toMsg same newInputs ctrl) |>
           Maybe.withDefault ( same, Cmd.none )
         )
 
@@ -932,6 +942,13 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         in
           ( same, result )
 
+      SubmitModelMsg ->
+        {- first update model from editing input if one exists, then save, make sure that
+          potential controller updateModel command is executed before save -}
+        updateModelFromActiveInput
+          (toMsg << CmdChainMsg [] (JM.save (toMsg << SaveModelMsg) []) << Just)
+          inputs
+
       OnSubmitMsg ->
         inputs |>
         Dict.filter (\_ i -> i.editing) |>
@@ -941,7 +958,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
             Dict.get i.name |>
             Maybe.map
               (\(Controller c) ->
-                updateModelFromInput mod mod.inputs c i |>
+                updateModelFromInput toMsg mod mod.inputs c i |>
                 Tuple.mapSecond (\cmd -> cmd :: cmds)
               ) |>
             Maybe.withDefault (mod, cmds)
