@@ -1,5 +1,6 @@
 module SelectEvents exposing
   ( Msg (..)
+  , onEnter
   , onNavigation
   )
 
