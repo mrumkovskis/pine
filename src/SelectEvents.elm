@@ -17,8 +17,8 @@ type Msg
   | Select
 
 
-onNavigation: (Msg -> msg) -> Attribute msg
-onNavigation toMsg =
+onNavigation: (Msg -> msg) -> Bool -> Attribute msg
+onNavigation toMsg isActive =
   let
     mapper key =
       case key of
@@ -26,9 +26,9 @@ onNavigation toMsg =
 
         40 -> JD.succeed Down -- arrow down
 
-        27 -> JD.succeed Esc  -- escape
+        27 -> if isActive then JD.succeed Esc else JD.fail "Not active select box"  -- escape
 
-        13 -> JD.succeed Select -- enter
+        13 -> if isActive then JD.succeed Select else JD.fail "Not active select box" -- enter
 
         _ -> JD.fail "Not selection key"
 

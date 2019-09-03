@@ -73,8 +73,8 @@ updateSearch text model =
 
 {-| Key listeners. Listens to key up, down, esc, enter.
 -}
-onSelectInput: (SE.Msg -> msg) -> List (Attribute msg)
-onSelectInput toMsg = [ SE.onNavigation toMsg ]
+onSelectInput: (SE.Msg -> msg) -> Bool -> List (Attribute msg)
+onSelectInput toMsg isActive = [ SE.onNavigation toMsg isActive ]
 
 
 {-| Mouse down listener on list item specified with idx parameter.
