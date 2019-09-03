@@ -26,7 +26,7 @@ type Msg msg
   = CreateMsg (EM.JsonEditMsg msg)
   | EditMsg JM.JsonValue
   | CancelEditMsg Bool
-  | SaveMsg (Maybe (JM.JsonValue -> msg)) (EM.JsonEditMsg msg)
+  | SaveMsg Bool (Maybe (JM.JsonValue -> msg)) (EM.JsonEditMsg msg)
   | DeleteMsg (Maybe (JM.JsonValue -> msg)) Int
   | SetMsg JM.JsonValue
 
@@ -56,7 +56,7 @@ create toMsg searchParams =
 
 saveMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
 saveMsg toMsg maybeSuccessmsg =
-  EM.saveMsg (toMsg << SaveMsg maybeSuccessmsg)
+  EM.submitMsg (toMsg << SaveMsg False maybeSuccessmsg)
 
 
 save: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
@@ -152,24 +152,40 @@ update toMsg msg ({ form, toMessagemsg } as model) =
       else
         ( { model | form = Nothing }, Cmd.none )
 
-    SaveMsg maybeSuccessmsg data ->
-      form |>
-      Maybe.map (EM.update (toMsg << SaveMsg maybeSuccessmsg) data) |>
-      Maybe.map (Tuple.mapFirst (\m -> { model | form = Just m})) |>
-      Maybe.withDefault ( model, Cmd.none ) |>
-      (\(newmod, cmd) ->
-        if cmd == Cmd.none then
-          ( { model | form = Nothing }
-          , Maybe.map2
-              (\f m ->
-                domsg <| m <| JM.data f.model
+    SaveMsg saveStatus maybeSuccessmsg data ->
+      if not saveStatus then --submit phase
+        form |>
+        Maybe.map (EM.update (toMsg << SaveMsg saveStatus maybeSuccessmsg) data) |>
+        Maybe.map (Tuple.mapFirst (\m -> { model | form = Just m})) |>
+        Maybe.map
+          ( Tuple.mapSecond
+              (\cmd ->
+                if cmd == Cmd.none then
+                  -- submit done launch save
+                  EM.save (toMsg << SaveMsg True maybeSuccessmsg)
+                else
+                  cmd
               )
-              newmod.form
-              maybeSuccessmsg |>
-            Maybe.withDefault Cmd.none
-          )
-        else ( newmod, cmd )
-      )
+          ) |>
+        Maybe.withDefault ( model, Cmd.none )
+      else --save phase
+        form |>
+        Maybe.map (EM.update (toMsg << SaveMsg saveStatus maybeSuccessmsg) data) |>
+        Maybe.map (Tuple.mapFirst (\m -> { model | form = Just m})) |>
+        Maybe.withDefault ( model, Cmd.none ) |>
+        (\(newmod, cmd) ->
+          if cmd == Cmd.none then
+            ( { model | form = Nothing }
+            , Maybe.map2
+                (\f m ->
+                  domsg <| m <| JM.data f.model
+                )
+                newmod.form
+                maybeSuccessmsg |>
+              Maybe.withDefault Cmd.none
+            )
+          else ( newmod, cmd )
+        )
 
     DeleteMsg maybeSuccessmsg id ->
       Tuple.pair
@@ -177,7 +193,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
         Ask.ask
           toMessagemsg
           "Vai dzēst ierakstu?"
-          (EM.delete (toMsg << SaveMsg maybeSuccessmsg) id)
+          (EM.delete (toMsg << SaveMsg True maybeSuccessmsg) id)
           Nothing
 
     SetMsg data ->
