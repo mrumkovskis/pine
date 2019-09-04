@@ -24,8 +24,8 @@ module JsonModel exposing
   , isInitialized, notInitialized, ready
   , map, mapList
   -- commands
-  , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParam, fetchWithParamMsg, fetchDeferred
-  , fetchDeferredFromStart, fetchCount, fetchCountDeferred, fetchMetadata
+  , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParam, fetchWithParamMsg, refreshMsg, refresh
+  , fetchDeferred, fetchDeferredFromStart, fetchCount, fetchCountDeferred, fetchMetadata
   , set, edit, save, saveMsg, create, delete
   , httpDataFetcher, httpCountFetcher, enumFetcher
   -- model updater
@@ -256,6 +256,7 @@ type Msg msg value
   | SaveCmdMsg Bool SearchParams
   | CreateCmdMsg Bool SearchParams
   | DeleteCmdMsg Bool SearchParams
+  | RefreshCmdMsg
   | DoneMsg Progress
   | DeferredSubscriptionMsg (DR.Tomsg msg -> Cmd msg) (DR.Tomsg msg)
   | DeferredResponseMsg Progress HttpError Bool
@@ -1297,6 +1298,16 @@ fetchWithParamMsg toMsg name param =
   toMsg <| DataWithParamCmd name param
 
 
+refresh: Tomsg msg value -> Cmd msg
+refresh =
+  domsg << refreshMsg
+
+
+refreshMsg: Tomsg msg value -> msg
+refreshMsg toMsg =
+  toMsg RefreshCmdMsg
+
+
 {-| Fetch view data with deferred header set.
 -}
 fetchDeferred: Tomsg msg value -> SearchParams -> DeferredHeader -> Cmd msg
@@ -1810,6 +1821,9 @@ update toMsg msg (Model modelData modelConf as same) =
               always <| do toMsg <| DeleteCmdMsg False searchParams
           in
             ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+
+      RefreshCmdMsg ->
+        ( same, fetchFromStart toMsg modelData.searchParams )
 
       DoneMsg doneProgress ->
         ( same |> withProgress doneProgress, Cmd.none )
