@@ -724,7 +724,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           ( { same | inputs = newInputs }, Cmd.none )
         else
           ctrl.updateModel
-            (toMsg << CmdChainMsg [ OnResolvedMsg input.name ] Cmd.none << Just)
+            (toMsg << CmdChainMsg [ OnResolvedMsg input.name ] Cmd.none << Just) -- unset resolving flag after cmd
             input
             mod |>
           (\(nm, cmd) ->
@@ -736,7 +736,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                       is
                     else
                       is |>
-                      Dict.update input.name (Maybe.map (\i -> { i | resolving = True}))
+                      Dict.update input.name (Maybe.map (\i -> { i | resolving = True})) -- set resolving flag if cmd
                   )
               , isDirty = True
               } --update inputs if updater has changed other fields
