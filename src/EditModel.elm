@@ -54,6 +54,7 @@ type alias Input msg =
   , msgs: Maybe (Msgs msg)
   , idx: Int -- index of input in metadata fields list, used for JsonValue model
   , field: Maybe VM.Field
+  , resolving: Bool
   }
 
 
@@ -175,12 +176,14 @@ type Msg msg model
   | OnMsg (Controller msg model) String
   | OnFocusMsg (Controller msg model) Bool
   | OnSelectMsg (Controller msg model) String
+  | OnResolvedMsg String
   -- update entire model
   | EditModelMsg (model -> model)
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
   | SyncModelMsg
+  | SubmitModelMsg
   --
   | CmdChainMsg (List (Msg msg model)) (Cmd msg) (Maybe (Msg msg model))
 
@@ -203,7 +206,7 @@ init model ctrlList toMessagemsg =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing Nothing -1 Nothing
+          Input k "" False Nothing Nothing Nothing -1 Nothing False
         )
   in
     EditModel
@@ -241,7 +244,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
             stringVal = JM.jsonValueToString value
 
             input =
-              Input key stringVal False Nothing Nothing Nothing i <| Just field
+              Input key stringVal False Nothing Nothing Nothing i (Just field) False
 
             ctrl =
               let
@@ -522,7 +525,7 @@ save =
 
 saveMsg: Tomsg msg model -> msg
 saveMsg toMsg =
-  JM.saveMsg (toMsg << SaveModelMsg) []
+  toMsg SubmitModelMsg
 
 
 sync: Tomsg msg model -> Cmd msg
@@ -711,32 +714,43 @@ jsonDeleteMsg toMsg path =
 
 {-| Model update -}
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
-update toMsg msg ({ model, inputs, controllers } as same) =
+update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
   let
-    updateModelFromInput toUpdMsg newInputs ctrl input =
+    updateModelFromInput newInputs ctrl input =
       let
         mod = JM.data model
       in
         if ctrl.formatter mod == input.value then
           ( { same | inputs = newInputs }, Cmd.none )
         else
-          ctrl.updateModel toUpdMsg input mod |>
+          ctrl.updateModel
+            (toMsg << CmdChainMsg [ OnResolvedMsg input.name ] Cmd.none << Just)
+            input
+            mod |>
           (\(nm, cmd) ->
             ( { same |
-                inputs = updateInputsFromModel nm newInputs
+                inputs =
+                  updateInputsFromModel nm newInputs |>
+                  (\is ->
+                    if cmd == Cmd.none then
+                      is
+                    else
+                      is |>
+                      Dict.update input.name (Maybe.map (\i -> { i | resolving = True}))
+                  )
               , isDirty = True
               } --update inputs if updater has changed other fields
-            , do toUpdMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
+            , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
             )
           )
 
-    updateModelFromActiveInput toUpdMsg =
+    updateModelFromActiveInput =
       Dict.values >>
       List.filter .editing >>
       List.head >>
       Maybe.andThen
         (\input -> Dict.get input.name controllers |> Maybe.map (\(Controller c) -> (c, input))) >>
-      Maybe.map (\(c, input) -> updateModelFromInput toUpdMsg inputs c input) >>
+      Maybe.map (\(c, input) -> updateModelFromInput inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
     updateInput ctrl value newInputs =
@@ -800,7 +814,7 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           if focus then
             ( { same | inputs = newInputs }, selCmd )
           else
-            updateModelFromInput toMsg newInputs ctrl input
+            updateModelFromInput newInputs ctrl input
       in
         Dict.get ctrl.name inputs |>
         Maybe.map processFocusSelect |>
@@ -910,8 +924,17 @@ update toMsg msg ({ model, inputs, controllers } as same) =
         updateInput ctrl value inputs |>
         (\(newInputs, maybeInp) ->
           maybeInp |>
-          Maybe.map (updateModelFromInput toMsg newInputs ctrl) |>
+          Maybe.map (updateModelFromInput newInputs ctrl) |>
           Maybe.withDefault ( same, Cmd.none )
+        )
+
+      OnResolvedMsg name ->
+        ( { same |
+            inputs =
+              inputs |>
+              Dict.update name (Maybe.map (\i -> { i | resolving = False }))
+          }
+        , Cmd.none
         )
 
       --edit entire model
@@ -943,7 +966,26 @@ update toMsg msg ({ model, inputs, controllers } as same) =
           ( same, result )
 
       SyncModelMsg ->
-        updateModelFromActiveInput toMsg inputs
+        updateModelFromActiveInput inputs
+
+      SubmitModelMsg ->
+        ( same
+        , inputs |>
+          Dict.values |>
+          List.filter .resolving |>
+          List.map .name |>
+          (\rl ->
+            if List.isEmpty rl then
+              JM.save (toMsg << SaveModelMsg) []
+            else
+              Ask.error
+                toMessagemsg
+                ( "Cannot save data while resolving field value " ++
+                  String.join ", " rl ++
+                  ". Try later."
+                )
+          )
+        )
 
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
