@@ -6,6 +6,7 @@ module Calendar exposing
 import Json.Decode as JD
 import Json.Encode as JE
 import Dict
+import Regex exposing (..)
 
 import JsonModel as JM
 import Ask
@@ -117,3 +118,54 @@ calendarSelect locale doSearch toMsg toMessagemsg search toDestinationmsg =
     else
       Cmd.none
   )
+
+
+format: String -> String -> String
+format pattern date =
+  ""
+
+parse: String -> String -> String
+parse pattern date =
+  ""
+
+
+dateRegex: Regex
+dateRegex =
+  Regex.fromString "^(\\d{4})-(\\d{2})-(\\d{2})$" |> Maybe.withDefault Regex.never
+
+
+dateTimeRegex: Regex
+dateTimeRegex =
+  Regex.fromString "^(\\d{4})-(\\d{2})-(\\d{2}).(\\d{2}):(\\d{2}):(\\d{2})$" |>
+  Maybe.withDefault Regex.never
+
+
+separatorRegex: Regex
+separatorRegex =
+  Regex.fromString "[^\\w]" |> Maybe.withDefault Regex.never
+
+
+separators: String -> List (Int, String)
+separators pattern =
+  components separatorRegex pattern
+
+
+dateMaskRegex: Regex
+dateMaskRegex =
+  Regex.fromString "(y{2,4}|M{2}|d{2}){1,3}" |> Maybe.withDefault Regex.never
+
+
+dateTimeMaskRegex: Regex
+dateTimeMaskRegex =
+  Regex.fromString "(y{2,4}|M{2}|d{2}|h{2}|m{2}|s{2}){1,6}" |> Maybe.withDefault Regex.never
+
+
+dateComponents: String -> List(Int, String)
+dateComponents pattern =
+  components dateMaskRegex pattern
+
+
+components: Regex -> String -> List (Int, String)
+components regex pattern =
+  Regex.find regex pattern |>
+  List.map (\m -> (m.index, m.match))
