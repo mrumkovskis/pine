@@ -2014,6 +2014,9 @@ jsonString path source =
       JsString s ->
         Just s
 
+      JsNull ->
+        Nothing
+
       x -> Just <| toString x
     )
 

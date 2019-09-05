@@ -13,7 +13,7 @@ import Select exposing (..)
 
 
 type alias CalendarEntry =
-  { value: String
+  { value: Maybe String
   , today: String
   , month: String
   , year: String
@@ -38,7 +38,7 @@ decoder =
       dec =
         JD.map7
           CalendarEntry
-          (JD.field "value" JD.string)
+          (JD.field "value" <| JD.maybe JD.string)
           (JD.field "today" JD.string)
           (JD.field "month" JD.string)
           (JD.field "year" JD.string)
@@ -71,7 +71,7 @@ jsonDecoder =
   JD.map
     ( List.map
         (\entry ->
-          [ ("value", JM.JsString entry.value)
+          [ ("value", entry.value |> Maybe.map JM.JsString |> Maybe.withDefault JM.JsNull)
           , ("today", JM.JsString entry.today)
           , ("month", JM.JsString entry.month)
           , ("year", JM.JsString entry.year)
