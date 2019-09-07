@@ -1,6 +1,7 @@
 module Calendar exposing
   ( CalendarEntry, Holiday
   , formatDate, formatDateTime
+  , parseDate, parseDateTime
   )
 
 
@@ -130,7 +131,7 @@ formatDate: String -> String -> String
 formatDate mask value =
   ymd value |>
   (\(y, m, d) ->
-    format "yMd" mask (Dict.fromList [("y", y), ("M", m), ("d", d)])
+    format mask (Dict.fromList [("y", y), ("M", m), ("d", d)])
   ) |>
   Maybe.withDefault value
 
@@ -140,16 +141,15 @@ formatDateTime mask value =
   ymd_hms value |>
   (\((y, m, d), (h, min, s)) ->
     format
-      "yMdhms"
       mask
       (Dict.fromList [("y", y), ("M", m), ("d", d), ("h", h), ("m", min), ("s", s)])
   ) |>
   Maybe.withDefault value
 
 
-format: String -> String -> Dict.Dict String String -> Maybe String
-format keys mask comps =
-  run (maskParser keys) mask |>
+format: String -> Dict.Dict String String -> Maybe String
+format mask comps =
+  run (maskParser mask) mask |>
   Result.toMaybe |>
   Maybe.map
     ( List.foldl
@@ -167,7 +167,7 @@ format keys mask comps =
                 if diff > 0 then
                   String.dropLeft diff val
                 else
-                  String.padLeft diff '0' val
+                  String.padLeft (String.length key) '0' val
           in
             res ++
             ( if String.contains "y" key then
@@ -190,9 +190,83 @@ format keys mask comps =
     )
 
 
-parse: String -> String -> String
-parse mask value =
-  ""
+parseDate: String -> String -> Maybe String
+parseDate =
+  parse False
+
+
+parseDateTime: String -> String -> Maybe String
+parseDateTime =
+  parse True
+
+
+parse: Bool -> String -> String -> Maybe String
+parse hasTime mask value =
+  let
+    val = String.trim value
+  in
+    run (maskParser mask) mask |>
+    Result.toMaybe |>
+    Maybe.map
+      ( List.foldl
+          (\(pos, key) (res, off) ->
+            let
+              comp n l =
+                String.slice (pos - off) (pos - off + String.length key) value |>
+                String.filter Char.isDigit |>
+                (\s ->
+                  let d = String.length s - l in
+                  ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
+                  , off + String.length key - String.length s
+                  )
+                ) |>
+                (\(v, o) -> (Dict.insert n v res, o))
+            in
+              if String.contains "y" key then
+                comp "y" 4
+              else if String.contains "M" key then
+                comp "M" 2
+              else if String.contains "d" key then
+                comp "d" 2
+              else if String.contains "h" key then
+                comp "h" 2
+              else if String.contains "m" key then
+                comp "m" 2
+              else if String.contains "s" key then
+                comp "s" 2
+              else
+                (res, off)
+          )
+          (Dict.empty, 0)
+      ) |>
+    Maybe.map
+      (\(res, _) ->
+        let
+          comp n def =
+            Dict.get n res |> Maybe.withDefault def
+        in
+          String.concat
+            [ comp "y" "0000"
+            , "-"
+            , comp "M" "01"
+            , "-"
+            , comp "d" "01"
+            , " "
+            ] ++
+          ( if hasTime then
+              String.concat
+                [ comp "h" "00"
+                , ":"
+                , comp "m" "00"
+                , ":"
+                , comp "s" "00"
+                , ":"
+                ]
+            else
+              ""
+          ) |>
+          String.dropRight 1
+      )
 
 
 dateRegex: Regex
@@ -206,24 +280,36 @@ dateTimeRegex =
 
 
 maskParser: String -> Parser (List ( Int, String ))
-maskParser keys =
+maskParser mask =
   let
-    keySet = String.split "" keys |> Set.fromList
-
-    sr = Regex.fromString "[^yMdhms]" |> Maybe.withDefault Regex.never
+    ks = Set.fromList <| String.toList "yMdhms"
 
     sep =
+      mask |>
+      String.filter (\c -> not <| Set.member c ks) |>
+      String.toList |> Set.fromList |> Set.toList |> String.fromList
+
+    keySet = String.split "" (mask |> String.filter (\c -> Set.member c ks)) |> Set.fromList
+
+    sr = Regex.fromString ("[" ++ sep ++ "]") |> Maybe.withDefault Regex.never
+
+    sepParser =
       (getChompedString <| chompWhile (Regex.contains sr << String.fromChar)) |>
+      -- check if result is not empty string to ensure that some input is consumed on success to avoid infinite loop
       andThen (\res -> if String.isEmpty res then problem "not sep" else succeed res)
 
     comp c =
       (getChompedString <| chompWhile ((==) c)) |>
+      -- check if result is not empty string to ensure that some input is consumed on success to avoid infinite loop
       andThen (\res -> if String.isEmpty res then problem "not element" else succeed res)
+
+    compParsers =
+      keySet |> Set.toList |> String.concat |> String.toList |> List.map comp
 
     compParser =
       succeed Tuple.pair
         |= getOffset
-        |= oneOf (sep :: (keys |> String.toList |> List.map comp))
+        |= oneOf (compParsers ++ [ sepParser ])
 
     validator =
       andThen
