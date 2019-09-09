@@ -1,5 +1,5 @@
 module Select exposing
-  ( SelectModel, Msg, Tomsg, init, additionalParams, updateSearch
+  ( SelectModel, Msg, Tomsg, init, additionalParams, updateSearch, isLoading
   , onSelectInput, onMouseSelect
   , navigationMsg, setActiveMsg, selectMsg, searchMsg
   , search, update
@@ -69,6 +69,12 @@ additionalParams params model =
 updateSearch: String -> SelectModel msg value -> SelectModel msg value
 updateSearch text model =
   { model | search = text }
+
+
+{-| Calls isProgress function on underlying model -}
+isLoading: SelectModel msg value -> Bool
+isLoading { model } =
+  JM.isProgress model
 
 
 {-| Key listeners. Listens to key up, down, esc, enter.
