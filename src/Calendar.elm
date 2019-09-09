@@ -1,5 +1,6 @@
 module Calendar exposing
   ( CalendarEntry, Holiday
+  , dateController, dateTimeController
   , formatDate, formatDateTime
   , parseDate, parseDateTime
   )
@@ -13,6 +14,7 @@ import Parser exposing (..)
 import Set
 
 import JsonModel as JM
+import EditModel as EM
 import Ask
 import Select exposing (..)
 
@@ -106,25 +108,97 @@ jsonDecoder =
     )
 
 
-calendar: Ask.Tomsg msg -> JM.ListModel msg JM.JsonValue
-calendar =
-  JM.initForm "/metadata" "/data" "/calendar" jsonDecoder (always JE.null) [] (always Nothing)
-
-
-calendarSelect: String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg)
+calendarSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg)
   -> (SelectModel msg JM.JsonValue, Cmd msg)
-calendarSelect locale doSearch toMsg toMessagemsg search toDestinationmsg =
-  ( Select.init
-      (calendar toMessagemsg)
-      locale
-      search
-      (JM.jsonString "value" >> Maybe.withDefault "<vērtība nav atrasta>" >> toDestinationmsg)
-      (JM.jsonString "value" >> Maybe.withDefault "<vērtība nav atrasta>")
-  , if doSearch then
-      Select.search toMsg search
-    else
-      Cmd.none
-  )
+calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
+  let
+    calendar =
+      JM.initForm "/metadata" "/data" "/calendar" jsonDecoder (always JE.null) [] (always Nothing)
+  in
+    ( Select.init
+        (calendar toMessagemsg)
+        locale
+        search
+        ( JM.jsonString "value" >>
+          Maybe.map (formatDate mask) >>
+          Maybe.withDefault "<vērtība nav atrasta>" >>
+          toDestinationmsg
+        )
+        ( JM.jsonString "value" >>
+          Maybe.map (formatDate mask) >>
+          Maybe.withDefault "<vērtība nav atrasta>"
+        )
+    , if doSearch then
+        Select.search toMsg search
+      else
+        Cmd.none
+    )
+
+
+timeSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg)
+  -> (SelectModel msg JM.JsonValue, Cmd msg)
+timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
+  let
+    time =
+      JM.initForm "/metadata" "/data" "/calendar_time" jsonDecoder (always JE.null) [] (always Nothing)
+
+  in
+    ( Select.init
+        (time toMessagemsg)
+        locale
+        search
+        ( JM.jsonString "value" >>
+          Maybe.map (formatDateTime mask) >>
+          Maybe.withDefault "<vērtība nav atrasta>" >>
+          toDestinationmsg
+        )
+        ( JM.jsonString "value" >>
+          Maybe.map (formatDateTime mask) >>
+          Maybe.withDefault "<vērtība nav atrasta>"
+        )
+    , if doSearch then
+        Select.search toMsg search
+      else
+        Cmd.none
+    )
+
+
+dateController: String -> String -> Bool -> EM.JsonController msg
+dateController locale mask doSearch =
+  EM.jsonController |>
+  EM.jsonModelUpdater
+    (\_ _ _ inp model ->
+      JM.jsonEdit
+        inp.name
+        ( parseDate mask inp.value |>
+          Maybe.withDefault inp.value |>
+          JM.JsString
+        )
+        model |>
+      (\m -> (m, Cmd.none))
+    ) |>
+  EM.jsonFormatter (\formatter model -> formatter model |> formatDate mask) |>
+  EM.jsonInputValidator (\_ value -> parseDate mask value |> Result.fromMaybe mask) |>
+  EM.jsonSelectInitializer (calendarSelect locale mask doSearch)
+
+
+dateTimeController: String -> String -> Bool -> EM.JsonController msg
+dateTimeController locale mask doSearch =
+  EM.jsonController |>
+  EM.jsonModelUpdater
+    (\_ _ _ inp model ->
+      JM.jsonEdit
+        inp.name
+        ( parseDateTime mask inp.value |>
+          Maybe.withDefault inp.value |>
+          JM.JsString
+        )
+        model |>
+      (\m -> (m, Cmd.none))
+    ) |>
+  EM.jsonFormatter (\formatter model -> formatter model |> formatDateTime mask) |>
+  EM.jsonInputValidator (\_ value -> parseDateTime mask value |> Result.fromMaybe mask) |>
+  EM.jsonSelectInitializer (timeSelect locale mask doSearch)
 
 
 formatDate: String -> String -> String
