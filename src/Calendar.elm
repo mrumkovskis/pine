@@ -168,16 +168,22 @@ dateController locale mask doSearch =
   EM.jsonController |>
   EM.jsonModelUpdater
     (\_ _ _ inp model ->
-      JM.jsonEdit
-        inp.name
-        ( parseDate mask inp.value |>
-          Maybe.withDefault inp.value |>
-          JM.JsString
-        )
-        model |>
+      JD.decodeString JM.pathDecoder inp.name |> -- TODO remove after edit model refactoring to string keys
+      Result.toMaybe |>
+      Maybe.map
+        (\path ->
+          JM.jsonEditor
+            path
+            ( parseDate mask inp.value |>
+              Maybe.withDefault inp.value |>
+              JM.JsString
+            )
+            model
+        ) |>
+      Maybe.withDefault model |>
       (\m -> (m, Cmd.none))
     ) |>
-  EM.jsonFormatter (\formatter model -> formatter model |> formatDate mask) |>
+  EM.jsonFieldFormatter (JM.jsonValueToString >> formatDate mask) |>
   EM.jsonInputValidator (\_ value -> parseDate mask value |> Result.fromMaybe mask) |>
   EM.jsonSelectInitializer (calendarSelect locale mask doSearch)
 
@@ -187,16 +193,22 @@ dateTimeController locale mask doSearch =
   EM.jsonController |>
   EM.jsonModelUpdater
     (\_ _ _ inp model ->
-      JM.jsonEdit
-        inp.name
-        ( parseDateTime mask inp.value |>
-          Maybe.withDefault inp.value |>
-          JM.JsString
-        )
-        model |>
+      JD.decodeString JM.pathDecoder inp.name |> -- TODO remove after edit model refactoring to string keys
+      Result.toMaybe |>
+      Maybe.map
+        (\path ->
+          JM.jsonEditor
+            path
+            ( parseDateTime mask inp.value |>
+              Maybe.withDefault inp.value |>
+              JM.JsString
+            )
+            model
+        ) |>
+      Maybe.withDefault model |>
       (\m -> (m, Cmd.none))
     ) |>
-  EM.jsonFormatter (\formatter model -> formatter model |> formatDateTime mask) |>
+  EM.jsonFieldFormatter (JM.jsonValueToString >> formatDateTime mask) |>
   EM.jsonInputValidator (\_ value -> parseDateTime mask value |> Result.fromMaybe mask) |>
   EM.jsonSelectInitializer (timeSelect locale mask doSearch)
 
@@ -204,20 +216,22 @@ dateTimeController locale mask doSearch =
 formatDate: String -> String -> String
 formatDate mask value =
   ymd value |>
-  (\(y, m, d) ->
-    format mask (Dict.fromList [("y", y), ("M", m), ("d", d)])
-  ) |>
+  Maybe.andThen
+    (\(y, m, d) ->
+      format mask (Dict.fromList [("y", y), ("M", m), ("d", d)])
+    ) |>
   Maybe.withDefault value
 
 
 formatDateTime: String -> String -> String
 formatDateTime mask value =
   ymd_hms value |>
-  (\((y, m, d), (h, min, s)) ->
-    format
-      mask
-      (Dict.fromList [("y", y), ("M", m), ("d", d), ("h", h), ("m", min), ("s", s)])
-  ) |>
+  Maybe.andThen
+    (\((y, m, d), (h, min, s)) ->
+      format
+        mask
+        (Dict.fromList [("y", y), ("M", m), ("d", d), ("h", h), ("m", min), ("s", s)])
+    ) |>
   Maybe.withDefault value
 
 
@@ -410,7 +424,7 @@ maskParser mask =
     validator
 
 
-ymd: String -> (String, String, String)
+ymd: String -> Maybe (String, String, String)
 ymd date =
   Regex.find dateRegex date |>
   List.head |>
@@ -423,11 +437,10 @@ ymd date =
 
         x ->
           Nothing
-    ) |>
-  Maybe.withDefault ("<?>", "<?>", "<?>")
+    )
 
 
-ymd_hms: String -> ((String, String, String), (String, String, String))
+ymd_hms: String -> Maybe ((String, String, String), (String, String, String))
 ymd_hms dt =
   Regex.find dateTimeRegex dt |>
   List.head |>
@@ -440,8 +453,7 @@ ymd_hms dt =
 
         x ->
           Nothing
-    ) |>
-  Maybe.withDefault (("<?>", "<?>", "<?>"), ("<?>", "<?>", "<?>"))
+    )
 
 
 r: String -> Regex

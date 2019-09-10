@@ -2,7 +2,8 @@ module EditModel exposing
   ( Input, Controller, ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, Msgs, SelectMsgs
   , init, initJsonForm, initJsonQueryForm
-  , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter, jsonSelectInitializer, jsonInputCmd
+  , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
+  , jsonFieldFormatter, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
@@ -120,6 +121,7 @@ type alias JsonController msg =
   , validateInput: Maybe (JsonInputValidator)
   , selectInitializer: Maybe (SelectInitializer msg)
   , inputCmd: Maybe (String -> Cmd msg)
+  , fieldFormatter: Maybe (JM.JsonValue -> String) -- unlike formatter takes field value as an argument not entire model
   }
 
 
@@ -241,10 +243,18 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
           let
             key = JM.pathEncoder path |> JE.encode 0
 
-            stringVal = JM.jsonValueToString value
+            maybeExtensions =
+              case List.filter (\(p, _) -> JM.pathMatch p key) controllers of
+                [] ->
+                  Nothing
 
-            input =
-              Input key stringVal False Nothing Nothing Nothing i (Just field) False
+                (_, match) :: rest -> -- TODO prioritize matched controllers if more than one match is found
+                  Just match
+
+            fieldFormatter =
+              maybeExtensions |>
+              Maybe.andThen (.fieldFormatter) |>
+              Maybe.withDefault JM.jsonValueToString
 
             ctrl =
               let
@@ -314,7 +324,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
 
                 formatter model =
                   JM.jsonReader path model |>
-                  Maybe.map JM.jsonValueToString |>
+                  Maybe.map fieldFormatter |>
                   Maybe.withDefault ""
 
                 validator iv =
@@ -355,9 +365,29 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                         Maybe.withDefault (Ok r)
                       )
               in
-                case List.filter (\(p, _) -> JM.pathMatch p key) controllers of
-                  [] ->
+                maybeExtensions |>
+                Maybe.map
+                  (\ext ->
                     Controller
+                      { name = key
+                      , updateModel =
+                          ext.updateModel |>
+                          Maybe.map (\u -> u updater metadata) |>
+                          Maybe.withDefault updater
+                      , formatter =
+                          ext.formatter |>
+                          Maybe.map (\f -> f formatter) |>
+                          Maybe.withDefault formatter
+                      , selectInitializer = ext.selectInitializer
+                      , validateInput =
+                          ext.validateInput |>
+                          Maybe.map (\v -> v validator) |>
+                          Maybe.withDefault validator
+                      , inputCmd = ext.inputCmd
+                      }
+                  ) |>
+                Maybe.withDefault
+                  ( Controller
                       { name = key
                       , updateModel = updater
                       , formatter = formatter
@@ -365,27 +395,13 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                       , validateInput = validator
                       , inputCmd = Nothing
                       }
-
-                  (_, match) :: rest -> -- TODO prioritize matched controllers if more than one match is found
-                    Controller
-                      { name = key
-                      , updateModel =
-                          match.updateModel |>
-                          Maybe.map (\u -> u updater metadata) |>
-                          Maybe.withDefault updater
-                      , formatter =
-                          match.formatter |>
-                          Maybe.map (\f -> f formatter) |>
-                          Maybe.withDefault formatter
-                      , selectInitializer = match.selectInitializer
-                      , validateInput =
-                          match.validateInput |>
-                          Maybe.map (\v -> v validator) |>
-                          Maybe.withDefault validator
-                      , inputCmd = match.inputCmd
-                      }
+                  )
           in
-            ((key, ctrl), (key, input))
+            ( ( key, ctrl )
+            , ( key
+              , Input key (fieldFormatter value) False Nothing Nothing Nothing i (Just field) False
+              )
+            )
         ) |>
         List.unzip |>
         Tuple.mapBoth Dict.fromList Dict.fromList
@@ -404,7 +420,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
 
 jsonController: JsonController msg
 jsonController =
-  JsonController Nothing Nothing Nothing Nothing Nothing
+  JsonController Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 jsonModelUpdater: JsonModelUpdater msg -> JsonController msg -> JsonController msg
@@ -420,6 +436,11 @@ jsonInputValidator validator jc =
 jsonFormatter: JsonFormatter -> JsonController msg -> JsonController msg
 jsonFormatter formatter jc =
   { jc | formatter = Just formatter }
+
+
+jsonFieldFormatter: (JM.JsonValue -> String) -> JsonController msg -> JsonController msg
+jsonFieldFormatter formatter jc =
+  { jc | fieldFormatter = Just formatter }
 
 
 jsonSelectInitializer: SelectInitializer msg -> JsonController msg -> JsonController msg
