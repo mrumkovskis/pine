@@ -143,7 +143,7 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
      ( if cmd == Cmd.none then
           { newModel |
             active = True
-          , model = same.filter same.search model
+          , model = newModel.filter newModel.search newModel.model
           }
         else
           newModel
