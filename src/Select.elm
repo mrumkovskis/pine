@@ -33,6 +33,7 @@ type alias SelectModel msg value =
   , activeIdx: Maybe Int
   , active: Bool
   , toString: value -> String
+  , filter: String -> JM.ListModel msg value -> JM.ListModel msg value
   }
 
 
@@ -54,7 +55,7 @@ selected value message constructor and value to string converter.
 -}
 init: JM.ListModel msg value -> String -> String -> (value -> msg) -> (value -> String) -> SelectModel msg value
 init model paramName initSearch toSelectedmsg toString =
-  SelectModel model paramName initSearch [] toSelectedmsg Nothing False toString
+  SelectModel model paramName initSearch [] toSelectedmsg Nothing False toString (always identity)
 
 
 {-| Adds additional search parameters.
@@ -62,6 +63,13 @@ init model paramName initSearch toSelectedmsg toString =
 additionalParams: JM.SearchParams -> SelectModel msg value -> SelectModel msg value
 additionalParams params model =
   { model | additionalParams = params }
+
+
+filter:
+  (String -> JM.ListModel msg value -> JM.ListModel msg value) ->
+  SelectModel msg value -> SelectModel msg value
+filter filterFun model =
+  { model | filter = filterFun }
 
 
 {-| Updates search condition but does not perform search command
@@ -132,7 +140,15 @@ update toMsg msg ({ model, activeIdx, toSelectedmsg, active } as same) =
       Utils.matchIdx same.search
 
     maybeActivateModel (newModel, cmd) =
-     ( if cmd == Cmd.none then { newModel | active = True } else newModel, cmd )
+     ( if cmd == Cmd.none then
+          { newModel |
+            active = True
+          , model = same.filter same.search model
+          }
+        else
+          newModel
+     , cmd
+     )
 
   in
     case msg of
