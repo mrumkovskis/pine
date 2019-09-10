@@ -7,7 +7,7 @@ module JsonModel exposing
   , initJsonList, initList, initJsonForm, initJsonQueryForm, initJsonValueForm, initForm, initQueryForm
   , listDecoder, formDecoder, countBaseUri, pageSize, countDecoder, idParam
   , offsetLimitParams , enableDeferred, enableDeferredWithTimeout, dataFetcher, countFetcher
-  , setData
+  , setData, setMetadata
   -- data examination
   , data, progress, isProgress, completed, count, isEmpty, id, searchPars
   -- metadata examination
@@ -691,6 +691,11 @@ setData value (Model d c) =
 -}
 data: Model msg value -> value
 data (Model d _) = d.data
+
+
+setMetadata: Dict String VM.View -> Model msg value -> Model msg value
+setMetadata metadata (Model d c) =
+  Model d { c | metadata = metadata }
 
 
 {-| Check model [`Progress`](#Progress)
