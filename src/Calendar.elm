@@ -113,7 +113,7 @@ calendarSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg 
 calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
   let
     calendar =
-      JM.initForm "/metadata" "/data" "/calendar" jsonDecoder (always JE.null) [] (always Nothing)
+      JM.initForm "/metadata" "/data" "calendar" jsonDecoder (always JE.null) [] (always Nothing)
   in
     ( Select.init
         (calendar toMessagemsg)
@@ -140,7 +140,7 @@ timeSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg 
 timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
   let
     time =
-      JM.initForm "/metadata" "/data" "/calendar_time" jsonDecoder (always JE.null) [] (always Nothing)
+      JM.initForm "/metadata" "/data" "calendar_time" jsonDecoder (always JE.null) [] (always Nothing)
 
   in
     ( Select.init
