@@ -166,22 +166,9 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
 dateController: String -> String -> Bool -> EM.JsonController msg
 dateController locale mask doSearch =
   EM.jsonController |>
-  EM.jsonModelUpdater
-    (\_ _ _ inp model ->
-      JD.decodeString JM.pathDecoder inp.name |> -- TODO remove after edit model refactoring to string keys
-      Result.toMaybe |>
-      Maybe.map
-        (\path ->
-          JM.jsonEditor
-            path
-            ( parseDate mask inp.value |>
-              Maybe.withDefault inp.value |>
-              JM.JsString
-            )
-            model
-        ) |>
-      Maybe.withDefault model |>
-      (\m -> (m, Cmd.none))
+  EM.jsonFieldParser
+    (\inp ->
+      { inp | value = parseDate mask inp.value |> Maybe.withDefault inp.value }
     ) |>
   EM.jsonFieldFormatter (JM.jsonValueToString >> formatDate mask) |>
   EM.jsonInputValidator (\_ value -> parseDate mask value |> Result.fromMaybe mask) |>
@@ -191,22 +178,9 @@ dateController locale mask doSearch =
 dateTimeController: String -> String -> Bool -> EM.JsonController msg
 dateTimeController locale mask doSearch =
   EM.jsonController |>
-  EM.jsonModelUpdater
-    (\_ _ _ inp model ->
-      JD.decodeString JM.pathDecoder inp.name |> -- TODO remove after edit model refactoring to string keys
-      Result.toMaybe |>
-      Maybe.map
-        (\path ->
-          JM.jsonEditor
-            path
-            ( parseDateTime mask inp.value |>
-              Maybe.withDefault inp.value |>
-              JM.JsString
-            )
-            model
-        ) |>
-      Maybe.withDefault model |>
-      (\m -> (m, Cmd.none))
+  EM.jsonFieldParser
+    (\inp ->
+      { inp | value = parseDateTime mask inp.value |> Maybe.withDefault inp.value }
     ) |>
   EM.jsonFieldFormatter (JM.jsonValueToString >> formatDateTime mask) |>
   EM.jsonInputValidator (\_ value -> parseDateTime mask value |> Result.fromMaybe mask) |>

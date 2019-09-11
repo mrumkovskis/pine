@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, Msgs, SelectMsgs
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
-  , jsonFieldFormatter, jsonSelectInitializer, jsonInputCmd
+  , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
@@ -122,6 +122,7 @@ type alias JsonController msg =
   , selectInitializer: Maybe (SelectInitializer msg)
   , inputCmd: Maybe (String -> Cmd msg)
   , fieldFormatter: Maybe (JM.JsonValue -> String) -- unlike formatter takes field value as an argument not entire model
+  , fieldParser: Maybe (Input msg -> Input msg) -- prepares input value for updater, for example parses date
   }
 
 
@@ -253,8 +254,14 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
 
             fieldFormatter =
               maybeExtensions |>
-              Maybe.andThen (.fieldFormatter) |>
+              Maybe.andThen .fieldFormatter |>
               Maybe.withDefault JM.jsonValueToString
+
+            fieldParser =
+              maybeExtensions |>
+              Maybe.andThen .fieldParser |>
+              Maybe.withDefault identity
+
 
             ctrl =
               let
@@ -296,7 +303,8 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                               [ f ] ->
                                 maybeUpdateSubList <|
                                   JM.JsObject <|
-                                    Dict.fromList [(f.name, JM.JsString cinp.value)]
+                                    Dict.fromList
+                                      [(f.name, JM.JsString <| (fieldParser cinp).value)]
 
                               _ -> Nothing
                             ) |>
@@ -312,13 +320,13 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
                             (Result.toMaybe >> Maybe.map always >> Utils.orElse (Just updateSingleStringFieldSubview))
                         )
                     else if field.isCollection then
-                      ( JM.stringToJsonValue field.jsonType cinp.value |>
+                      ( ( fieldParser >> .value >> JM.stringToJsonValue field.jsonType ) cinp |>
                         Maybe.andThen maybeUpdateSubList |>
                         Maybe.withDefault model
                       , Cmd.none
                       )
                     else
-                      JM.stringToJsonValue field.jsonType cinp.value |>
+                      ( fieldParser >> .value >> JM.stringToJsonValue field.jsonType ) cinp |>
                       Maybe.map (\iv -> ( JM.jsonEditor path iv model, Cmd.none )) |>
                       Maybe.withDefault ( model, Cmd.none )
 
@@ -420,7 +428,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
 
 jsonController: JsonController msg
 jsonController =
-  JsonController Nothing Nothing Nothing Nothing Nothing Nothing
+  JsonController Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 jsonModelUpdater: JsonModelUpdater msg -> JsonController msg -> JsonController msg
@@ -441,6 +449,11 @@ jsonFormatter formatter jc =
 jsonFieldFormatter: (JM.JsonValue -> String) -> JsonController msg -> JsonController msg
 jsonFieldFormatter formatter jc =
   { jc | fieldFormatter = Just formatter }
+
+
+jsonFieldParser: (Input msg -> Input msg) -> JsonController msg -> JsonController msg
+jsonFieldParser parser jc =
+  { jc | fieldParser = Just parser }
 
 
 jsonSelectInitializer: SelectInitializer msg -> JsonController msg -> JsonController msg
