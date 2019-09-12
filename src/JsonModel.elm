@@ -243,12 +243,12 @@ type Path
 
 {-| Message for model update. -}
 type Msg msg value
-  = MetadataMsg (Maybe (Cmd msg)) (Result HttpError (Dict String VM.View))
+  = MetadataMsg (Result HttpError (Dict String VM.View))
   | DataMsg TypeName Bool SearchParams (Result HttpError value)
   | CountMsg TypeName SearchParams (Result HttpError Int)
   | DeleteMsg TypeName SearchParams (Result HttpError String)
-  | EditMsg Path JsonValue
-  | MetadataMsgCmd (Maybe (Cmd msg))
+  | EditMsg Bool Path JsonValue
+  | MetadataMsgCmd
   | UpdateCmdMsg Bool value
   | DataCmdMsg Bool Bool SearchParams (Maybe DeferredHeader)
   | DataWithParamCmd String String
@@ -1406,7 +1406,7 @@ fetchCountDeferred toMsg searchParams deferredHeader =
 -}
 fetchMetadata: Tomsg msg value -> Cmd msg
 fetchMetadata toMsg =
-  do toMsg <| MetadataMsgCmd Nothing
+  do toMsg MetadataMsgCmd
 
 
 {-| Set model value.
@@ -1478,9 +1478,6 @@ update toMsg msg (Model modelData modelConf as same) =
 
     withProgress pr (Model d c) = Model { d | progress = pr } c
 
-    withEmptyQueue ((Model d c) as m) =
-      if c.queuedCmd == Nothing then m else Model d { c | queuedCmd = Nothing }
-
     --progress
     fetchProgress = Progress True modelData.progress.countProgress False
 
@@ -1508,15 +1505,15 @@ update toMsg msg (Model modelData modelConf as same) =
 
     unInitialized = notInitialized same -- shortcut function
 
-    -- metadata fetch
-    fetchMd andThen =
-      do toMsg <| MetadataMsgCmd andThen
+    initializeAndCmd mod noInitCmd cmd =
+      if unInitialized then
+        queueCmd mod (noInitCmd ()) |>
+        Tuple.mapSecond (\_ -> fetchMetadata toMsg )
+      else
+        ( mod, cmd ())
 
-    initializeAndCmd noInitCmd cmd =
-      if unInitialized then fetchMd <| Just <| noInitCmd () else cmd ()
-
-    metadataHttpRequest maybeAndThen typeName =
-      VM.fetchMetadata (toMsg << MetadataMsg maybeAndThen) modelConf.metadataBaseUri typeName
+    metadataHttpRequest typeName =
+      VM.fetchMetadata (toMsg << MetadataMsg) modelConf.metadataBaseUri typeName
 
     saveHttpRequest uri method value toRespMsg decoder =
       { method = method
@@ -1578,75 +1575,67 @@ update toMsg msg (Model modelData modelConf as same) =
         else
           errorResponse progressDone err
 
-    queueCmd cmd =
-      ( Model modelData { modelConf | queuedCmd = Just cmd }
+    queueCmd (Model d mc) cmd =
+      ( Model d { mc | queuedCmd = Just cmd }
       , Cmd.none
       )
 
-    maybeUnqueueCmd (Model _ mc) =
+    maybeUnqueueCmd ((Model d mc) as mod) =
       mc.queuedCmd |>
-      Maybe.map (do toMsg) |>
-      Maybe.withDefault Cmd.none
+      Maybe.map (\cmd -> ( Model d { mc | queuedCmd = Nothing }, do toMsg cmd) ) |>
+      Maybe.withDefault (mod, Cmd.none)
+
+    unqueueOnly =
+      maybeUnqueueCmd >> Tuple.mapSecond (\_ -> Cmd.none)
 
     errorResponse pr err =
       log
         (toString err)
-        ( same |> withProgress pr
+        ( same |> withProgress pr |> maybeUnqueueCmd |> Tuple.first
         , Ask.errorOrUnauthorized modelConf.toMessagemsg err
         )
   in
     case msg of
-      MetadataMsg maybeCmd res ->
+      MetadataMsg res ->
         if not isMetadataProgress then
           -- integrity violation metadata fetch must be in progress
-          ( same, Cmd.none )
+          unqueueOnly same
         else
           case res of
             Ok metadata ->
-              ( Model modelData { modelConf | metadata = metadata } |>
-                withProgress metadataDone
-              , maybeCmd |> Maybe.withDefault Cmd.none
-              )
+              Model modelData { modelConf | metadata = metadata } |>
+              withProgress metadataDone |>
+              maybeUnqueueCmd
 
             Err err ->
               errorResponse allDone err
 
       DataMsg name restart searchParams (Ok newdata) ->
-        let
-          emptyQueueModel = withEmptyQueue same
-        in
-          ( if hasIntegrity (name, isFetchProgress) then
-              let newModel = maybeWithNewData restart searchParams emptyQueueModel in
-                modelConf.setter newdata newModel |> withProgress fetchDone
-            else emptyQueueModel
-          , maybeUnqueueCmd same
-          )
+        if hasIntegrity (name, isFetchProgress) then
+            maybeWithNewData restart searchParams same |>
+            modelConf.setter newdata |>
+            withProgress fetchDone |>
+            maybeUnqueueCmd
+        else
+          unqueueOnly same
 
       CountMsg name searchParams (Ok cnt) ->
-        ( if hasIntegrity (name, modelData.progress.countProgress) then
-            let
-              newModel =
-                  Model
-                    { modelData |
-                      -- if search params correspond set count else reset count
-                      count = if (searchParams == modelData.searchParams) then Just cnt else Nothing
-                    }
-                    modelConf
-            in
-              newModel |> withProgress countDone |> withEmptyQueue
-          else same |> withEmptyQueue
-        , maybeUnqueueCmd same
-        )
+        if hasIntegrity (name, modelData.progress.countProgress) then
+          Model
+            { modelData |
+              -- if search params correspond set count else reset count
+              count = if (searchParams == modelData.searchParams) then Just cnt else Nothing
+            }
+            modelConf |> withProgress countDone |> maybeUnqueueCmd
+        else
+          unqueueOnly same
 
       DeleteMsg name searchParams (Ok newdata) ->
-        let
-          emptyQueueModel = withEmptyQueue same
-        in
-          ( if hasIntegrity (name, isFetchProgress) then
-              emptyQueueModel |> (\(Model _ c) -> Model c.emptyData c)
-            else emptyQueueModel
-          , maybeUnqueueCmd same
-          )
+        if hasIntegrity (name, isFetchProgress) then
+          Model modelConf.emptyData modelConf |>
+          maybeUnqueueCmd
+        else
+          unqueueOnly same
 
       DataMsg name restart searchParams (Err err) ->
         maybeSubscribeOrAskDeferred
@@ -1695,17 +1684,17 @@ update toMsg msg (Model modelData modelConf as same) =
                 )
             else ( same, Cmd.none )
 
-      MetadataMsgCmd maybeAndThen ->
+      MetadataMsgCmd ->
         if isMetadataProgress then
           ( same, Cmd.none )
         else
           ( (same |> withProgress metadataProgress)
-          , metadataHttpRequest maybeAndThen modelConf.typeName
+          , metadataHttpRequest modelConf.typeName
           )
 
       UpdateCmdMsg check value ->
         if check && isFetchProgress then
-          queueCmd <| UpdateCmdMsg True value
+          queueCmd same <| UpdateCmdMsg True value
         else
           let
             cmd =
@@ -1715,13 +1704,13 @@ update toMsg msg (Model modelData modelConf as same) =
                   (Ok value)
 
             noInitCmd =
-              always <| do toMsg <| UpdateCmdMsg False value
+              always <| UpdateCmdMsg False value
           in
-            ( (same |> withEmptyQueue |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+            initializeAndCmd (same |> withProgress fetchProgress) noInitCmd cmd
 
       DataCmdMsg check restart searchParams deferredHeader ->
         if check && isFetchProgress then
-          queueCmd <| DataCmdMsg True restart searchParams deferredHeader
+          queueCmd same <| DataCmdMsg True restart searchParams deferredHeader
         else
           let
             cmd =
@@ -1729,13 +1718,9 @@ update toMsg msg (Model modelData modelConf as same) =
                 modelConf.dataFetcher toMsg restart searchParams deferredHeader same
 
             noInitCmd =
-              always <|
-                do toMsg <|
-                  DataCmdMsg False restart searchParams deferredHeader
-
-            newModel = same |> withEmptyQueue |> withProgress fetchProgress
+              always <| DataCmdMsg False restart searchParams deferredHeader
           in
-            ( newModel, initializeAndCmd noInitCmd cmd)
+            initializeAndCmd (same |> withProgress fetchProgress) noInitCmd cmd
 
       DataWithParamCmd name param ->
         ( same
@@ -1749,21 +1734,16 @@ update toMsg msg (Model modelData modelConf as same) =
         if String.isEmpty modelConf.countBaseUri then
           ( same, Ask.warn modelConf.toMessagemsg "Cannot calculate count, count uri empty" )
         else if check && isCountProgress then
-          queueCmd <| CountCmdMsg True searchParams deferredHeader
+          queueCmd same <| CountCmdMsg True searchParams deferredHeader
         else
           let
             cmd =
               always <| modelConf.countFetcher toMsg searchParams deferredHeader same
 
             noInitCmd =
-              always <|
-                do toMsg <|
-                  CountCmdMsg False searchParams deferredHeader
+              always <| CountCmdMsg False searchParams deferredHeader
           in
-
-          ( same |> withEmptyQueue |> withProgress countProgress
-          , initializeAndCmd noInitCmd cmd
-          )
+            initializeAndCmd (same |> withProgress countProgress) noInitCmd cmd
 
       SaveCmdMsg check searchParams ->
         if check && isFetchProgress then
@@ -1787,9 +1767,9 @@ update toMsg msg (Model modelData modelConf as same) =
                     decoder
 
             noInitCmd =
-              always <| do toMsg <| SaveCmdMsg False searchParams
+              always <| SaveCmdMsg False searchParams
           in
-            ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+            initializeAndCmd (same |> withProgress fetchProgress) noInitCmd cmd
 
       CreateCmdMsg check searchParams ->
         if check && isFetchProgress then
@@ -1806,9 +1786,9 @@ update toMsg msg (Model modelData modelConf as same) =
                   }
 
             noInitCmd =
-              always <| do toMsg <| CreateCmdMsg False searchParams
+              always <| CreateCmdMsg False searchParams
           in
-            ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+            initializeAndCmd (same |> withProgress fetchProgress) noInitCmd cmd
 
       DeleteCmdMsg check searchParams ->
         if check && isFetchProgress then
@@ -1823,9 +1803,9 @@ update toMsg msg (Model modelData modelConf as same) =
                     (toMsg << DeleteMsg modelConf.typeName searchParams)
 
             noInitCmd =
-              always <| do toMsg <| DeleteCmdMsg False searchParams
+              always <| DeleteCmdMsg False searchParams
           in
-            ( (same |> withProgress fetchProgress), initializeAndCmd noInitCmd cmd )
+            initializeAndCmd (same |> withProgress fetchProgress) noInitCmd cmd
 
       RefreshCmdMsg ->
         ( same, fetchFromStart toMsg modelData.searchParams )
