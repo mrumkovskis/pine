@@ -1420,7 +1420,7 @@ set toMsg value =
 -}
 edit: Tomsg msg value -> Path -> JsonValue -> Cmd msg
 edit toMsg path value =
-  do toMsg <| EditMsg path value
+  do toMsg <| EditMsg True path value
 
 
 {-| Save model.
@@ -1660,29 +1660,20 @@ update toMsg msg (Model modelData modelConf as same) =
 
       DeleteMsg _ _ (Err err) -> errorResponse fetchDone err
 
-      EditMsg path value ->
-        if unInitialized then
-          ( same, let cmd = always <| edit toMsg path value in initializeAndCmd cmd cmd )
+      EditMsg check path value ->
+        if check && isFetchProgress then
+          queueCmd same <| EditMsg True path value
         else
-          let
-            good =
-              hasIntegrity
-                ( modelConf.typeName
-                , not
-                    ( isFetchProgress ||
-                      isCountProgress ||
-                      isMetadataProgress
-                    )
-                )
-          in
-            if good then
-              let
-                newValue = modelConf.editor path value modelData.data
-              in
-                ( Model { modelData | data = newValue } modelConf
-                , Cmd.none
-                )
-            else ( same, Cmd.none )
+          if unInitialized then
+            initializeAndCmd
+              (same |> withProgress fetchProgress)
+              (always <| EditMsg False path value)
+              (always Cmd.none)
+          else
+            modelConf.editor path value modelData.data |>
+            (\newData -> Model { modelData | data = newData } modelConf) |>
+            withProgress fetchDone |>
+            maybeUnqueueCmd
 
       MetadataMsgCmd ->
         if isMetadataProgress then
@@ -1694,7 +1685,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       UpdateCmdMsg check value ->
         if check && isFetchProgress then
-          queueCmd same <| UpdateCmdMsg True value
+          queueCmd same <| UpdateCmdMsg False value
         else
           let
             cmd =
@@ -1710,7 +1701,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       DataCmdMsg check restart searchParams deferredHeader ->
         if check && isFetchProgress then
-          queueCmd same <| DataCmdMsg True restart searchParams deferredHeader
+          queueCmd same <| DataCmdMsg False restart searchParams deferredHeader
         else
           let
             cmd =
@@ -1734,7 +1725,7 @@ update toMsg msg (Model modelData modelConf as same) =
         if String.isEmpty modelConf.countBaseUri then
           ( same, Ask.warn modelConf.toMessagemsg "Cannot calculate count, count uri empty" )
         else if check && isCountProgress then
-          queueCmd same <| CountCmdMsg True searchParams deferredHeader
+          queueCmd same <| CountCmdMsg False searchParams deferredHeader
         else
           let
             cmd =
