@@ -267,68 +267,71 @@ parse hasTime mask value =
   let
     val = String.trim value
   in
-    run (maskParser mask) mask |>
-    Result.toMaybe |>
-    Maybe.map
-      ( List.foldl
-          (\(pos, key) (res, off) ->
-            let
-              comp n l =
-                String.slice (pos - off) (pos - off + String.length key) value |>
-                String.filter Char.isDigit |>
-                (\s ->
-                  let d = String.length s - l in
-                  ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
-                  , off + String.length key - String.length s
-                  )
-                ) |>
-                (\(v, o) -> (Dict.insert n v res, o))
-            in
-              if String.contains "y" key then
-                comp "y" 4
-              else if String.contains "M" key then
-                comp "M" 2
-              else if String.contains "d" key then
-                comp "d" 2
-              else if String.contains "h" key then
-                comp "h" 2
-              else if String.contains "m" key then
-                comp "m" 2
-              else if String.contains "s" key then
-                comp "s" 2
+    if String.isEmpty val then
+      Nothing
+    else
+      run (maskParser mask) mask |>
+      Result.toMaybe |>
+      Maybe.map
+        ( List.foldl
+            (\(pos, key) (res, off) ->
+              let
+                comp n l =
+                  String.slice (pos - off) (pos - off + String.length key) val |>
+                  String.filter Char.isDigit |>
+                  (\s ->
+                    let d = String.length s - l in
+                    ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
+                    , off + String.length key - String.length s
+                    )
+                  ) |>
+                  (\(v, o) -> (Dict.insert n v res, o))
+              in
+                if String.contains "y" key then
+                  comp "y" 4
+                else if String.contains "M" key then
+                  comp "M" 2
+                else if String.contains "d" key then
+                  comp "d" 2
+                else if String.contains "h" key then
+                  comp "h" 2
+                else if String.contains "m" key then
+                  comp "m" 2
+                else if String.contains "s" key then
+                  comp "s" 2
+                else
+                  (res, off)
+            )
+            (Dict.empty, 0)
+        ) |>
+      Maybe.map
+        (\(res, _) ->
+          let
+            comp n def =
+              Dict.get n res |> Maybe.withDefault def
+          in
+            String.concat
+              [ comp "y" "0000"
+              , "-"
+              , comp "M" "01"
+              , "-"
+              , comp "d" "01"
+              , " "
+              ] ++
+            ( if hasTime then
+                String.concat
+                  [ comp "h" "00"
+                  , ":"
+                  , comp "m" "00"
+                  , ":"
+                  , comp "s" "00"
+                  , ":"
+                  ]
               else
-                (res, off)
-          )
-          (Dict.empty, 0)
-      ) |>
-    Maybe.map
-      (\(res, _) ->
-        let
-          comp n def =
-            Dict.get n res |> Maybe.withDefault def
-        in
-          String.concat
-            [ comp "y" "0000"
-            , "-"
-            , comp "M" "01"
-            , "-"
-            , comp "d" "01"
-            , " "
-            ] ++
-          ( if hasTime then
-              String.concat
-                [ comp "h" "00"
-                , ":"
-                , comp "m" "00"
-                , ":"
-                , comp "s" "00"
-                , ":"
-                ]
-            else
-              ""
-          ) |>
-          String.dropRight 1
-      )
+                ""
+            ) |>
+            String.dropRight 1
+        )
 
 
 dateRegex: Regex
