@@ -1,6 +1,5 @@
 module SelectEvents exposing
   ( Msg (..)
-  , onEnter
   , onNavigation
   )
 
@@ -18,16 +17,8 @@ type Msg
   | Select
 
 
-onEnter: msg -> Attribute msg
-onEnter msg =
-  on "keydown" <|
-    ( keyCode |>
-      JD.andThen (\key -> if key == 13 then JD.succeed msg else JD.fail "Not enter")
-    )
-
-
 onNavigation: (Msg -> msg) -> Bool -> Attribute msg
-onNavigation toMsg isActive =
+onNavigation toMsg preventDefault =
   let
     mapper key =
       case key of
@@ -35,15 +26,15 @@ onNavigation toMsg isActive =
 
         40 -> JD.succeed Down -- arrow down
 
-        27 -> if isActive then JD.succeed Esc else JD.fail "Not active select box"  -- escape
+        27 -> JD.succeed Esc -- escape
 
-        13 -> if isActive then JD.succeed Select else JD.fail "Not active select box" -- enter
+        13 -> JD.succeed Select -- enter
 
-        _ -> JD.fail "Not selection key"
+        _ -> JD.fail "Not selection/navigation key"
 
     decoder = keyCode |> JD.andThen mapper |> JD.map toMsg
   in
-    -- on "keydown" decoder, use preventDefaultOn to stop form submission
+    -- on "keydown" decoder, may use preventDefaultOn to stop form submission
     preventDefaultOn
       "keydown"
-      (JD.map (\k -> (k, True)) decoder)
+      (JD.map (\k -> (k, preventDefault)) decoder)
