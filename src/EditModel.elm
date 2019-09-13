@@ -17,9 +17,6 @@ module EditModel exposing
 # Commands
 @docs fetch, set, create, http, save, delete
 
-# Inuput attributes (input is associated with controller)
-@docs inputEvents, onSelectInput, onSelectMouse
-
 # Utility
 @docs id, noCmd, input
 

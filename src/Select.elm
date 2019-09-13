@@ -1,6 +1,6 @@
 module Select exposing
   ( SelectModel, Msg, Tomsg, init, additionalParams, updateSearch, isLoading
-  , onSelectInput, onMouseSelect
+  , onMouseSelect
   , navigationMsg, setActiveMsg, selectMsg, searchMsg
   , search, update
   )
@@ -83,12 +83,6 @@ updateSearch text model =
 isLoading: SelectModel msg value -> Bool
 isLoading { model } =
   JM.isProgress model
-
-
-{-| Key listeners. Listens to key up, down, esc, enter.
--}
-onSelectInput: (SE.Msg -> msg) -> Bool -> List (Attribute msg)
-onSelectInput toMsg isActive = [ SE.onNavigation toMsg isActive ]
 
 
 {-| Mouse down listener on list item specified with idx parameter.
