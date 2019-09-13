@@ -131,6 +131,7 @@ type alias Msgs msg =
   , onFocus: msg
   , onBlur: msg
   , onEnter: msg
+  , updatemsg: String -> msg
   , clearmsg: Maybe msg
   , selectmsgs: Maybe (SelectMsgs msg)
   }
@@ -696,6 +697,7 @@ inpInternal toMsg ctl input =
       , onFocus = toMsg <| OnFocusMsg ctl True
       , onBlur = toMsg <| OnFocusMsg ctl False
       , onEnter = syncMsg toMsg
+      , updatemsg = toMsg << OnSelectMsg ctl
       , clearmsg =
           ctl |>
           (\(Controller { selectInitializer }) ->
