@@ -1,5 +1,6 @@
 module SelectEvents exposing
   ( Msg (..)
+  , onEnter
   , onNavigation
   )
 
@@ -15,6 +16,14 @@ type Msg
   | Down
   | Esc
   | Select
+
+
+onEnter: msg -> Attribute msg
+onEnter msg =
+  on "keydown" <|
+    ( keyCode |>
+      JD.andThen (\key -> if key == 13 then JD.succeed msg else JD.fail "Not enter")
+    )
 
 
 onNavigation: (Msg -> msg) -> Bool -> Attribute msg

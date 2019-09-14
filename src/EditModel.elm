@@ -135,8 +135,7 @@ type alias Msgs msg =
 
 
 type alias SelectMsgs msg =
-  { navigationmsg: SE.Msg -> msg
-  , notActiveNavigationmsg: SE.Msg -> msg
+  { navigationmsg: Bool -> SE.Msg -> msg
   , setActivemsg: Int -> msg
   , selectmsg: Int -> msg
   }
@@ -708,17 +707,19 @@ inpInternal toMsg ctl input =
           Maybe.map
             ( let
                 toSMsg = toMsg << SelectMsg ctl
-
-                navigationmsg = navigationMsg toSMsg
               in
                 always
-                  { navigationmsg = navigationmsg
-                  , notActiveNavigationmsg =
-                      (\ev ->
-                        case ev of
-                          SE.Select -> onEnter
+                  { navigationmsg =
+                      (\isActive ->
+                        if isActive then
+                          navigationMsg toSMsg
+                        else
+                          (\ev ->
+                            case ev of
+                              SE.Select -> onEnter
 
-                          x -> navigationmsg x
+                              x -> navigationMsg toSMsg x
+                          )
                       )
                   , setActivemsg = setActiveMsg toSMsg
                   , selectmsg =  selectMsg toSMsg
