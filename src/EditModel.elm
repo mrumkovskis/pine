@@ -136,6 +136,7 @@ type alias Msgs msg =
 
 type alias SelectMsgs msg =
   { navigationmsg: SE.Msg -> msg
+  , notActiveNavigationmsg: SE.Msg -> msg
   , setActivemsg: Int -> msg
   , selectmsg: Int -> msg
   }
@@ -689,11 +690,13 @@ inpsTableByPattern toMsg patterns model =
 inpInternal: Tomsg msg model -> Controller msg model -> Input msg -> Input msg
 inpInternal toMsg ctl input =
   let
+    onEnter = syncMsg toMsg
+
     msgs =
       { onInput = toMsg << OnMsg ctl
       , onFocus = toMsg <| OnFocusMsg ctl True
       , onBlur = toMsg <| OnFocusMsg ctl False
-      , onEnter = syncMsg toMsg
+      , onEnter = onEnter
       , updatemsg = toMsg << OnSelectMsg ctl
       , clearmsg =
           ctl |>
@@ -703,9 +706,20 @@ inpInternal toMsg ctl input =
       , selectmsgs =
           input.select |>
           Maybe.map
-            ( let toSMsg = toMsg << SelectMsg ctl in
+            ( let
+                toSMsg = toMsg << SelectMsg ctl
+
+                navigationmsg = navigationMsg toSMsg
+              in
                 always
-                  { navigationmsg = navigationMsg toSMsg
+                  { navigationmsg = navigationmsg
+                  , notActiveNavigationmsg =
+                      (\ev ->
+                        case ev of
+                          SE.Select -> onEnter
+
+                          x -> navigationmsg x
+                      )
                   , setActivemsg = setActiveMsg toSMsg
                   , selectmsg =  selectMsg toSMsg
                   }
