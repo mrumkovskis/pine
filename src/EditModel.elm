@@ -123,6 +123,10 @@ type alias JsonController msg =
   }
 
 
+type alias JsonControllerInitializer msg =
+  VM.Field -> Maybe (JsonController msg)
+
+
 type alias Msgs msg =
   { onInput: String -> msg
   , onFocus: msg
