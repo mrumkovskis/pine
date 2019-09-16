@@ -39,7 +39,7 @@ import Dict exposing (..)
 import Json.Encode as JE
 import Json.Decode as JD
 
-import Debug exposing (toString, log)
+import Debug exposing (log)
 
 
 {-| Represents form input field. Is synchronized with model. -}
@@ -195,12 +195,12 @@ type alias Tomsg msg model = (Msg msg model -> msg)
 
 {-| Initializes model
 -}
-init: JM.FormModel msg model -> List (key, Controller msg model) -> Ask.Tomsg msg -> EditModel msg model
+init: JM.FormModel msg model -> List (String, Controller msg model) -> Ask.Tomsg msg -> EditModel msg model
 init model ctrlList toMessagemsg =
   let
     controllers =
       ctrlList |>
-      List.map (\(k, Controller c) -> (toString k, Controller { c | name = toString k })) |>
+      List.map (\(k, Controller c) -> (k, Controller { c | name = k })) |>
       Dict.fromList
 
     inputs =
@@ -464,33 +464,33 @@ jsonInputCmd maybeInputCmd jc =
   { jc | inputCmd = maybeInputCmd }
 
 
-setModelUpdater: key -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
+setModelUpdater: String -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
 setModelUpdater key updater model =
   updateController key (\(Controller c) -> Controller { c | updateModel = updater }) model
 
 
-setFormatter: key -> Formatter model -> EditModel msg model -> EditModel msg model
+setFormatter: String -> Formatter model -> EditModel msg model -> EditModel msg model
 setFormatter key formatter model =
   updateController key (\(Controller c) -> Controller { c | formatter = formatter }) model
 
 
-setSelectInitializer: key -> Maybe (SelectInitializer msg) -> EditModel msg model -> EditModel msg model
+setSelectInitializer: String -> Maybe (SelectInitializer msg) -> EditModel msg model -> EditModel msg model
 setSelectInitializer key initializer model =
   updateController
     key
     (\(Controller c) -> Controller { c | selectInitializer = initializer }) model
 
 
-setInputValidator: key -> InputValidator -> EditModel msg model -> EditModel msg model
+setInputValidator: String -> InputValidator -> EditModel msg model -> EditModel msg model
 setInputValidator key validator model =
   updateController key (\(Controller c) -> Controller { c | validateInput = validator }) model
 
 
-updateController: key -> (Controller msg model -> Controller msg model) -> EditModel msg model -> EditModel msg model
+updateController: String -> (Controller msg model -> Controller msg model) -> EditModel msg model -> EditModel msg model
 updateController key updater model =
-  Dict.get (toString key) model.controllers |>
+  Dict.get key model.controllers |>
   Maybe.map updater |>
-  Maybe.map (\c -> Dict.insert (toString key) c model.controllers) |>
+  Maybe.map (\c -> Dict.insert key c model.controllers) |>
   Maybe.map (\cs -> { model | controllers = cs}) |>
   Maybe.withDefault model
 
@@ -644,19 +644,16 @@ controller updateModel formatter selectInitializer validator inputCmd =
 {-| Gets input from model for rendering. Function furnishes input with attributes
     using `InputAttrs`
 -}
-inp: key -> Tomsg msg model -> EditModel msg model -> Maybe (Input msg)
+inp: String -> Tomsg msg model -> EditModel msg model -> Maybe (Input msg)
 inp key toMsg { controllers, inputs } =
-  let
-    ks = toString key
-  in
-    Maybe.map2 (inpInternal toMsg)
-      (Dict.get ks controllers)
-      (Dict.get ks inputs)
+  Maybe.map2 (inpInternal toMsg)
+    (Dict.get key controllers)
+    (Dict.get key inputs)
 
 
 {-| Gets inputs from model for rendering
 -}
-inps: List key -> Tomsg msg model -> EditModel msg model -> List (Input msg)
+inps: List String -> Tomsg msg model -> EditModel msg model -> List (Input msg)
 inps keys toMsg model =
   List.foldl
     (\k r -> inp k toMsg model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
@@ -732,17 +729,17 @@ inpInternal toMsg ctl input =
 
 {-| Produces `OnMsg` input message. This can be used to set or clear text in input field.
 -}
-onInputMsg: key -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
+onInputMsg: String -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
 onInputMsg key toMsg { controllers } =
-  Dict.get (toString key) controllers |>
+  Dict.get key controllers |>
   Maybe.map (\ctrl -> toMsg << OnMsg ctrl)
 
 
 {-| Produces `OnSelectMsg` input message. This can be used on input events like `onCheck` or `onClick`
 -}
-inputMsg: key -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
+inputMsg: String -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
 inputMsg key toMsg { controllers } =
-  Dict.get (toString key) controllers |>
+  Dict.get key controllers |>
   Maybe.map (\ctrl -> toMsg << OnSelectMsg ctrl)
 
 
