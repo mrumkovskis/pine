@@ -240,7 +240,16 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
       List.indexedMap
         (\i (path, field, value) ->
           let
-            key = JM.pathEncoder path |> JE.encode 0
+            key =
+              case path of
+                JM.Name p JM.End ->
+                  p
+
+                JM.Idx idx JM.End ->
+                  String.fromInt i
+
+                _ ->
+                  JM.pathEncoder path |> JE.encode 0
 
             maybeExtensions =
               case List.filter (\(p, _) -> JM.pathMatch p key) controllers of
