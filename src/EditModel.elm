@@ -1,6 +1,7 @@
 module EditModel exposing
   ( Input, Controller, ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, Msgs, SelectMsgs
+  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, JsonControllerInitializer
+  , Msgs, SelectMsgs
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
   , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
@@ -124,7 +125,7 @@ type alias JsonController msg =
 
 
 type alias JsonControllerInitializer msg =
-  VM.Field -> Maybe (JsonController msg)
+  String -> VM.Field -> Maybe (JsonController msg)
 
 
 type alias Msgs msg =
@@ -226,18 +227,27 @@ init model ctrlList toMessagemsg =
       False
 
 
-initJsonForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
+initJsonForm:
+  String -> String -> Maybe (JsonControllerInitializer msg) -> String ->
+  List (String, JsonController msg) ->
+  Ask.Tomsg msg -> JsonEditModel msg
 initJsonForm =
   initJsonFormInternal .fields
 
 
-initJsonQueryForm: String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
+initJsonQueryForm:
+  String -> String -> Maybe (JsonControllerInitializer msg) -> String ->
+  List (String, JsonController msg) ->
+  Ask.Tomsg msg -> JsonEditModel msg
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
-initJsonFormInternal: (VM.View -> List VM.Field) -> String -> String -> String -> List (String, JsonController msg) -> Ask.Tomsg msg -> JsonEditModel msg
-initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controllers toMessagemsg =
+initJsonFormInternal:
+  (VM.View -> List VM.Field) -> String -> String -> Maybe (JsonControllerInitializer msg) ->
+  String -> List (String, JsonController msg) ->
+  Ask.Tomsg msg -> JsonEditModel msg
+initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer typeName controllers toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ { metadata } as formModel) =
       JM.flattenJsonForm fieldGetter formModel |>
@@ -258,7 +268,8 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri typeName controller
             maybeExtensions =
               case List.filter (\(p, _) -> JM.pathMatch p key) controllers of
                 [] ->
-                  Nothing
+                  maybeInitializer |>
+                  Maybe.andThen (\ctlInit -> ctlInit key field)
 
                 (_, match) :: rest -> -- TODO prioritize matched controllers if more than one match is found
                   Just match
