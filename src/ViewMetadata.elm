@@ -55,6 +55,7 @@ type alias Field =
   , isComplexType: Bool
   , comments: String
   , refViewName: Maybe String
+  , codifType: Maybe String
   }
 
 
@@ -112,7 +113,8 @@ fetchMetadataTask urlBase viewName =
             (boolFieldDecoder "isComplexType")
             (optionalStringFieldDecoder "comments")
             (maybeStringFieldDecoder "refViewName")
-        )
+        ) |>
+      JD.andThen (\v -> JD.map v (maybeStringFieldDecoder "codifType"))
 
     filterDecoder =
       JD.map8
@@ -137,7 +139,8 @@ fetchMetadataTask urlBase viewName =
             (JD.succeed False)
             (JD.succeed "")
             (maybeStringFieldDecoder "refViewName")
-        )
+        ) |>
+      JD.andThen (\v -> JD.map v (maybeStringFieldDecoder "codifType"))
 
     task name =
       Http.task
@@ -205,4 +208,5 @@ initField name label =
   , isComplexType = False
   , comments = ""
   , refViewName = Nothing
+  , codifType = Nothing
   }
