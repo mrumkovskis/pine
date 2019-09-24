@@ -1,5 +1,5 @@
 module Calendar exposing
-  ( CalendarEntry, Holiday
+  ( Calendar, Holiday
   , dateController, dateTimeController
   , formatDate, formatDateTime
   , parseDate, parseDateTime
@@ -22,15 +22,15 @@ import Select exposing (..)
 import Debug
 
 
-type alias CalendarEntry =
-  { value: Maybe String
+type alias Calendar =
+  { value: String
   , today: String
   , month: String
   , year: String
   , days: List String
   , weeks: List String
   , holidays: List Holiday
-  , date: String
+  , calendar: List String
   }
 
 
@@ -42,23 +42,20 @@ type alias Holiday =
   }
 
 
-decoder: JD.Decoder (List CalendarEntry)
+decoder: JD.Decoder (List Calendar)
 decoder =
   let
       dec =
-        JD.map7
-          CalendarEntry
-          (JD.field "value" <| JD.maybe JD.string)
+        JD.map8
+          Calendar
+          (JD.field "value" JD.string)
           (JD.field "today" JD.string)
           (JD.field "month" JD.string)
           (JD.field "year" JD.string)
           (JD.field "days" <| JD.list JD.string)
           (JD.field "weeks" <| JD.list JD.string)
-          (JD.field "holidays" <| JD.list holDec) |>
-        JD.andThen
-          (\entry_from_date ->
-            JD.field "calendar" (JD.list (JD.map entry_from_date JD.string))
-          )
+          (JD.field "holidays" <| JD.list holDec)
+          (JD.field "calendar" <| JD.list JD.string)
 
       holDec =
         JD.map4
@@ -68,11 +65,7 @@ decoder =
           (JD.field "description" JD.string)
           (JD.field "is_moved_working_day" JD.bool)
   in
-    JD.oneOf
-      [ JD.list dec |>
-        JD.andThen (List.head >> Maybe.map JD.succeed >> Maybe.withDefault (JD.fail "invalid data"))
-      , dec
-      ]
+    JD.list dec
 
 
 jsonDecoder: JD.Decoder (List JM.JsonValue)
@@ -81,11 +74,10 @@ jsonDecoder =
   JD.map
     ( List.map
         (\entry ->
-          [ ("value", entry.value |> Maybe.map JM.JsString |> Maybe.withDefault JM.JsNull)
+          [ ("value", JM.JsString entry.value)
           , ("today", JM.JsString entry.today)
           , ("month", JM.JsString entry.month)
           , ("year", JM.JsString entry.year)
-          , ("date", JM.JsString entry.date)
           , ("days", JM.JsList <| List.map JM.JsString entry.days)
           , ("weeks", JM.JsList <| List.map JM.JsString entry.weeks)
           , ("holidays"
@@ -101,6 +93,7 @@ jsonDecoder =
                 )
                 entry.holidays
             )
+          , ("calendar", JM.JsList <| List.map JM.JsString entry.calendar)
           ] |>
           Dict.fromList |>
           JM.JsObject
