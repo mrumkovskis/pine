@@ -261,7 +261,7 @@ parse hasTime mask value =
     val = String.trim value
   in
     if String.isEmpty val then
-      Nothing
+      Just ""
     else
       run (maskParser mask) mask |>
       Result.toMaybe |>
@@ -297,8 +297,14 @@ parse hasTime mask value =
             )
             (Dict.empty, 0)
         ) |>
+      Maybe.andThen
+        (\(d, _) -> -- validate if some components are set
+          if Dict.size d == (Dict.size <| Dict.filter (always <| String.all ((==) '0')) d) then
+            Nothing
+          else Just d
+        ) |>
       Maybe.map
-        (\(res, _) ->
+        (\res ->
           let
             comp n def =
               Dict.get n res |> Maybe.withDefault def
