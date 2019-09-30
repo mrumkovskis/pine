@@ -931,7 +931,7 @@ jsonDataEncoder: (VM.View -> List VM.Field) -> Dict String VM.View -> String -> 
 jsonDataEncoder fieldGetter metadata viewTypeName value =
   let
     encodePrimField fv = case fv of
-      JsString v -> JE.string v
+      JsString v -> if String.isEmpty v then JE.null else JE.string v
 
       JsNumber v -> JE.float v
 
@@ -971,6 +971,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
               ) |>
             Maybe.withDefault []
           ) |>
+        List.filter (Tuple.second >> (/=) JE.null) |>
         (\d -> if List.isEmpty d then JE.null else JE.object d)
 
       _ -> JE.null -- unexpected element, encode as null
