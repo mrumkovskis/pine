@@ -1022,10 +1022,10 @@ jsonEncoder value =
       JE.list jsonEncoder v
 
     JsObject v ->
-      if Dict.isEmpty v then
-        JE.null
-      else
-        JE.dict identity jsonEncoder v
+      v
+      |> Dict.map (always jsonEncoder)
+      |> Dict.filter (always ((/=) JE.null))
+      |> (\d -> if Dict.isEmpty d then JE.null else JE.dict identity identity d)
 
 
 jsonValueToString: JsonValue -> String
