@@ -306,7 +306,11 @@ httpErrorToString err =
 
     NetworkError -> "Network error occurred"
 
-    BadStatus _ body -> body
+    BadStatus { statusCode, statusText } body ->
+      if String.isEmpty body then
+        String.concat [ String.fromInt statusCode, " ", statusText ]
+      else
+        body
 
     BadBody _ body msg -> msg
 
