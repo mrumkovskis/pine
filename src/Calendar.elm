@@ -17,6 +17,7 @@ import JsonModel as JM
 import EditModel as EM
 import Ask
 import Select exposing (..)
+import Utils
 
 
 import Debug
@@ -62,7 +63,7 @@ decoder =
           Holiday
           (JD.field "holiday" JD.string)
           (JD.field "name" JD.string)
-          (JD.field "description" JD.string)
+          (JD.field "description" Utils.strOrEmpty)
           (JD.field "is_moved_working_day" JD.bool)
   in
     JD.list dec
