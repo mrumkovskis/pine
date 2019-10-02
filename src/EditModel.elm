@@ -93,11 +93,12 @@ type alias Formatter model = model -> String
 type alias JsonFormatter = Formatter JM.JsonValue -> JM.JsonValue -> String
 
 
-type alias SelectInitializer msg =
+type alias SelectInitializer msg model =
   Select.Tomsg msg JM.JsonValue -> -- toSelectmsg
   Ask.Tomsg msg -> -- toMessagemsg
   String -> -- search string
   (String -> msg) -> -- select msg
+  model ->
   (SelectModel msg JM.JsonValue, Cmd msg)
 
 
@@ -107,7 +108,7 @@ type Controller msg model =
     { name: String
     , updateModel: ModelUpdater msg model -- called on OnSelect, OnFocus _ False
     , formatter: Formatter model
-    , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
+    , selectInitializer: Maybe (SelectInitializer msg model) -- called on OnFocus _ True
     , validateInput: InputValidator -- called on OnMsg, OnSelect
     , inputCmd: Maybe (String -> Cmd msg)
     }
@@ -117,7 +118,7 @@ type alias JsonController msg =
   { updateModel: Maybe (JsonModelUpdater msg)
   , formatter: Maybe (JsonFormatter)
   , validateInput: Maybe (JsonInputValidator)
-  , selectInitializer: Maybe (SelectInitializer msg)
+  , selectInitializer: Maybe (SelectInitializer msg JM.JsonValue)
   , inputCmd: Maybe (String -> Cmd msg)
   , fieldFormatter: Maybe (JM.JsonValue -> String) -- unlike formatter takes field value as an argument not entire model
   , fieldParser: Maybe (Input msg -> Input msg) -- prepares input value for updater, for example parses date
@@ -478,7 +479,7 @@ jsonFieldParser parser jc =
   { jc | fieldParser = Just parser }
 
 
-jsonSelectInitializer: SelectInitializer msg -> JsonController msg -> JsonController msg
+jsonSelectInitializer: SelectInitializer msg JM.JsonValue -> JsonController msg -> JsonController msg
 jsonSelectInitializer initializer jc =
   { jc | selectInitializer = Just initializer }
 
@@ -498,7 +499,7 @@ setFormatter key formatter model =
   updateController key (\(Controller c) -> Controller { c | formatter = formatter }) model
 
 
-setSelectInitializer: String -> Maybe (SelectInitializer msg) -> EditModel msg model -> EditModel msg model
+setSelectInitializer: String -> Maybe (SelectInitializer msg model) -> EditModel msg model -> EditModel msg model
 setSelectInitializer key initializer model =
   updateController
     key
@@ -629,7 +630,7 @@ simpleCtrl updateModel formatter =
 
 
 {-| Creates simple controller with select list -}
-simpleSelectCtrl: (String -> model -> model) -> Formatter model -> SelectInitializer msg -> Controller msg model
+simpleSelectCtrl: (String -> model -> model) -> Formatter model -> SelectInitializer msg model -> Controller msg model
 simpleSelectCtrl updateModel formatter selectInitializer =
   Controller
     { name = ""
@@ -650,7 +651,7 @@ noCmdUpdater updater =
 controller:
   ModelUpdater msg model ->
   Formatter model ->
-  Maybe (SelectInitializer msg) ->
+  Maybe (SelectInitializer msg model) ->
   InputValidator ->
   Maybe (String -> Cmd msg) ->
   Controller msg model
@@ -873,6 +874,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   same.toMessagemsg
                   input.value
                   (toMsg << OnSelectMsg (Controller ctrl))
+                  (JM.data model)
               ) |>
             Maybe.map
               (Tuple.mapFirst (\sel -> { input | editing = True, select = Just sel })) |>

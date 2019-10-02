@@ -108,8 +108,8 @@ initAddress address =
 {-| Initialize [`Select`](Select)
 backed by [`addresses`](https://github.com/mrumkovskis/addresses) service.
 -}
-init: String -> Select.Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> (Select.SelectModel msg JM.JsonValue, Cmd msg)
-init uri toSelectmsg toMessagemsg search toAddressmsg =
+init: String -> Select.Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> model -> (Select.SelectModel msg JM.JsonValue, Cmd msg)
+init uri toSelectmsg toMessagemsg search toAddressmsg _ =
   ( Select.init
       (JM.initList
         "/metadata"

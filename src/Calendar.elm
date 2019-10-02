@@ -102,9 +102,9 @@ jsonDecoder =
     )
 
 
-calendarSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg)
+calendarSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> model
   -> (SelectModel msg JM.JsonValue, Cmd msg)
-calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
+calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
   let
     calendar =
       JM.initForm "/metadata" "/data" "calendar" jsonDecoder (always JE.null) [] (always Nothing)
@@ -129,9 +129,9 @@ calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
     )
 
 
-timeSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg)
+timeSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> model
   -> (SelectModel msg JM.JsonValue, Cmd msg)
-timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg =
+timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
   let
     time =
       JM.initForm "/metadata" "/data" "calendar_time" jsonDecoder (always JE.null) [] (always Nothing)
