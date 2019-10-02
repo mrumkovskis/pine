@@ -115,9 +115,15 @@ grouped size source =
   source |>
   List.foldr
     (\x (res, l, i) ->
-      ([], [], 0)
+      x :: l |>
+      (\temp ->
+        if remainderBy size (i + size) == 0 then
+          (temp :: res, [], i + 1)
+        else
+          (res, temp, i + 1)
+      )
     )
-    (([], [], 0)) |>
+    (([], [], 1)) |>
   (\(r, _, _) -> r)
 
 
