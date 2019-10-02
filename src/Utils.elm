@@ -1,6 +1,6 @@
 module Utils exposing
   ( HttpError (..)
-  , zip, at, find, findIdx, set, groupBy, transpose
+  , zip, at, find, findIdx, set, groupBy, grouped, transpose
   , orElse, filter
   , httpQuery, decodeHttpQuery, decodeUrlPath
   , matchIdx, strOrEmpty, optField, primitiveStrDecoder, emptyEncoder, noBreakSpace
@@ -107,6 +107,18 @@ groupBy f l =
     Dict.empty
     l |>
   Dict.map (\k x -> List.reverse x)
+
+
+{-| Partitions elements in fixed size -}
+grouped: Int -> List a -> List (List a)
+grouped size source =
+  source |>
+  List.foldr
+    (\x (res, l, i) ->
+      ([], [], 0)
+    )
+    (([], [], 0)) |>
+  (\(r, _, _) -> r)
 
 
 {-| Transposes list. -}
