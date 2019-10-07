@@ -274,6 +274,12 @@ parse hasTime mask value =
                   String.slice (pos - off) (pos - off + String.length key) val |>
                   String.filter Char.isDigit |>
                   (\s ->
+                    if String.isEmpty s then
+                      if String.contains "y" key then "2000" else "1"
+                    else
+                      s
+                  ) |>
+                  (\s ->
                     let d = String.length s - l in
                     ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
                     , off + String.length key - String.length s
@@ -311,7 +317,7 @@ parse hasTime mask value =
               Dict.get n res |> Maybe.withDefault def
           in
             String.concat
-              [ comp "y" "0000"
+              [ comp "y" "2000"
               , "-"
               , comp "M" "01"
               , "-"
