@@ -102,8 +102,7 @@ jsonDecoder =
     )
 
 
-calendarSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> model
-  -> (SelectModel msg JM.JsonValue, Cmd msg)
+calendarSelect: String -> String -> Bool -> EM.SelectInitializer msg JM.JsonValue
 calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
   let
     calendar =
@@ -129,8 +128,7 @@ calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _
     )
 
 
-timeSelect: String -> String -> Bool -> Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> model
-  -> (SelectModel msg JM.JsonValue, Cmd msg)
+timeSelect: String -> String -> Bool -> EM.SelectInitializer msg JM.JsonValue
 timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
   let
     time =
