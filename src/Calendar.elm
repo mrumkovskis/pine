@@ -270,15 +270,10 @@ parse hasTime mask value =
         ( List.foldl
             (\(pos, key) (res, off) ->
               let
-                comp n l =
+                comp n l def =
                   String.slice (pos - off) (pos - off + String.length key) val |>
                   String.filter Char.isDigit |>
-                  (\s ->
-                    if String.isEmpty s then
-                      if String.contains "y" key then "2000" else "1"
-                    else
-                      s
-                  ) |>
+                  (\s -> if String.isEmpty s then def else s) |>
                   (\s ->
                     let d = String.length s - l in
                     ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
@@ -288,17 +283,17 @@ parse hasTime mask value =
                   (\(v, o) -> (Dict.insert n v res, o))
               in
                 if String.contains "y" key then
-                  comp "y" 4
+                  comp "y" 4 "2000"
                 else if String.contains "M" key then
-                  comp "M" 2
+                  comp "M" 2 "1"
                 else if String.contains "d" key then
-                  comp "d" 2
+                  comp "d" 2 "1"
                 else if String.contains "h" key then
-                  comp "h" 2
+                  comp "h" 2 ""
                 else if String.contains "m" key then
-                  comp "m" 2
+                  comp "m" 2 ""
                 else if String.contains "s" key then
-                  comp "s" 2
+                  comp "s" 2 ""
                 else
                   (res, off)
             )
