@@ -54,6 +54,7 @@ type alias Input msg =
   , idx: Int -- index of input in metadata fields list, used for JsonValue model
   , field: Maybe VM.Field
   , resolving: Bool
+  , readonly: Bool
   }
 
 
@@ -213,7 +214,7 @@ init model ctrlList toMessagemsg =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing Nothing -1 Nothing False
+          Input k "" False Nothing Nothing Nothing -1 Nothing False False
         )
   in
     EditModel
@@ -430,7 +431,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
           in
             ( ( key, ctrl )
             , ( key
-              , Input key (fieldFormatter value) False Nothing Nothing Nothing i (Just field) False
+              , Input key (fieldFormatter value) False Nothing Nothing Nothing i (Just field) False False
               )
             )
         ) |>
