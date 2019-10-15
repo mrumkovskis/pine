@@ -183,6 +183,7 @@ type Msg msg model
   -- input fields event messages
   | OnMsg (Controller msg model) String
   | OnFocusMsg (Controller msg model) Bool
+  | FocusNoSearchMsg (Controller msg model)
   | OnSelectMsg (Controller msg model) String
   | OnResolvedMsg String
   -- update entire model
@@ -863,7 +864,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           Maybe.withDefault cmd
         )
 
-    setEditing ctrl focus =  -- OnFocus
+    setEditing ctrl focus maybeDoSearch =  -- OnFocus
       let
         processFocusSelect input =
           if focus then
@@ -878,7 +879,10 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   (JM.data model)
               ) |>
             Maybe.map
-              (Tuple.mapFirst (\sel -> { input | editing = True, select = Just sel })) |>
+              (Tuple.mapBoth
+                (\sel -> { input | editing = True, select = Just sel })
+                (\cmd -> if maybeDoSearch then cmd else Cmd.none)
+              ) |>
             Maybe.withDefault ({ input | editing = True, select = Nothing }, Cmd.none)
           else ({ input | editing = False, select = Nothing }, Cmd.none)
 
@@ -941,7 +945,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                 Dict.values |>
                 List.head |>
                 Maybe.andThen (\i -> Dict.get i.name ctrls) |>
-                Maybe.map (\c -> do toMsg <| OnFocusMsg c True) |> -- restore select box if present
+                Maybe.map (\c -> do toMsg <| FocusNoSearchMsg c) |> -- restore select box if present
                 Maybe.withDefault Cmd.none
               )
             ) |>
@@ -990,7 +994,10 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         onInput (toMsg << SelectMsg (Controller ctrl)) ctrl value
 
       OnFocusMsg (Controller ctrl) focus ->
-        setEditing ctrl focus
+        setEditing ctrl focus True
+
+      FocusNoSearchMsg (Controller ctrl) ->
+        setEditing ctrl True False
 
       OnSelectMsg (Controller ctrl) value -> -- text selected from select component
         updateInput ctrl value inputs |>
