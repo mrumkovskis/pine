@@ -1,8 +1,9 @@
 module FormModel exposing
   ( Model, Msg, Tomsg
   , init, toModelMsg
-  , createMsg, saveMsg, fetchMsg, editMsg, cancelMsg, deleteMsg, setMsg
-  , create, save, fetch, edit, cancel, delete, set, map
+  , createMsg, saveMsg, fetchMsg, editMsg, cancelMsg, cancelWithActionMsg
+  , deleteMsg, setMsg
+  , create, save, fetch, edit, cancel, cancelWithAction, delete, set, map
   , update
   )
 
@@ -25,7 +26,7 @@ type alias Model msg =
 type Msg msg
   = CreateMsg (EM.JsonEditMsg msg)
   | EditMsg JM.JsonValue
-  | CancelEditMsg Bool
+  | CancelEditMsg (Maybe msg) Bool
   | SaveMsg (Maybe (JM.JsonValue -> msg)) (EM.JsonEditMsg msg)
   | DeleteMsg (Maybe (JM.JsonValue -> msg)) Int
   | SetMsg JM.JsonValue
@@ -86,12 +87,22 @@ edit toMsg =
 
 cancelMsg: Tomsg msg -> Bool -> msg
 cancelMsg toMsg =
-  toMsg << CancelEditMsg
+  toMsg << CancelEditMsg Nothing
 
 
 cancel: Tomsg msg -> Bool -> Cmd msg
 cancel toMsg =
   domsg << cancelMsg toMsg
+
+
+cancelWithActionMsg: Tomsg msg -> msg -> Bool -> msg
+cancelWithActionMsg toMsg msg =
+  toMsg << CancelEditMsg (Just msg)
+
+
+cancelWithAction: Tomsg msg -> msg -> Bool -> Cmd msg
+cancelWithAction toMsg msg =
+  domsg << cancelWithActionMsg toMsg msg
 
 
 deleteMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> msg
@@ -140,7 +151,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
         Maybe.withDefault Cmd.none
       )
 
-    CancelEditMsg ask ->
+    CancelEditMsg maybeMsg ask ->
       if ask && (model.form |> Maybe.map .isDirty |> Maybe.withDefault False) then
         ( model
         , Ask.ask
@@ -150,7 +161,9 @@ update toMsg msg ({ form, toMessagemsg } as model) =
             Nothing
         )
       else
-        ( { model | form = Nothing }, Cmd.none )
+        ( { model | form = Nothing }
+        , maybeMsg |> Maybe.map (domsg) |> Maybe.withDefault Cmd.none
+        )
 
     SaveMsg maybeSuccessmsg data ->
       form |>
