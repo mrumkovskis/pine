@@ -1,8 +1,8 @@
 module Ask exposing
-  ( MsgType (..), Msg (..), Tomsg
+  ( MsgType (..), Msg (..), NavBarAction (..), Tomsg
   , askmsg, ask, info, warn, error, unauthorized
-  , askToDeferredmsg, askToCmdChainmsg, askBrowserKeymsg, askToScrollEventsmsg
-  , errorOrUnauthorized, text
+  , askToDeferredmsg, askToCmdChainmsg, pushUrl, replaceUrl, back, forward
+  , askToScrollEventsmsg, errorOrUnauthorized, text
   )
 
 
@@ -30,13 +30,20 @@ type MsgType
   | Unauthorized
 
 
+type NavBarAction
+  = PushUrl
+  | ReplaceUrl
+  | Back
+  | Forward
+
+
 {-| Command message - generate info, warn on error message - `Message` or
     ask question - `Question`
 -}
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg) (Maybe(Cmd msg))
-  | BrowserKey (Key -> msg)
+  | NavBarAction NavBarAction String
   | SubscribeToDeferredMsg (DR.Tomsg msg -> msg)
   | SubscribeToCmdChainMsg (CmdChain.Tomsg msg -> msg)
   | SubscribeToScrollEventsMsg (SE.Tomsg msg -> msg) -- deprecated
@@ -93,9 +100,24 @@ askToCmdChainmsg toMsg subscription =
   do (toMsg << SubscribeToCmdChainMsg) <| subscription
 
 
-askBrowserKeymsg: Tomsg msg -> (Key -> msg) -> Cmd msg
-askBrowserKeymsg toMsg keymsg =
-  do (toMsg << BrowserKey) <| keymsg
+pushUrl: Tomsg msg -> String -> Cmd msg
+pushUrl toMsg url =
+  do (toMsg << NavBarAction PushUrl) <| url
+
+
+replaceUrl: Tomsg msg -> String -> Cmd msg
+replaceUrl toMsg url =
+  do (toMsg << NavBarAction ReplaceUrl) <| url
+
+
+back: Tomsg msg -> String -> Cmd msg
+back toMsg url =
+  do (toMsg << NavBarAction Back) <| url
+
+
+forward: Tomsg msg -> String -> Cmd msg
+forward toMsg url =
+  do (toMsg << NavBarAction Forward) <| url
 
 
 askToScrollEventsmsg: Tomsg msg -> (SE.Tomsg msg -> msg) -> Cmd msg

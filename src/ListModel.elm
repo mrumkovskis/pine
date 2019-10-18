@@ -41,7 +41,6 @@ type Msg msg
   | StickyPosMsg (Maybe SE.StickyElPos)
   | SortMsg String
   | SelectMsg (Bool -> JM.JsonValue -> msg) Bool JM.JsonValue
-  | BrowserKeyMsg (Nav.Key -> String -> Cmd msg) JM.SearchParams Nav.Key
   | SyncMsg JM.SearchParams
 
 
@@ -182,11 +181,10 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
             ) ++ [(c.offsetParamName, "0")] |>
             (\sp ->
               if sp == d.searchParams then
-                toMsg << BrowserKeyMsg Nav.replaceUrl sp
+                Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp
               else
-                toMsg << BrowserKeyMsg Nav.pushUrl sp
-            ) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
+                Ask.pushUrl c.toMessagemsg <| Utils.httpQuery sp
+            )
           )
         )
 
@@ -198,8 +196,7 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
               List.filter (\(n, _) -> n /= c.offsetParamName)
             ) ++
             [(c.offsetParamName, c.loadedCount d.data |> String.fromInt)] |>
-            (\sp -> toMsg << BrowserKeyMsg Nav.replaceUrl sp) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
+            (Ask.replaceUrl c.toMessagemsg << Utils.httpQuery)
           )
         )
 
@@ -213,11 +210,10 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
             [(name, value), (c.offsetParamName, "0")] |>
             (\sp ->
               if sp == d.searchParams then
-                toMsg << BrowserKeyMsg Nav.replaceUrl sp
+                Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp
               else
-                toMsg << BrowserKeyMsg Nav.pushUrl sp
-            ) |>
-            Ask.askBrowserKeymsg c.toMessagemsg
+                Ask.pushUrl c.toMessagemsg <| Utils.httpQuery sp
+            )
           )
         )
 
@@ -249,11 +245,6 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
             , do (selmsg is_selected) <| newdata
             )
           )
-
-      BrowserKeyMsg addressBarCmd pars key ->
-        ( same
-        , addressBarCmd key <| Utils.httpQuery pars
-        )
 
       SyncMsg params ->
         ( Model { model | sortCol = initSortCol (Just params ) }
