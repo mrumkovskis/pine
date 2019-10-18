@@ -162,7 +162,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
         )
       else
         ( { model | form = Nothing }
-        , maybeMsg |> Maybe.map (domsg) |> Maybe.withDefault Cmd.none
+        , maybeMsg |> Maybe.map domsg |> Maybe.withDefault Cmd.none
         )
 
     SaveMsg maybeSuccessmsg data ->
