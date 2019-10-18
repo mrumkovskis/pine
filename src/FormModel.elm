@@ -157,7 +157,10 @@ update toMsg msg ({ form, toMessagemsg } as model) =
         , Ask.ask
             toMessagemsg
             "Vai atcelt datu labošanu?"
-            (cancel toMsg False)
+            ( maybeMsg |>
+              Maybe.map (\cmsg -> cancelWithAction toMsg cmsg False) |>
+              Maybe.withDefault (cancel toMsg False)
+            )
             Nothing
         )
       else
