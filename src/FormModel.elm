@@ -1,9 +1,9 @@
 module FormModel exposing
   ( Model, Msg, Tomsg
   , init, toModelMsg
-  , createMsg, saveMsg, fetchMsg, editMsg, cancelMsg, cancelWithActionMsg
+  , createMsg, saveMsg, fetchMsg, editMsg, cancelMsg
   , deleteMsg, setMsg
-  , create, save, fetch, edit, cancel, cancelWithAction, delete, set, map
+  , create, save, fetch, edit, cancel, delete, set, map
   , update
   )
 
@@ -85,24 +85,14 @@ edit toMsg =
   domsg << editMsg toMsg
 
 
-cancelMsg: Tomsg msg -> Bool -> msg
-cancelMsg toMsg =
-  toMsg << CancelEditMsg Nothing
+cancelMsg: Tomsg msg -> Maybe msg -> Bool -> msg
+cancelMsg toMsg maybemsg =
+  toMsg << CancelEditMsg maybemsg
 
 
-cancel: Tomsg msg -> Bool -> Cmd msg
-cancel toMsg =
-  domsg << cancelMsg toMsg
-
-
-cancelWithActionMsg: Tomsg msg -> msg -> Bool -> msg
-cancelWithActionMsg toMsg msg =
-  toMsg << CancelEditMsg (Just msg)
-
-
-cancelWithAction: Tomsg msg -> msg -> Bool -> Cmd msg
-cancelWithAction toMsg msg =
-  domsg << cancelWithActionMsg toMsg msg
+cancel: Tomsg msg -> Maybe msg -> Bool -> Cmd msg
+cancel toMsg maybemsg =
+  domsg << cancelMsg toMsg maybemsg
 
 
 deleteMsg: Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> msg
@@ -157,10 +147,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
         , Ask.ask
             toMessagemsg
             "Vai atcelt datu labošanu?"
-            ( maybeMsg |>
-              Maybe.map (\cmsg -> cancelWithAction toMsg cmsg False) |>
-              Maybe.withDefault (cancel toMsg False)
-            )
+            (cancel toMsg maybeMsg False)
             Nothing
         )
       else
