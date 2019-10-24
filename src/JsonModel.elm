@@ -354,7 +354,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
 
     listUri restart searchParams (Model md mc) =
       let
-        offset _ =
+        offset =
           if not restart && searchParams == md.searchParams then
             List.length md.data
           else 0
@@ -363,10 +363,15 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
           List.any (\(n, _) -> n == mc.limitParamName) searchParams |>
           (\r -> if r then [] else [(mc.limitParamName, String.fromInt <| mc.pageSize)]) |>
           (\lp ->
-            List.any (\(n, _) -> n == mc.offsetParamName) searchParams |>
-            (\r -> if r then lp else (mc.offsetParamName, String.fromInt <| offset ()) :: lp)
+            List.filter (\(n, _) -> n == mc.offsetParamName) searchParams |>
+            List.head |>
+            Maybe.map Tuple.second |>
+            Maybe.andThen String.toInt |>
+            Maybe.map ((+) offset) |> -- add offset parameter value if present with incremental offset
+            Maybe.withDefault offset |>
+            (\op -> (mc.offsetParamName, String.fromInt op) :: lp)
           ) |>
-          List.append searchParams
+          List.append (List.filter (\(n, _) -> n /= mc.offsetParamName) searchParams)
 
         queryString = Utils.httpQuery searchParamsWithOffsetLimit
       in
@@ -1459,23 +1464,13 @@ update toMsg msg (Model modelData modelConf as same) =
       let
         lop p = p == mc.offsetParamName || p == mc.limitParamName
 
-        loadMore =
-          List.partition (\(p, _) -> lop p) >>
-          (\(ol, rest) ->
-            (rest == modelData.searchParams) &&
-              ( Utils.find (\(p, _) -> p == mc.offsetParamName) ol |>
-                Maybe.andThen (Tuple.second >> String.toInt) |>
-                Maybe.map ((==) <| mc.loadedCount modelData.data) |>
-                Maybe.withDefault True
-              )
-          )
+        paramsChanged =
+          List.filter (\(p, _) -> not <| lop p) >> ((/=) modelData.searchParams)
       in
-        if not restart && loadMore searchParams then
+        if restart || (paramsChanged searchParams) then
+          mc.emptyData |> (\ed -> Model { ed | searchParams = searchParams } mc)
+        else
           same
-        else let emptyData = mc.emptyData in
-          Model
-            { emptyData | searchParams = searchParams |> List.filter (\(p, _) -> not <| lop p) }
-            mc
 
     withProgress pr (Model d c) = Model { d | progress = pr } c
 

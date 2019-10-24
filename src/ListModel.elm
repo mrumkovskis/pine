@@ -176,9 +176,7 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         ( same
         , list |>
           (\(JM.Model d c) ->
-            ( searchPars searchParams.model |>
-              List.filter (\(n, _) -> n /= c.offsetParamName)
-            ) ++ [(c.offsetParamName, "0")] |>
+            searchPars searchParams.model |>
             (\sp ->
               if sp == d.searchParams then
                 Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp
@@ -190,24 +188,14 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
 
       LoadMoreMsg ->
         ( same
-        , list |>
-          (\(JM.Model d c) ->
-            ( searchPars searchParams.model |>
-              List.filter (\(n, _) -> n /= c.offsetParamName)
-            ) ++
-            [(c.offsetParamName, c.loadedCount d.data |> String.fromInt)] |>
-            (Ask.replaceUrl c.toMessagemsg << Utils.httpQuery)
-          )
+        , JM.fetch (toMsg << ListMsg) (searchPars searchParams.model)
         )
 
       LoadWithParam name value ->
         ( same
         , list |>
           (\(JM.Model d c) ->
-            ( searchPars searchParams.model |>
-              List.filter (\(n, _) -> n /= name && n /= c.offsetParamName)
-            ) ++
-            [(name, value), (c.offsetParamName, "0")] |>
+            searchPars searchParams.model |>
             (\sp ->
               if sp == d.searchParams then
                 Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp
@@ -249,7 +237,7 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
       SyncMsg params ->
         ( Model { model | sortCol = initSortCol (Just params ) }
         , Cmd.batch
-          [ JM.fetch (toMsg << ListMsg) params
+          [ JM.fetchFromStart (toMsg << ListMsg) params
           , params |>
             List.map (Tuple.mapSecond JM.JsString) |>
             (\vals ->
