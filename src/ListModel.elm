@@ -195,7 +195,10 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
         ( same
         , list |>
           (\(JM.Model d c) ->
-            searchPars searchParams.model |>
+            ( searchPars searchParams.model |>
+              List.filter (\(n, _) -> n /= name)
+            ) ++
+            [(name, value)] |>
             (\sp ->
               if sp == d.searchParams then
                 Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp
