@@ -1462,12 +1462,14 @@ update toMsg msg (Model modelData modelConf as same) =
     --model construction
     maybeWithNewData restart searchParams (Model _ mc) =
       let
-        lop p = p == mc.offsetParamName || p == mc.limitParamName
+        filterOffLim =
+          List.filter (\(p, _) -> not <| p == mc.offsetParamName || p == mc.limitParamName)
 
         paramsChanged =
-          List.filter (\(p, _) -> not <| lop p) >> ((/=) modelData.searchParams)
+          filterOffLim >>
+          ((/=) (filterOffLim modelData.searchParams))
       in
-        if restart || (paramsChanged searchParams) then
+        if restart || paramsChanged searchParams then
           mc.emptyData |> (\ed -> Model { ed | searchParams = searchParams } mc)
         else
           same
