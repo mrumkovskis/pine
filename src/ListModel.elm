@@ -1,8 +1,8 @@
 module ListModel exposing
   ( Model (..), Msg, Tomsg
   , init, toParamsMsg, toListMsg
-  , loadMsg, loadMoreMsg, sortMsg, selectMsg, loadWithParamMsg, syncMsg
-  , load, loadMore, sort, select, loadWithParam, sync
+  , loadMsg, loadMoreMsg, sortMsg, selectMsg, syncMsg
+  , load, loadMore, sort, select, sync
   , map
   , update, subs
   )
@@ -36,7 +36,6 @@ type Msg msg
   | ListMsg (JM.JsonListMsg msg)
   | LoadMsg
   | LoadMoreMsg -- load more element visibility subscription message
-  | LoadWithParam String String
   | ScrollEventsMsg (SE.Msg msg)
   | StickyPosMsg (Maybe SE.StickyElPos)
   | SortMsg String
@@ -89,16 +88,6 @@ loadMoreMsg toMsg =
 loadMore: Tomsg msg -> Cmd msg
 loadMore toMsg =
   domsg <| loadMoreMsg toMsg
-
-
-loadWithParamMsg: Tomsg msg -> String -> String -> msg
-loadWithParamMsg toMsg name value =
-  toMsg <| LoadWithParam name value
-
-
-loadWithParam: Tomsg msg -> String -> String -> Cmd msg
-loadWithParam toMsg name value =
-  domsg <| loadWithParamMsg toMsg name value
 
 
 sortMsg: Tomsg msg -> String -> msg
@@ -178,10 +167,13 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
           (\(JM.Model d c) ->
             searchPars searchParams.model |>
             (\sp ->
-              if sp == d.searchParams then
-                Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp
-              else
-                Ask.pushUrl c.toMessagemsg <| Utils.httpQuery sp
+              Utils.httpQuery sp |>
+              (\pars -> if String.isEmpty pars then "?" else pars) |>
+              ( if sp == d.searchParams then
+                  Ask.replaceUrl c.toMessagemsg
+                else
+                  Ask.pushUrl c.toMessagemsg
+              )
             )
           )
         )
@@ -189,18 +181,6 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
       LoadMoreMsg ->
         ( same
         , JM.fetch (toMsg << ListMsg) (searchPars searchParams.model)
-        )
-
-      LoadWithParam name value ->
-        ( same
-        , list |>
-          (\(JM.Model d c) ->
-            ( searchPars searchParams.model |>
-              List.filter (\(n, _) -> n /= name)
-            ) ++
-            [(name, value)] |>
-            (\sp -> Ask.replaceUrl c.toMessagemsg <| Utils.httpQuery sp)
-          )
         )
 
       SelectMsg selmsg multiSelect data ->
