@@ -1,8 +1,8 @@
 module ListModel exposing
   ( Model (..), Msg, Tomsg
   , init, toParamsMsg, toListMsg
-  , loadMsg, loadMoreMsg, sortMsg, selectMsg, syncMsg
-  , load, loadMore, sort, select, sync
+  , loadMsg, loadAndReplaceUrlMsg, loadMoreMsg, sortMsg, selectMsg, syncMsg
+  , load, loadAndReplaceUrl, loadMore, sort, select, sync
   , map
   , update, subs
   )
@@ -35,6 +35,7 @@ type Msg msg
   = ParamsMsg (EM.JsonEditMsg msg)
   | ListMsg (JM.JsonListMsg msg)
   | LoadMsg
+  | LoadAndReplaceUrlMsg
   | LoadMoreMsg -- load more element visibility subscription message
   | ScrollEventsMsg (SE.Msg msg)
   | StickyPosMsg (Maybe SE.StickyElPos)
@@ -78,6 +79,16 @@ loadMsg toMsg =
 load: Tomsg msg -> Cmd msg
 load toMsg =
   domsg <| loadMsg toMsg
+
+
+loadAndReplaceUrlMsg: Tomsg msg -> msg
+loadAndReplaceUrlMsg toMsg =
+  toMsg LoadAndReplaceUrlMsg
+
+
+loadAndReplaceUrl: Tomsg msg -> Cmd msg
+loadAndReplaceUrl toMsg =
+  domsg <| loadAndReplaceUrlMsg toMsg
 
 
 loadMoreMsg: Tomsg msg -> msg
@@ -174,6 +185,19 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
                 else
                   Ask.pushUrl c.toMessagemsg
               )
+            )
+          )
+        )
+
+      LoadAndReplaceUrlMsg ->
+        ( same
+        , list |>
+          (\(JM.Model d c) ->
+            searchPars searchParams.model |>
+            (\sp ->
+              Utils.httpQuery sp |>
+              (\pars -> if String.isEmpty pars then "?" else pars) |>
+              ( Ask.replaceUrl c.toMessagemsg )
             )
           )
         )
