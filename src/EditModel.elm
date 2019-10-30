@@ -8,7 +8,8 @@ module EditModel exposing
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
-  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, jsonEditMsg, jsonDeleteMsg
+  , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
+  , jsonEditMsg, jsonDeleteMsg
   , update
   )
 
@@ -185,6 +186,7 @@ type Msg msg model
   | OnFocusMsg (Controller msg model) Bool
   | FocusNoSearchMsg (Controller msg model)
   | OnSelectMsg (Controller msg model) String
+  | OnSelectFieldMsg String String
   | OnResolvedMsg String
   -- update entire model
   | EditModelMsg (model -> model)
@@ -762,7 +764,16 @@ onInputMsg key toMsg { controllers } =
   Maybe.map (\ctrl -> toMsg << OnMsg ctrl)
 
 
-{-| Produces `OnSelectMsg` input message. This can be used on input events like `onCheck` or `onClick`
+{-| Produces `OnSelectMsg` input message which updates model from input.
+    And then executes command. This function can be used to set controller's `inputCmd`
+-}
+onInputCmd: String -> Tomsg msg model -> Cmd msg -> String -> Cmd msg
+onInputCmd key toMsg cmd value =
+  do toMsg <| CmdChainMsg [ OnSelectFieldMsg key value ] cmd Nothing
+
+
+{-| Produces `OnSelectMsg` input message which updates model from input.
+  This can be used on input events like `onCheck` or `onClick` to update model from input
 -}
 inputMsg: String -> Tomsg msg model -> EditModel msg model -> Maybe (String -> msg)
 inputMsg key toMsg { controllers } =
@@ -1005,6 +1016,14 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           maybeInp |>
           Maybe.map (updateModelFromInput newInputs ctrl) |>
           Maybe.withDefault ( same, Cmd.none )
+        )
+
+      OnSelectFieldMsg name value ->
+        ( same
+        , Dict.get name controllers |>
+          Maybe.map
+            (\ctrl -> do toMsg <| OnSelectMsg ctrl value) |>
+          Maybe.withDefault Cmd.none
         )
 
       OnResolvedMsg name ->
