@@ -990,6 +990,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
   in
     Dict.get viewTypeName metadata |>
     Maybe.map (encodeObject value) |>
+    Maybe.map (\o -> if o == JE.null then JE.object [] else o) |>
     Maybe.withDefault JE.null
 
 
