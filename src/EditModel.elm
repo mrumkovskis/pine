@@ -389,8 +389,11 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                         _ -> Ok iv
 
                     enumValidator en =
-                      Utils.find ((==) iv) en |>
-                      Result.fromMaybe ("Value must come from list")
+                      if String.isEmpty iv then
+                        Ok iv
+                      else
+                        Utils.find ((==) iv) en |>
+                        Result.fromMaybe ("Value must come from list")
                   in
                     typeValidator field.jsonType |>
                     Result.andThen
