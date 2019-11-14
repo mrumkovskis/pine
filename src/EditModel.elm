@@ -40,6 +40,7 @@ import Http
 import Dict exposing (..)
 import Json.Encode as JE
 import Json.Decode as JD
+import Task exposing (..)
 
 import Debug exposing (log)
 
@@ -78,11 +79,16 @@ type alias JsonModelUpdater msg =
   (JM.JsonValue, Cmd msg)
 
 
+type ValidationResult
+  = ValidationResult (Result String String)
+  | ValidationTask (Task String String)
+
+
 {-| Validates input -}
-type alias InputValidator = String -> Result String String
+type alias InputValidator model = String -> model -> ValidationResult
 
 
-type alias JsonInputValidator = InputValidator -> String -> Result String String
+type alias JsonInputValidator = InputValidator JM.JsonValue -> String -> JM.JsonValue -> ValidationResult
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -111,7 +117,7 @@ type Controller msg model =
     , updateModel: ModelUpdater msg model -- called on OnSelect, OnFocus _ False
     , formatter: Formatter model
     , selectInitializer: Maybe (SelectInitializer msg model) -- called on OnFocus _ True
-    , validateInput: InputValidator -- called on OnMsg, OnSelect
+    , validateInput: InputValidator model -- called on OnMsg, OnSelect
     , inputCmd: Maybe (String -> Cmd msg)
     }
 
@@ -119,7 +125,7 @@ type Controller msg model =
 type alias JsonController msg =
   { updateModel: Maybe (JsonModelUpdater msg)
   , formatter: Maybe (JsonFormatter)
-  , validateInput: Maybe (JsonInputValidator)
+  , validateInput: Maybe JsonInputValidator
   , selectInitializer: Maybe (SelectInitializer msg JM.JsonValue)
   , inputCmd: Maybe (String -> Cmd msg)
   , fieldFormatter: Maybe (JM.JsonValue -> String) -- unlike formatter takes field value as an argument not entire model
@@ -188,6 +194,7 @@ type Msg msg model
   | OnSelectMsg (Controller msg model) String
   | OnSelectFieldMsg String String
   | OnResolvedMsg String
+  | ValidateFieldMsg String String model (Result String String)
   -- update entire model
   | EditModelMsg (model -> model)
   | SetModelMsg model
@@ -362,7 +369,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                   Maybe.map fieldFormatter |>
                   Maybe.withDefault ""
 
-                validator iv =
+                validator iv mod =
                   let
                     typeValidator t =
                       case t of
@@ -401,7 +408,8 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                         field.enum |>
                         Maybe.map enumValidator |>
                         Maybe.withDefault (Ok r)
-                      )
+                      ) |>
+                    ValidationResult
               in
                 maybeExtensions |>
                 Maybe.map
@@ -513,7 +521,7 @@ setSelectInitializer key initializer model =
     (\(Controller c) -> Controller { c | selectInitializer = initializer }) model
 
 
-setInputValidator: String -> InputValidator -> EditModel msg model -> EditModel msg model
+setInputValidator: String -> InputValidator model -> EditModel msg model -> EditModel msg model
 setInputValidator key validator model =
   updateController key (\(Controller c) -> Controller { c | validateInput = validator }) model
 
@@ -631,7 +639,7 @@ simpleCtrl updateModel formatter =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Nothing
-    , validateInput = Ok
+    , validateInput = \_ _ -> ValidationResult <| Ok ""
     , inputCmd = Nothing
     }
 
@@ -644,7 +652,7 @@ simpleSelectCtrl updateModel formatter selectInitializer =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Just selectInitializer
-    , validateInput = Ok
+    , validateInput = \_ _ -> ValidationResult <| Ok ""
     , inputCmd = Nothing
     }
 
@@ -659,7 +667,7 @@ controller:
   ModelUpdater msg model ->
   Formatter model ->
   Maybe (SelectInitializer msg model) ->
-  InputValidator ->
+  InputValidator model ->
   Maybe (String -> Cmd msg) ->
   Controller msg model
 controller updateModel formatter selectInitializer validator inputCmd =
@@ -814,19 +822,23 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
             input
             mod |>
           (\(nm, cmd) ->
-            ( { same |
-                inputs =
-                  updateInputsFromModel nm newInputs |>
-                  (\is ->
+            updateInputsFromModel nm newInputs |>
+            (\(is, valTasks) ->
+              ( { same |
+                  inputs =
                     if cmd == Cmd.none then
                       is
                     else
                       is |>
                       Dict.update input.name (Maybe.map (\i -> { i | resolving = True})) -- set resolving flag if cmd
-                  )
-              , isDirty = True
-              } --update inputs if updater has changed other fields
-            , do toMsg <| CmdChainMsg [ SetModelMsg nm ] cmd Nothing
+                , isDirty = True
+                } --update inputs if updater has changed other fields
+              , do toMsg <|
+                  CmdChainMsg
+                    [ SetModelMsg nm ]
+                    ((if cmd == Cmd.none then valTasks else cmd :: valTasks) |> Cmd.batch)
+                    Nothing
+              )
             )
           )
 
@@ -843,40 +855,56 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Dict.get ctrl.name newInputs |>
       Maybe.map
         (\input ->
-          case ctrl.validateInput value of
-            Ok val ->
-              { input |
-                value = value
-              , error = Nothing
-              , select = input.select |> Maybe.map (Select.updateSearch value)
-              }
+          case ctrl.validateInput value <| JM.data model of
+            ValidationResult (Ok val) ->
+              ( { input |
+                  value = value
+                , error = Nothing
+                , select = input.select |> Maybe.map (Select.updateSearch value)
+                }
+              , Nothing
+              )
 
-            Err err ->
-              { input | value = value, error = Just err }
+            ValidationResult (Err err) ->
+              ( { input |
+                  value = value
+                , error = Just err
+                }
+              , Nothing
+              )
+
+            ValidationTask t ->
+              ( { input |
+                  value = value
+                , select = input.select |> Maybe.map (Select.updateSearch value)
+                }
+              , Just <|
+                  Task.attempt (toMsg << ValidateFieldMsg ctrl.name value (JM.data model)) t
+              )
         ) |>
-      Maybe.map (\input -> (Dict.insert ctrl.name input newInputs, Just input)) |>
-      Maybe.withDefault (newInputs, Nothing)
+      Maybe.map
+        (\(input, mbt) -> (Dict.insert ctrl.name input newInputs, Just input, mbt)) |>
+      Maybe.withDefault (newInputs, Nothing, Nothing)
 
     onInput toSelectmsg ctrl value = -- OnMsg
       updateInput ctrl value inputs |>
-      Tuple.mapBoth
-        (\newInputs -> { same | inputs = newInputs })
-        ( Maybe.andThen .select >>
-          Maybe.map (always <| Select.search toSelectmsg value) >>
+      (\(ninps, mbinp, mbvalt) ->
+        ( { same | inputs = ninps }
+        , mbinp |> Maybe.andThen .select |>
+          Maybe.map (\_ -> [ Select.search toSelectmsg value ]) |> -- select search command
+          Maybe.withDefault [] |>
+          (\cmds -> mbvalt |> Maybe.map (\valt -> valt :: cmds) |> Maybe.withDefault cmds) |> -- validation task
+          (\cmds ->
+            ctrl.inputCmd |>
+            Maybe.map (\fcmd -> fcmd value) |>
+            Maybe.map -- input command
+              (\cmd ->
+                (if cmd == Cmd.none then cmds else cmd :: cmds) |> Cmd.batch
+              )
+          ) |>
           Maybe.withDefault Cmd.none
-        ) |>
-      Tuple.mapSecond
-        (\cmd ->
-          ctrl.inputCmd |>
-          Maybe.map (\fcmd -> fcmd value) |>
-          Maybe.map
-            (\icmd ->
-              if cmd /= Cmd.none && icmd /= Cmd.none then
-                Cmd.batch [ cmd, icmd ]
-              else if cmd /= Cmd.none then cmd else icmd
-            ) |>
-          Maybe.withDefault cmd
         )
+      )
 
     setEditing ctrl focus maybeDoSearch =  -- OnFocus
       let
@@ -934,15 +962,20 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
     updateInputsFromModel newModel newInputs =
       Dict.foldl
-        (\key input foldedinps ->
+        (\key input (foldedinps, valtasks) ->
           Dict.get key controllers |>
           Maybe.map
             (\(Controller ctrl) ->
-              updateInput ctrl (ctrl.formatter newModel) foldedinps |> Tuple.first
+              updateInput ctrl (ctrl.formatter newModel) foldedinps |>
+              (\(ninps, _, mbvalt) ->
+                ( ninps
+                , Maybe.map (\valt -> valt :: valtasks) mbvalt |> Maybe.withDefault valtasks
+                )
+              )
             ) |>
-          Maybe.withDefault foldedinps
+          Maybe.withDefault (foldedinps, valtasks)
         )
-        newInputs
+        ( newInputs, [] )
         newInputs
 
     updateModel doInputUpdate transform (newModel, cmd) =
@@ -964,8 +997,8 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               )
             ) |>
           Maybe.withDefault
-            ( { newem | inputs = updateInputsFromModel (JM.data newem.model) newem.inputs }
-            , Cmd.none
+            ( updateInputsFromModel (JM.data newem.model) newem.inputs |>
+              (\(ninps, valtasks) -> ( { newem | inputs = ninps }, Cmd.batch valtasks ))
             )
         else (newem, cmd)
       )
@@ -1015,7 +1048,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       OnSelectMsg (Controller ctrl) value -> -- text selected from select component
         updateInput ctrl value inputs |>
-        (\(newInputs, maybeInp) ->
+        (\(newInputs, maybeInp, _) -> -- do not execute validation task since it will be run by updateModelFromInput function
           maybeInp |>
           Maybe.map (updateModelFromInput newInputs ctrl) |>
           Maybe.withDefault ( same, Cmd.none )
@@ -1037,6 +1070,24 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           }
         , Cmd.none
         )
+
+      ValidateFieldMsg name value mod res ->
+        Dict.get name inputs |>
+        Utils.filter (\input -> input.value == value && JM.data model == mod) |>
+        Maybe.map
+          (\input ->
+            case res of
+              Ok _ ->
+                { input | error = Nothing }
+
+              Err err ->
+                { input | error = Just err }
+          ) |>
+        Maybe.map
+          (\input ->
+            ( { same | inputs = Dict.insert name input inputs }, Cmd.none )
+          ) |>
+        Maybe.withDefault ( same, Cmd.none )
 
       --edit entire model
       EditModelMsg editFun ->
