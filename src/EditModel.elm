@@ -900,9 +900,9 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
             Maybe.map -- input command
               (\cmd ->
                 (if cmd == Cmd.none then cmds else cmd :: cmds) |> Cmd.batch
-              )
-          ) |>
-          Maybe.withDefault Cmd.none
+              ) |>
+            Maybe.withDefault (Cmd.batch cmds)
+          )
         )
       )
 
