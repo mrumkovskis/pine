@@ -70,6 +70,14 @@ type alias ModelInitializer msg model =
 type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
 
 
+{- consider ModelUpdater refactoring, thus getting rid from http & httpWithSetter functions
+type UpdateResult model
+  = UpdateResult model
+  | UpdateTask (Task String model) (model -> model -> model)? -- first argument from task, second current model value?
+type alias ModelUpdater msg model = Input msg -> model -> UpdateResult model
+-}
+
+
 type alias JsonModelUpdater msg =
   ModelUpdater msg JM.JsonValue ->
   Dict String VM.View ->
