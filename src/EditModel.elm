@@ -89,7 +89,7 @@ type alias JsonModelUpdater msg =
 
 type ValidationResult
   = ValidationResult (List (String, String))
-  | ValidationTask (Task (List (String, String)) String)
+  | ValidationTask (Task String (List (String, String)))
 
 
 {-| Validates input -}
@@ -202,7 +202,7 @@ type Msg msg model
   | OnSelectMsg (Controller msg model) String
   | OnSelectFieldMsg String String
   | OnResolvedMsg String
-  | ValidateFieldMsg String String model (Result (List (String, String)) String)
+  | ValidateFieldMsg String String model (Result String (List (String, String)))
   -- update entire model
   | EditModelMsg (model -> model)
   | SetModelMsg model
@@ -379,6 +379,9 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
 
                 validator iv mod =
                   let
+                    success =
+                      [ (key, "") ]
+
                     typeValidator t =
                       case t of
                         "number" ->
@@ -394,7 +397,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                             (\r ->
                               case r of
                                 Ok _ ->
-                                  []
+                                  success
 
                                 Err err ->
                                   [ (key, err) ]
@@ -404,19 +407,19 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                           String.toLower iv |>
                             (\s ->
                               if s == "true" || s == "false" then
-                                []
+                                success
                               else
                                 [ (key, "Not a boolean: " ++ iv) ]
                             )
 
-                        _ -> []
+                        _ -> success
 
                     enumValidator en =
                       if String.isEmpty iv then
-                        []
+                        success
                       else
                         Utils.find ((==) iv) en |>
-                        Maybe.map (\_ -> []) |>
+                        Maybe.map (\_ -> success) |>
                         Maybe.withDefault ([ (key, "Value must come from list") ])
                   in
                     typeValidator field.jsonType |>
@@ -424,7 +427,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                       if List.isEmpty r then
                         field.enum |>
                         Maybe.map enumValidator |>
-                        Maybe.withDefault []
+                        Maybe.withDefault success
                       else
                         r
                     ) |>
@@ -886,11 +889,8 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map
         (\( ninps, ninput ) ->
           case ctrl.validateInput value <| JM.data model of
-            ValidationResult [] ->
-              (ninps, Just ninput, Nothing)
-
-            ValidationResult err ->
-              (updateValidationResults ninps err, Just ninput, Nothing)
+            ValidationResult res ->
+              (updateValidationResults ctrl.name ninps res, Just ninput, Nothing)
 
             ValidationTask t ->
               ( ninps
@@ -901,12 +901,14 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         ) |>
       Maybe.withDefault (newInputs, Nothing, Nothing)
 
-    updateValidationResults newInputs =
+    updateValidationResults defName =
       List.foldl
-        (\(name, err) ninputs ->
-          Dict.update name (Maybe.map (\i -> { i | error = Just err })) ninputs
+        (\(name, err) newInputs ->
+          Dict.update
+            (if String.isEmpty name then defName else name)
+            (Maybe.map (\i -> { i | error = if String.isEmpty err then Nothing else Just err }))
+            newInputs
         )
-        newInputs
 
     onInput toSelectmsg ctrl value = -- OnMsg
       updateInput ctrl value inputs |>
@@ -1098,17 +1100,14 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         Utils.filter (\input -> input.value == value && JM.data model == mod) |>
         Maybe.map
           (\_ ->
-            ( { same |
-                inputs =
-                  case res of
-                    Ok _ ->
-                      updateValidationResults inputs []
+            case res of
+              Ok r ->
+                ( { same | inputs = updateValidationResults name inputs r }
+                , Cmd.none
+                )
 
-                    Err err ->
-                      updateValidationResults inputs err
-              }
-            , Cmd.none
-            )
+              Err err ->
+                ( same, Ask.error toMessagemsg err)
           ) |>
         Maybe.withDefault ( same, Cmd.none )
 

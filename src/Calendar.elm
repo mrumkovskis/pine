@@ -164,7 +164,16 @@ dateController locale mask doSearch =
     ) |>
   EM.jsonFieldFormatter (JM.jsonValueToString >> formatDate mask) |>
   EM.jsonInputValidator
-    (\_ value _ -> parseDate mask value |> Result.fromMaybe mask |> EM.ValidationResult) |>
+    (\_ value _ ->
+      let
+        valres msg =
+          [ ( "", msg ) ]
+      in
+        parseDate mask value |>
+        Maybe.map (\_ -> valres "") |>
+        Maybe.withDefault (valres mask) |>
+        EM.ValidationResult
+    ) |>
   EM.jsonSelectInitializer (calendarSelect locale mask doSearch)
 
 
@@ -177,7 +186,16 @@ dateTimeController locale mask doSearch =
     ) |>
   EM.jsonFieldFormatter (JM.jsonValueToString >> formatDateTime mask) |>
   EM.jsonInputValidator
-    (\_ value _ -> parseDateTime mask value |> Result.fromMaybe mask |> EM.ValidationResult) |>
+    (\_ value _ ->
+      let
+        valres msg =
+          [ ( "", msg ) ]
+      in
+        parseDateTime mask value |>
+        Maybe.map (\_ -> valres "") |>
+        Maybe.withDefault (valres mask) |>
+        EM.ValidationResult
+    ) |>
   EM.jsonSelectInitializer (timeSelect locale mask doSearch)
 
 
