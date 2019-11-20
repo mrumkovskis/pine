@@ -88,8 +88,8 @@ type alias JsonModelUpdater msg =
 
 
 type ValidationResult
-  = ValidationResult (Result String String)
-  | ValidationTask (Task String String)
+  = ValidationResult (List (String, String))
+  | ValidationTask (Task (List (String, String)) String)
 
 
 {-| Validates input -}
@@ -202,7 +202,7 @@ type Msg msg model
   | OnSelectMsg (Controller msg model) String
   | OnSelectFieldMsg String String
   | OnResolvedMsg String
-  | ValidateFieldMsg String String model (Result String String)
+  | ValidateFieldMsg String String model (Result (List (String, String)) String)
   -- update entire model
   | EditModelMsg (model -> model)
   | SetModelMsg model
@@ -390,33 +390,44 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                               (\fd ->
                                 if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
                               ) |>
-                            Maybe.withDefault (String.toInt iv |> res)
+                            Maybe.withDefault (String.toInt iv |> res) |>
+                            (\r ->
+                              case r of
+                                Ok _ ->
+                                  []
+
+                                Err err ->
+                                  [ (key, err) ]
+                            )
 
                         "boolean" ->
                           String.toLower iv |>
                             (\s ->
                               if s == "true" || s == "false" then
-                                Ok iv
+                                []
                               else
-                                Err <| "Not a boolean: " ++ iv
+                                [ (key, "Not a boolean: " ++ iv) ]
                             )
 
-                        _ -> Ok iv
+                        _ -> []
 
                     enumValidator en =
                       if String.isEmpty iv then
-                        Ok iv
+                        []
                       else
                         Utils.find ((==) iv) en |>
-                        Result.fromMaybe ("Value must come from list")
+                        Maybe.map (\_ -> []) |>
+                        Maybe.withDefault ([ (key, "Value must come from list") ])
                   in
                     typeValidator field.jsonType |>
-                    Result.andThen
-                      (\r ->
+                    (\r ->
+                      if List.isEmpty r then
                         field.enum |>
                         Maybe.map enumValidator |>
-                        Maybe.withDefault (Ok r)
-                      ) |>
+                        Maybe.withDefault []
+                      else
+                        r
+                    ) |>
                     ValidationResult
               in
                 maybeExtensions |>
@@ -647,7 +658,7 @@ simpleCtrl updateModel formatter =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Nothing
-    , validateInput = \_ _ -> ValidationResult <| Ok ""
+    , validateInput = \_ _ -> ValidationResult []
     , inputCmd = Nothing
     }
 
@@ -660,7 +671,7 @@ simpleSelectCtrl updateModel formatter selectInitializer =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Just selectInitializer
-    , validateInput = \_ _ -> ValidationResult <| Ok ""
+    , validateInput = \_ _ -> ValidationResult []
     , inputCmd = Nothing
     }
 
@@ -863,36 +874,39 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Dict.get ctrl.name newInputs |>
       Maybe.map
         (\input ->
+          let
+            ninput =
+              { input |
+                value = value
+              , select = input.select |> Maybe.map (Select.updateSearch value)
+              }
+          in
+            ( Dict.insert ctrl.name ninput newInputs, ninput )
+        ) |>
+      Maybe.map
+        (\( ninps, ninput ) ->
           case ctrl.validateInput value <| JM.data model of
-            ValidationResult (Ok val) ->
-              ( { input |
-                  value = value
-                , error = Nothing
-                , select = input.select |> Maybe.map (Select.updateSearch value)
-                }
-              , Nothing
-              )
+            ValidationResult [] ->
+              (ninps, Just ninput, Nothing)
 
-            ValidationResult (Err err) ->
-              ( { input |
-                  value = value
-                , error = Just err
-                }
-              , Nothing
-              )
+            ValidationResult err ->
+              (updateValidationResults ninps err, Just ninput, Nothing)
 
             ValidationTask t ->
-              ( { input |
-                  value = value
-                , select = input.select |> Maybe.map (Select.updateSearch value)
-                }
+              ( ninps
+              , Just ninput
               , Just <|
                   Task.attempt (toMsg << ValidateFieldMsg ctrl.name value (JM.data model)) t
               )
         ) |>
-      Maybe.map
-        (\(input, mbt) -> (Dict.insert ctrl.name input newInputs, Just input, mbt)) |>
       Maybe.withDefault (newInputs, Nothing, Nothing)
+
+    updateValidationResults newInputs =
+      List.foldl
+        (\(name, err) ninputs ->
+          Dict.update name (Maybe.map (\i -> { i | error = Just err })) ninputs
+        )
+        newInputs
 
     onInput toSelectmsg ctrl value = -- OnMsg
       updateInput ctrl value inputs |>
@@ -1083,17 +1097,18 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         Dict.get name inputs |>
         Utils.filter (\input -> input.value == value && JM.data model == mod) |>
         Maybe.map
-          (\input ->
-            case res of
-              Ok _ ->
-                { input | error = Nothing }
+          (\_ ->
+            ( { same |
+                inputs =
+                  case res of
+                    Ok _ ->
+                      updateValidationResults inputs []
 
-              Err err ->
-                { input | error = Just err }
-          ) |>
-        Maybe.map
-          (\input ->
-            ( { same | inputs = Dict.insert name input inputs }, Cmd.none )
+                    Err err ->
+                      updateValidationResults inputs err
+              }
+            , Cmd.none
+            )
           ) |>
         Maybe.withDefault ( same, Cmd.none )
 
