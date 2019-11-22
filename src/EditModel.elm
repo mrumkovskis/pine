@@ -5,7 +5,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
   , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
-  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
+  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
@@ -379,9 +379,6 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
 
                 validator iv mod =
                   let
-                    success =
-                      [ (key, "") ]
-
                     typeValidator t =
                       case t of
                         "number" ->
@@ -555,6 +552,12 @@ updateController key updater model =
   Maybe.map (\c -> Dict.insert key c model.controllers) |>
   Maybe.map (\cs -> { model | controllers = cs}) |>
   Maybe.withDefault model
+
+
+{-| Successful validation. -}
+success: List (String, String)
+success =
+  [ ("", "") ]
 
 
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
