@@ -17,7 +17,6 @@ import CmdChain exposing (Tomsg)
 import ScrollEvents as SE exposing (Tomsg)
 
 import Task
-import Process
 import Http
 import Json.Decode as JD
 
@@ -44,7 +43,6 @@ type NavBarAction
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg) (Maybe(Cmd msg))
-  | ClearMessageMsg String
   | NavBarAction NavBarAction String
   | SubscribeToDeferredMsg (DR.Tomsg msg -> msg)
   | SubscribeToCmdChainMsg (CmdChain.Tomsg msg -> msg)
@@ -152,12 +150,6 @@ text msg =
 
     _ -> ""
 
-
 msgInternal: Tomsg msg -> MsgType -> String -> Cmd msg
 msgInternal toMsg msgType message =
-  Cmd.batch
-    [ do toMsg <| Message msgType message
-    , Task.perform
-        (toMsg << ClearMessageMsg)
-        (Process.sleep 5000 |> Task.map (\_ -> message))
-    ]
+  do toMsg <| Message msgType message
