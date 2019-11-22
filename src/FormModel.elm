@@ -162,7 +162,7 @@ update toMsg msg ({ form, toMessagemsg } as model) =
       Maybe.withDefault ( model, Cmd.none ) |>
       (\(newmod, cmd) ->
         if cmd == Cmd.none then
-          ( newmod
+          ( { model | form = Nothing }
           , Maybe.map2
               (\f m -> domsg <| m <| JM.data f.model)
               newmod.form
