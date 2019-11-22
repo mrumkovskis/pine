@@ -5,7 +5,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
   , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
-  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
+  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success, validatorChain
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
@@ -558,6 +558,40 @@ updateController key updater model =
 success: List (String, String)
 success =
   [ ("", "") ]
+
+
+{-| Chain validators. When both validators perform error on then field, left is taken. -}
+validatorChain: InputValidator model -> InputValidator model -> InputValidator model
+validatorChain validator1 validator2 value model =
+  let
+    mergeValidations r1 r2 =
+      Dict.union (Dict.fromList r1) (Dict.fromList r2) |>
+      Dict.toList
+
+    vres1 =
+      validator1 value model
+
+    vres2 =
+      validator2 value model
+  in
+    case vres1 of
+      ValidationResult res1 ->
+        case vres2 of
+          ValidationResult res2 ->
+            mergeValidations res1 res2 |> ValidationResult
+
+          ValidationTask rest2 ->
+            rest2 |> Task.map (\r -> mergeValidations res1 r) |> ValidationTask
+
+      ValidationTask rest1 ->
+        case vres2 of
+          ValidationResult res2 ->
+            rest1 |> Task.map (\r -> mergeValidations r res2) |> ValidationTask
+
+          ValidationTask rest2 ->
+            rest1 |>
+            Task.andThen (\r1 -> Task.map (\r2 -> mergeValidations r1 r2) rest2) |>
+            ValidationTask
 
 
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
