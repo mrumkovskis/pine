@@ -1,11 +1,11 @@
 module EditModel exposing
   ( Input, Controller, ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, JsonControllerInitializer
+  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, JsonControllerInitializer, JsonInputValidator
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
   , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
-  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success, validatorChain
+  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success, jsonValidatorChain
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
@@ -561,18 +561,18 @@ success =
 
 
 {-| Chain validators. When both validators perform error on then field, left is taken. -}
-validatorChain: InputValidator model -> InputValidator model -> InputValidator model
-validatorChain validator1 validator2 value model =
+jsonValidatorChain: JsonInputValidator -> JsonInputValidator -> JsonInputValidator
+jsonValidatorChain validator1 validator2 defVal value model =
   let
     mergeValidations r1 r2 =
       Dict.union (Dict.fromList r1) (Dict.fromList r2) |>
       Dict.toList
 
     vres1 =
-      validator1 value model
+      validator1 defVal value model
 
     vres2 =
-      validator2 value model
+      validator2 defVal value model
   in
     case vres1 of
       ValidationResult res1 ->
