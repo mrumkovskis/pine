@@ -319,7 +319,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
                             Maybe.withDefault
                               (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model)
 
-                          _ -> JM.jsonEditor (JM.appendPath path JM.End) val model
+                          _ -> JM.jsonEditor path val model
                         )
                   in
                     if field.isComplexType then
