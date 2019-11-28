@@ -1,5 +1,5 @@
 module EditModel exposing
-  ( Input, Controller, ModelUpdater, InputValidator, Formatter, SelectInitializer
+  ( Input, Controller (..), ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, JsonControllerInitializer, JsonInputValidator
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
@@ -704,6 +704,40 @@ jsonValidatorChain validator1 validator2 defVal value model =
 
     vres2 =
       validator2 defVal value model
+  in
+    case vres1 of
+      ValidationResult res1 ->
+        case vres2 of
+          ValidationResult res2 ->
+            mergeValidations res1 res2 |> ValidationResult
+
+          ValidationTask rest2 ->
+            rest2 |> Task.map (\r -> mergeValidations res1 r) |> ValidationTask
+
+      ValidationTask rest1 ->
+        case vres2 of
+          ValidationResult res2 ->
+            rest1 |> Task.map (\r -> mergeValidations r res2) |> ValidationTask
+
+          ValidationTask rest2 ->
+            rest1 |>
+            Task.andThen (\r1 -> Task.map (\r2 -> mergeValidations r1 r2) rest2) |>
+            ValidationTask
+
+
+{-| Chain validators. When both validators perform error on then field, left is taken. -}
+validatorChain: InputValidator model -> InputValidator model -> InputValidator model
+validatorChain validator1 validator2 value model =
+  let
+    mergeValidations r1 r2 =
+      Dict.union (Dict.fromList r1) (Dict.fromList r2) |>
+      Dict.toList
+
+    vres1 =
+      validator1 value model
+
+    vres2 =
+      validator2 value model
   in
     case vres1 of
       ValidationResult res1 ->
