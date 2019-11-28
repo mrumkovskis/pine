@@ -483,6 +483,137 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
       False
 
 
+defaultJsonController: String -> JM.Path -> VM.Field -> Controller msg JM.JsonValue
+defaultJsonController dataBaseUrl path field =
+  let
+    key =
+      case path of
+        JM.Name p JM.End ->
+          p
+
+        JM.Idx idx JM.End ->
+          String.fromInt idx
+
+        _ ->
+          JM.pathEncoder path |> JE.encode 0
+
+    updater toMsg cinp model =
+      let
+        maybeUpdateSubList val =
+          JM.jsonReader path model |>
+          Maybe.map
+            (\exv -> case exv of
+              JM.JsList vals ->
+                Utils.find ((==) val) vals |>
+                Maybe.map (\_ -> model) |>
+                Maybe.withDefault
+                  (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model)
+
+              _ -> JM.jsonEditor path val model
+            )
+      in
+        if field.isComplexType then
+          let
+            subviewDecoder _ =
+              JM.jsonDecoder |>
+              JD.map
+                (\val ->
+                  if field.isCollection then
+                    -- set value if value not exists already
+                    maybeUpdateSubList val |>
+                    Maybe.withDefault model
+                  else
+                    JM.jsonEditor path val model
+                )
+          in
+            ( model
+            , httpWithSetter
+                toMsg
+                ( dataBaseUrl ++ "/create/" ++ field.typeName ++
+                  Utils.httpQuery [(field.name, cinp.value)]
+                )
+                (subviewDecoder ())
+                (Result.toMaybe >> Maybe.map always)
+            )
+        else if field.isCollection then
+          ( ( .value >> JM.stringToJsonValue field.jsonType ) cinp |>
+            Maybe.andThen maybeUpdateSubList |>
+            Maybe.withDefault model
+          , Cmd.none
+          )
+        else
+          ( .value >> JM.stringToJsonValue field.jsonType ) cinp |>
+          Maybe.map (\iv -> ( JM.jsonEditor path iv model, Cmd.none )) |>
+          Maybe.withDefault ( model, Cmd.none )
+
+    formatter model =
+      JM.jsonReader path model |>
+      Maybe.map JM.jsonValueToString |>
+      Maybe.withDefault ""
+
+    validator iv mod =
+      let
+        typeValidator t =
+          case t of
+            "number" ->
+              let
+                res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
+              in
+                field.fractionDigits |>
+                Maybe.map
+                  (\fd ->
+                    if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
+                  ) |>
+                Maybe.withDefault (String.toInt iv |> res) |>
+                (\r ->
+                  case r of
+                    Ok _ ->
+                      success
+
+                    Err err ->
+                      [ (key, err) ]
+                )
+
+            "boolean" ->
+              String.toLower iv |>
+                (\s ->
+                  if s == "true" || s == "false" then
+                    success
+                  else
+                    [ (key, "Not a boolean: " ++ iv) ]
+                )
+
+            _ -> success
+
+        enumValidator en =
+          if String.isEmpty iv then
+            success
+          else
+            Utils.find ((==) iv) en |>
+            Maybe.map (\_ -> success) |>
+            Maybe.withDefault ([ (key, "Value must come from list") ])
+      in
+        typeValidator field.jsonType |>
+        (\r ->
+          if List.isEmpty r then
+            field.enum |>
+            Maybe.map enumValidator |>
+            Maybe.withDefault success
+          else
+            r
+        ) |>
+        ValidationResult
+  in
+    Controller
+      { name = key
+      , updateModel = updater
+      , formatter = formatter
+      , selectInitializer = Nothing
+      , validateInput = validator
+      , inputCmd = Nothing
+      }
+
+
 jsonController: JsonController msg
 jsonController =
   JsonController Nothing Nothing Nothing Nothing Nothing Nothing Nothing
