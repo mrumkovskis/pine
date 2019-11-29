@@ -141,6 +141,10 @@ type alias JsonController msg =
   }
 
 
+type alias ControllerInitializer msg model =
+  JM.Path -> VM.Field -> Controller msg model
+
+
 type alias JsonControllerInitializer msg =
   String -> VM.Field -> Maybe (JsonController msg)
 
@@ -614,6 +618,30 @@ defaultJsonController dataBaseUrl path field =
       }
 
 
+controllerWithParser: (Input msg -> Input msg) -> Controller msg model -> Controller msg model
+controllerWithParser parser (Controller ({ updateModel } as ctrl)) =
+  Controller
+    { ctrl |
+      updateModel = \toMsg input model -> updateModel toMsg (parser input) model
+    }
+
+
+controllerWithChainedValidator: InputValidator model -> Controller msg model -> Controller msg model
+controllerWithChainedValidator validator (Controller ({ validateInput } as ctrl)) =
+  Controller
+    { ctrl |
+      validateInput = validatorChain validateInput validator
+    }
+
+
+jsonControllerWithFormatter: (JM.JsonValue -> String) -> Controller msg JM.JsonValue -> Controller msg JM.JsonValue
+jsonControllerWithFormatter formatter (Controller ({ name } as ctrl)) =
+  Controller
+    { ctrl |
+      formatter = JM.jsonValue name >> Maybe.map formatter >> Maybe.withDefault ""
+    }
+
+
 jsonController: JsonController msg
 jsonController =
   JsonController Nothing Nothing Nothing Nothing Nothing Nothing Nothing
@@ -730,7 +758,15 @@ validatorChain: InputValidator model -> InputValidator model -> InputValidator m
 validatorChain validator1 validator2 value model =
   let
     mergeValidations r1 r2 =
-      Dict.union (Dict.fromList r1) (Dict.fromList r2) |>
+      Dict.merge
+        Dict.insert
+        (\k vr1 vr2 r ->
+          if String.isEmpty vr1 then Dict.insert k vr2 r else Dict.insert k vr1 r
+        )
+        Dict.insert
+        (Dict.fromList r1)
+        (Dict.fromList r2)
+        Dict.empty |>
       Dict.toList
 
     vres1 =
