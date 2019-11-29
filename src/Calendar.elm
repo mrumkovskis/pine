@@ -1,5 +1,6 @@
 module Calendar exposing
   ( Calendar, Holiday
+  , dateCtl, dateTimeCtl
   , dateController, dateTimeController
   , formatDate, formatDateTime
   , parseDate, parseDateTime
@@ -8,13 +9,14 @@ module Calendar exposing
 
 import Json.Decode as JD
 import Json.Encode as JE
-import Dict
+import Dict exposing (..)
 import Regex exposing (..)
 import Parser exposing (..)
 import Set
 
 import JsonModel as JM
 import EditModel as EM
+import ViewMetadata as VM
 import Ask
 import Select exposing (..)
 import Utils
@@ -153,6 +155,77 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
       else
         Cmd.none
     )
+
+
+dateValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
+dateValidator map mask =
+  (\value _ ->
+    let
+      valres msg =
+        [ ( "", msg ) ]
+    in
+      parseDate mask value |>
+      Maybe.map (\_ -> valres "") |>
+      Maybe.withDefault (valres <| localizedMask map mask) |>
+      EM.ValidationResult
+  )
+
+
+dateTimeValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
+dateTimeValidator map mask =
+    (\value _ ->
+      let
+        valres msg =
+          [ ( "", msg ) ]
+      in
+        parseDateTime mask value |>
+        Maybe.map (\_ -> valres "") |>
+        Maybe.withDefault (valres <| localizedMask map mask) |>
+        EM.ValidationResult
+    )
+
+
+dateFormatter: String -> JM.JsonValue -> String
+dateFormatter mask =
+  JM.jsonValueToString >> formatDate mask
+
+
+dateInputParser: String -> EM.Input msg -> EM.Input msg
+dateInputParser mask inp =
+  { inp | value = parseDate mask inp.value |> Maybe.withDefault inp.value }
+
+
+dateTimeFormatter: String -> JM.JsonValue -> String
+dateTimeFormatter mask =
+  JM.jsonValueToString >> formatDateTime mask
+
+
+dateTimeInputParser: String -> EM.Input msg -> EM.Input msg
+dateTimeInputParser mask inp =
+  { inp | value = parseDateTime mask inp.value |> Maybe.withDefault inp.value }
+
+
+localizedMask: Dict Char Char -> String -> String
+localizedMask map =
+  String.map (\c -> Dict.get c map |> Maybe.withDefault c)
+
+
+dateCtl: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.Controller msg JM.JsonValue
+dateCtl dataBaseUrl locale map mask doSearch path field =
+  EM.defaultJsonController dataBaseUrl path field |>
+  EM.withFormatter (dateFormatter mask) |>
+  EM.withParser (dateInputParser mask) |>
+  EM.withValidator (dateValidator map mask) |>
+  EM.withSelectInitializer (calendarSelect locale mask doSearch)
+
+
+dateTimeCtl: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.Controller msg JM.JsonValue
+dateTimeCtl dataBaseUrl locale map mask doSearch path field =
+  EM.defaultJsonController dataBaseUrl path field |>
+  EM.withFormatter (dateTimeFormatter mask) |>
+  EM.withParser (dateTimeInputParser mask) |>
+  EM.withValidator (dateTimeValidator map mask) |>
+  EM.withSelectInitializer (timeSelect locale mask doSearch)
 
 
 dateController: String -> String -> Bool -> EM.JsonController msg

@@ -3,6 +3,8 @@ module EditModel exposing
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, JsonController, JsonControllerInitializer, JsonInputValidator
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
+  , defaultJsonController, keyFromPath, withParser, withChainedValidator, withFormatter, withSelectInitializer
+  , withValidator, withUpdater, withChainedUpdater
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
   , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success, jsonValidatorChain
@@ -142,7 +144,7 @@ type alias JsonController msg =
 
 
 type alias ControllerInitializer msg model =
-  JM.Path -> VM.Field -> Controller msg model
+  JM.Path -> VM.Field -> Maybe (Controller msg model)
 
 
 type alias JsonControllerInitializer msg =
@@ -618,30 +620,76 @@ defaultJsonController dataBaseUrl path field =
       }
 
 
-controllerWithParser: (Input msg -> Input msg) -> Controller msg model -> Controller msg model
-controllerWithParser parser (Controller ({ updateModel } as ctrl)) =
+keyFromPath: JM.Path -> String
+keyFromPath path =
+  case path of
+    JM.Name p JM.End ->
+      p
+
+    JM.Idx idx JM.End ->
+      String.fromInt idx
+
+    _ ->
+      JM.pathEncoder path |> JE.encode 0
+
+
+withParser: (Input msg -> Input msg) -> Controller msg model -> Controller msg model
+withParser parser (Controller ({ updateModel } as ctrl)) =
   Controller
     { ctrl |
       updateModel = \toMsg input model -> updateModel toMsg (parser input) model
     }
 
 
-controllerWithChainedValidator: InputValidator model -> Controller msg model -> Controller msg model
-controllerWithChainedValidator validator (Controller ({ validateInput } as ctrl)) =
+withValidator: InputValidator model -> Controller msg model -> Controller msg model
+withValidator validator (Controller ctrl) =
+  Controller
+    { ctrl |
+      validateInput = validator
+    }
+
+
+withChainedValidator: InputValidator model -> Controller msg model -> Controller msg model
+withChainedValidator validator (Controller ({ validateInput } as ctrl)) =
   Controller
     { ctrl |
       validateInput = validatorChain validateInput validator
     }
 
 
-jsonControllerWithFormatter: (JM.JsonValue -> String) -> Controller msg JM.JsonValue -> Controller msg JM.JsonValue
-jsonControllerWithFormatter formatter (Controller ({ name } as ctrl)) =
+withFormatter: (JM.JsonValue -> String) -> Controller msg JM.JsonValue -> Controller msg JM.JsonValue
+withFormatter formatter (Controller ({ name } as ctrl)) =
   Controller
     { ctrl |
       formatter = JM.jsonValue name >> Maybe.map formatter >> Maybe.withDefault ""
     }
 
 
+withSelectInitializer: SelectInitializer msg model -> Controller msg model -> Controller msg model
+withSelectInitializer selInitializer (Controller ctrl) =
+  Controller
+    { ctrl |
+      selectInitializer = Just selInitializer
+    }
+
+
+withUpdater: ModelUpdater msg model -> Controller msg model -> Controller msg model
+withUpdater updater (Controller ctrl) =
+  Controller
+    { ctrl |
+      updateModel = updater
+    }
+
+
+withChainedUpdater: ModelUpdater msg model -> Controller msg model -> Controller msg model
+withChainedUpdater updater (Controller ({ updateModel } as ctrl)) =
+  Controller
+    { ctrl |
+      updateModel = updaterChain updateModel updater
+    }
+
+
+-- json controllers
 jsonController: JsonController msg
 jsonController =
   JsonController Nothing Nothing Nothing Nothing Nothing Nothing Nothing
@@ -681,6 +729,7 @@ jsonInputCmd: Maybe (String -> Cmd msg) -> JsonController msg -> JsonController 
 jsonInputCmd maybeInputCmd jc =
   { jc | inputCmd = maybeInputCmd }
 
+--- end json controllers
 
 setModelUpdater: String -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
 setModelUpdater key updater model =
@@ -793,6 +842,19 @@ validatorChain validator1 validator2 value model =
             rest1 |>
             Task.andThen (\r1 -> Task.map (\r2 -> mergeValidations r1 r2) rest2) |>
             ValidationTask
+
+
+updaterChain: ModelUpdater msg model -> ModelUpdater msg model -> ModelUpdater msg model
+updaterChain upd1 upd2 toMsg input model =
+  upd1 toMsg input model |>
+  (\(m1, c1) ->
+    upd2 toMsg input m1 |>
+    (\(m2, c2) ->
+      ( m2
+      , if c1 == Cmd.none then c2 else if c2 == Cmd.none then c1 else Cmd.batch [ c1, c2 ]
+      )
+    )
+  )
 
 
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
