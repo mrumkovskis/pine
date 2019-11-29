@@ -4,7 +4,7 @@ module EditModel exposing
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
   , defaultJsonController, keyFromPath, withParser, withChainedValidator, withFormatter, withSelectInitializer
-  , withValidator, withUpdater, withChainedUpdater
+  , withValidator, withUpdater, withChainedUpdater, withInputCmd
   , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
   , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success, jsonValidatorChain
@@ -686,6 +686,14 @@ withChainedUpdater updater (Controller ({ updateModel } as ctrl)) =
   Controller
     { ctrl |
       updateModel = updaterChain updateModel updater
+    }
+
+
+withInputCmd: (String -> Cmd msg) -> Controller msg model -> Controller msg model
+withInputCmd inpCmd (Controller ctrl) =
+  Controller
+    { ctrl |
+      inputCmd = Just inpCmd
     }
 
 
