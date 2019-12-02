@@ -733,7 +733,7 @@ jsonInputCmd maybeInputCmd jc =
 
 setModelUpdater: String -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
 setModelUpdater key updater model =
-  updateController key (\(Controller c) -> Controller { c | updateModel = updater }) model
+  updateController key (withUpdater updater) model
 
 
 setFormatter: String -> Formatter model -> EditModel msg model -> EditModel msg model
@@ -750,7 +750,7 @@ setSelectInitializer key initializer model =
 
 setInputValidator: String -> InputValidator model -> EditModel msg model -> EditModel msg model
 setInputValidator key validator model =
-  updateController key (\(Controller c) -> Controller { c | validateInput = validator }) model
+  updateController key (withValidator validator) model
 
 
 updateController: String -> (Controller msg model -> Controller msg model) -> EditModel msg model -> EditModel msg model
