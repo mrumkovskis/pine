@@ -1,6 +1,5 @@
 module Calendar exposing
   ( Calendar, Holiday
-  , dateCtl, dateTimeCtl
   , dateController, dateTimeController
   , formatDate, formatDateTime
   , parseDate, parseDateTime
@@ -210,8 +209,8 @@ localizedMask map =
   String.map (\c -> Dict.get c map |> Maybe.withDefault c)
 
 
-dateCtl: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.Controller msg JM.JsonValue
-dateCtl dataBaseUrl locale map mask doSearch path field =
+dateController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.JsonController msg
+dateController dataBaseUrl locale map mask doSearch path field =
   EM.defaultJsonController dataBaseUrl path field |>
   EM.withFormatter (dateFormatter mask) |>
   EM.withParser (dateInputParser mask) |>
@@ -219,57 +218,13 @@ dateCtl dataBaseUrl locale map mask doSearch path field =
   EM.withSelectInitializer (calendarSelect locale mask doSearch)
 
 
-dateTimeCtl: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.Controller msg JM.JsonValue
-dateTimeCtl dataBaseUrl locale map mask doSearch path field =
+dateTimeController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.JsonController msg
+dateTimeController dataBaseUrl locale map mask doSearch path field =
   EM.defaultJsonController dataBaseUrl path field |>
   EM.withFormatter (dateTimeFormatter mask) |>
   EM.withParser (dateTimeInputParser mask) |>
   EM.withValidator (dateTimeValidator map mask) |>
   EM.withSelectInitializer (timeSelect locale mask doSearch)
-
-
-dateController: String -> String -> Bool -> EM.JsonController msg
-dateController locale mask doSearch =
-  EM.jsonController |>
-  EM.jsonFieldParser
-    (\inp ->
-      { inp | value = parseDate mask inp.value |> Maybe.withDefault inp.value }
-    ) |>
-  EM.jsonFieldFormatter (JM.jsonValueToString >> formatDate mask) |>
-  EM.jsonInputValidator
-    (\_ value _ ->
-      let
-        valres msg =
-          [ ( "", msg ) ]
-      in
-        parseDate mask value |>
-        Maybe.map (\_ -> valres "") |>
-        Maybe.withDefault (valres mask) |>
-        EM.ValidationResult
-    ) |>
-  EM.jsonSelectInitializer (calendarSelect locale mask doSearch)
-
-
-dateTimeController: String -> String -> Bool -> EM.JsonController msg
-dateTimeController locale mask doSearch =
-  EM.jsonController |>
-  EM.jsonFieldParser
-    (\inp ->
-      { inp | value = parseDateTime mask inp.value |> Maybe.withDefault inp.value }
-    ) |>
-  EM.jsonFieldFormatter (JM.jsonValueToString >> formatDateTime mask) |>
-  EM.jsonInputValidator
-    (\_ value _ ->
-      let
-        valres msg =
-          [ ( "", msg ) ]
-      in
-        parseDateTime mask value |>
-        Maybe.map (\_ -> valres "") |>
-        Maybe.withDefault (valres mask) |>
-        EM.ValidationResult
-    ) |>
-  EM.jsonSelectInitializer (timeSelect locale mask doSearch)
 
 
 formatDate: String -> String -> String

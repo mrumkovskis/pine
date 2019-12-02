@@ -1,13 +1,11 @@
 module EditModel exposing
   ( Input, Controller (..), ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, ControllerInitializer, JsonController, JsonControllerInitializer, JsonInputValidator
+  , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, ControllerInitializer, JsonController, JsonControllerInitializer
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
   , defaultJsonController, keyFromPath, withParser, withChainedValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withChainedUpdater, withInputCmd
-  , jsonController, jsonModelUpdater, jsonInputValidator, jsonFormatter
-  , jsonFieldFormatter, jsonFieldParser, jsonSelectInitializer, jsonInputCmd
-  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success, jsonValidatorChain
+  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
@@ -80,15 +78,6 @@ type alias ModelUpdater msg model = Input msg -> model -> UpdateResult model
 -}
 
 
-type alias JsonModelUpdater msg =
-  ModelUpdater msg JM.JsonValue ->
-  Dict String VM.View ->
-  Tomsg msg JM.JsonValue ->
-  Input msg ->
-  JM.JsonValue ->
-  (JM.JsonValue, Cmd msg)
-
-
 type ValidationResult
   = ValidationResult (List (String, String))
   | ValidationTask (Task String (List (String, String)))
@@ -98,17 +87,11 @@ type ValidationResult
 type alias InputValidator model = String -> model -> ValidationResult
 
 
-type alias JsonInputValidator = InputValidator JM.JsonValue -> String -> JM.JsonValue -> ValidationResult
-
-
 {- Get input field text from model. Function is called when value is selected from list or model
    data are refreshed from update or fetch messages. Bool argument depends on EditModel.isEditable field
    so data can be formatted according to display mode.
 -}
 type alias Formatter model = model -> String
-
-
-type alias JsonFormatter = Formatter JM.JsonValue -> JM.JsonValue -> String
 
 
 type alias SelectInitializer msg model =
@@ -132,23 +115,16 @@ type Controller msg model =
     }
 
 
-type alias JsonController msg =
-  { updateModel: Maybe (JsonModelUpdater msg)
-  , formatter: Maybe (JsonFormatter)
-  , validateInput: Maybe JsonInputValidator
-  , selectInitializer: Maybe (SelectInitializer msg JM.JsonValue)
-  , inputCmd: Maybe (String -> Cmd msg)
-  , fieldFormatter: Maybe (JM.JsonValue -> String) -- unlike formatter takes field value as an argument not entire model
-  , fieldParser: Maybe (Input msg -> Input msg) -- prepares input value for updater, for example parses date
-  }
-
-
 type alias ControllerInitializer msg model =
   JM.Path -> VM.Field -> Maybe (Controller msg model)
 
 
+type alias JsonController msg =
+  Controller msg JM.JsonValue
+
+
 type alias JsonControllerInitializer msg =
-  String -> VM.Field -> Maybe (JsonController msg)
+  JM.Path -> VM.Field -> Maybe (JsonController msg)
 
 
 type alias Msgs msg =
@@ -254,26 +230,21 @@ init model ctrlList toMessagemsg =
 
 
 initJsonForm:
-  String -> String -> Maybe (JsonControllerInitializer msg) -> String ->
-  List (String, JsonController msg) ->
-  Ask.Tomsg msg -> JsonEditModel msg
+  String -> String -> JsonControllerInitializer msg -> String -> Ask.Tomsg msg -> JsonEditModel msg
 initJsonForm =
   initJsonFormInternal .fields
 
 
 initJsonQueryForm:
-  String -> String -> Maybe (JsonControllerInitializer msg) -> String ->
-  List (String, JsonController msg) ->
-  Ask.Tomsg msg -> JsonEditModel msg
+  String -> String -> JsonControllerInitializer msg -> String -> Ask.Tomsg msg -> JsonEditModel msg
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
 initJsonFormInternal:
-  (VM.View -> List VM.Field) -> String -> String -> Maybe (JsonControllerInitializer msg) ->
-  String -> List (String, JsonController msg) ->
+  (VM.View -> List VM.Field) -> String -> String -> JsonControllerInitializer msg -> String ->
   Ask.Tomsg msg -> JsonEditModel msg
-initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer typeName controllers toMessagemsg =
+initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ { metadata } as formModel) =
       JM.flattenJsonForm fieldGetter formModel |>
@@ -281,204 +252,24 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
         (\i (path, field, value) ->
           let
             key =
-              case path of
-                JM.Name p JM.End ->
-                  p
-
-                JM.Idx idx JM.End ->
-                  String.fromInt i
-
-                _ ->
-                  JM.pathEncoder path |> JE.encode 0
-
-            maybeExtensions =
-              case List.filter (\(p, _) -> JM.pathMatch p key) controllers of
-                [] ->
-                  maybeInitializer |>
-                  Maybe.andThen (\ctlInit -> ctlInit key field)
-
-                (_, match) :: rest -> -- TODO prioritize matched controllers if more than one match is found
-                  Just match
-
-            fieldFormatter =
-              maybeExtensions |>
-              Maybe.andThen .fieldFormatter |>
-              Maybe.withDefault JM.jsonValueToString
-
-            fieldParser =
-              maybeExtensions |>
-              Maybe.andThen .fieldParser |>
-              Maybe.withDefault identity
-
+              keyFromPath path
 
             ctrl =
-              let
-                updater toMsg cinp model =
-                  let
-                    maybeUpdateSubList val =
-                      JM.jsonReader path model |>
-                      Maybe.map
-                        (\exv -> case exv of
-                          JM.JsList vals ->
-                            Utils.find ((==) val) vals |>
-                            Maybe.map (\_ -> model) |>
-                            Maybe.withDefault
-                              (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model)
+              initializer path field |>
+              Maybe.withDefault (defaultJsonController dataBaseUrl path field)
 
-                          _ -> JM.jsonEditor path val model
-                        )
-                  in
-                    if field.isComplexType then
-                      let
-                        subviewDecoder _ =
-                          JM.jsonDecoder |>
-                          JD.map
-                            (\val ->
-                              if field.isCollection then
-                                -- set value if value not exists already
-                                maybeUpdateSubList val |>
-                                Maybe.withDefault model
-                              else
-                                JM.jsonEditor path val model
-                            )
-
-                        updateSingleStringFieldSubview initmod =
-                          Dict.get field.typeName metadata |>
-                          Maybe.map .fields |>
-                          Maybe.map (List.filter (\f -> f.jsonType == "string")) |>
-                          Maybe.andThen
-                            (\fs -> case fs of
-                              [ f ] ->
-                                maybeUpdateSubList <|
-                                  JM.JsObject <|
-                                    Dict.fromList
-                                      [(f.name, JM.JsString <| (fieldParser cinp).value)]
-
-                              _ -> Nothing
-                            ) |>
-                          Maybe.withDefault initmod
-                      in
-                        ( model
-                        , httpWithSetter
-                            toMsg
-                            ( dataBaseUri ++ "/create/" ++ field.typeName ++
-                              Utils.httpQuery [(field.name, cinp.value)]
-                            )
-                            (subviewDecoder ())
-                            (Result.toMaybe >> Maybe.map always >> Utils.orElse (Just updateSingleStringFieldSubview))
-                        )
-                    else if field.isCollection then
-                      ( ( fieldParser >> .value >> JM.stringToJsonValue field.jsonType ) cinp |>
-                        Maybe.andThen maybeUpdateSubList |>
-                        Maybe.withDefault model
-                      , Cmd.none
-                      )
-                    else
-                      ( fieldParser >> .value >> JM.stringToJsonValue field.jsonType ) cinp |>
-                      Maybe.map (\iv -> ( JM.jsonEditor path iv model, Cmd.none )) |>
-                      Maybe.withDefault ( model, Cmd.none )
-
-                formatter model =
-                  JM.jsonReader path model |>
-                  Maybe.map fieldFormatter |>
-                  Maybe.withDefault ""
-
-                validator iv mod =
-                  let
-                    typeValidator t =
-                      case t of
-                        "number" ->
-                          let
-                            res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
-                          in
-                            field.fractionDigits |>
-                            Maybe.map
-                              (\fd ->
-                                if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
-                              ) |>
-                            Maybe.withDefault (String.toInt iv |> res) |>
-                            (\r ->
-                              case r of
-                                Ok _ ->
-                                  success
-
-                                Err err ->
-                                  [ (key, err) ]
-                            )
-
-                        "boolean" ->
-                          String.toLower iv |>
-                            (\s ->
-                              if s == "true" || s == "false" then
-                                success
-                              else
-                                [ (key, "Not a boolean: " ++ iv) ]
-                            )
-
-                        _ -> success
-
-                    enumValidator en =
-                      if String.isEmpty iv then
-                        success
-                      else
-                        Utils.find ((==) iv) en |>
-                        Maybe.map (\_ -> success) |>
-                        Maybe.withDefault ([ (key, "Value must come from list") ])
-                  in
-                    typeValidator field.jsonType |>
-                    (\r ->
-                      if List.isEmpty r then
-                        field.enum |>
-                        Maybe.map enumValidator |>
-                        Maybe.withDefault success
-                      else
-                        r
-                    ) |>
-                    ValidationResult
-              in
-                maybeExtensions |>
-                Maybe.map
-                  (\ext ->
-                    Controller
-                      { name = key
-                      , updateModel =
-                          ext.updateModel |>
-                          Maybe.map (\u -> u updater metadata) |>
-                          Maybe.withDefault updater
-                      , formatter =
-                          ext.formatter |>
-                          Maybe.map (\f -> f formatter) |>
-                          Maybe.withDefault formatter
-                      , selectInitializer = ext.selectInitializer
-                      , validateInput =
-                          ext.validateInput |>
-                          Maybe.map (\v -> v validator) |>
-                          Maybe.withDefault validator
-                      , inputCmd = ext.inputCmd
-                      }
-                  ) |>
-                Maybe.withDefault
-                  ( Controller
-                      { name = key
-                      , updateModel = updater
-                      , formatter = formatter
-                      , selectInitializer = Nothing
-                      , validateInput = validator
-                      , inputCmd = Nothing
-                      }
-                  )
+            inpVal =
+              ctrl |> (\(Controller { formatter }) -> formatter <| JM.data formModel)
           in
             ( ( key, ctrl )
-            , ( key
-              , Input key (fieldFormatter value) False Nothing Nothing Nothing i (Just field) False False
-              )
+            , ( key, Input key inpVal False Nothing Nothing Nothing i (Just field) False False )
             )
         ) |>
         List.unzip |>
         Tuple.mapBoth Dict.fromList Dict.fromList
   in
     EditModel
-      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUri typeName toMessagemsg)
+      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUrl typeName toMessagemsg)
       (jsonFormInitializer >> Just)
       Dict.empty
       Dict.empty
@@ -489,7 +280,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUri maybeInitializer ty
       False
 
 
-defaultJsonController: String -> JM.Path -> VM.Field -> Controller msg JM.JsonValue
+defaultJsonController: String -> JM.Path -> VM.Field -> JsonController msg
 defaultJsonController dataBaseUrl path field =
   let
     key =
@@ -649,7 +440,7 @@ withChainedValidator validator (Controller ({ validateInput } as ctrl)) =
     }
 
 
-withFormatter: (JM.JsonValue -> String) -> Controller msg JM.JsonValue -> Controller msg JM.JsonValue
+withFormatter: (JM.JsonValue -> String) -> JsonController msg -> JsonController msg
 withFormatter formatter (Controller ({ name } as ctrl)) =
   Controller
     { ctrl |
@@ -689,48 +480,6 @@ withInputCmd inpCmd (Controller ctrl) =
     }
 
 
--- json controllers
-jsonController: JsonController msg
-jsonController =
-  JsonController Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-
-
-jsonModelUpdater: JsonModelUpdater msg -> JsonController msg -> JsonController msg
-jsonModelUpdater updater jc =
-  { jc | updateModel = Just updater }
-
-
-jsonInputValidator: JsonInputValidator -> JsonController msg -> JsonController msg
-jsonInputValidator validator jc =
-  { jc | validateInput = Just validator }
-
-
-jsonFormatter: JsonFormatter -> JsonController msg -> JsonController msg
-jsonFormatter formatter jc =
-  { jc | formatter = Just formatter }
-
-
-jsonFieldFormatter: (JM.JsonValue -> String) -> JsonController msg -> JsonController msg
-jsonFieldFormatter formatter jc =
-  { jc | fieldFormatter = Just formatter }
-
-
-jsonFieldParser: (Input msg -> Input msg) -> JsonController msg -> JsonController msg
-jsonFieldParser parser jc =
-  { jc | fieldParser = Just parser }
-
-
-jsonSelectInitializer: SelectInitializer msg JM.JsonValue -> JsonController msg -> JsonController msg
-jsonSelectInitializer initializer jc =
-  { jc | selectInitializer = Just initializer }
-
-
-jsonInputCmd: Maybe (String -> Cmd msg) -> JsonController msg -> JsonController msg
-jsonInputCmd maybeInputCmd jc =
-  { jc | inputCmd = maybeInputCmd }
-
---- end json controllers
-
 setModelUpdater: String -> ModelUpdater msg model -> EditModel msg model -> EditModel msg model
 setModelUpdater key updater model =
   updateController key (withUpdater updater) model
@@ -766,40 +515,6 @@ updateController key updater model =
 success: List (String, String)
 success =
   [ ("", "") ]
-
-
-{-| Chain validators. When both validators perform error on then field, left is taken. -}
-jsonValidatorChain: JsonInputValidator -> JsonInputValidator -> JsonInputValidator
-jsonValidatorChain validator1 validator2 defVal value model =
-  let
-    mergeValidations r1 r2 =
-      Dict.union (Dict.fromList r1) (Dict.fromList r2) |>
-      Dict.toList
-
-    vres1 =
-      validator1 defVal value model
-
-    vres2 =
-      validator2 defVal value model
-  in
-    case vres1 of
-      ValidationResult res1 ->
-        case vres2 of
-          ValidationResult res2 ->
-            mergeValidations res1 res2 |> ValidationResult
-
-          ValidationTask rest2 ->
-            rest2 |> Task.map (\r -> mergeValidations res1 r) |> ValidationTask
-
-      ValidationTask rest1 ->
-        case vres2 of
-          ValidationResult res2 ->
-            rest1 |> Task.map (\r -> mergeValidations r res2) |> ValidationTask
-
-          ValidationTask rest2 ->
-            rest1 |>
-            Task.andThen (\r1 -> Task.map (\r2 -> mergeValidations r1 r2) rest2) |>
-            ValidationTask
 
 
 {-| Chain validators. When both validators perform error on then field, left is taken. -}
