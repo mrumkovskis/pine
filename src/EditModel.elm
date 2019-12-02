@@ -493,15 +493,7 @@ defaultJsonController: String -> JM.Path -> VM.Field -> Controller msg JM.JsonVa
 defaultJsonController dataBaseUrl path field =
   let
     key =
-      case path of
-        JM.Name p JM.End ->
-          p
-
-        JM.Idx idx JM.End ->
-          String.fromInt idx
-
-        _ ->
-          JM.pathEncoder path |> JE.encode 0
+      keyFromPath path
 
     updater toMsg cinp model =
       let
