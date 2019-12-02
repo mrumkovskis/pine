@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, ControllerInitializer, JsonController, JsonControllerInitializer
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
-  , defaultJsonController, keyFromPath, withParser, withChainedValidator, withFormatter, withSelectInitializer
+  , defaultJsonController, jsonCtls, keyFromPath, withParser, withChainedValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withChainedUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
@@ -401,6 +401,18 @@ defaultJsonController dataBaseUrl path field =
       , validateInput = validator
       , inputCmd = Nothing
       }
+
+
+jsonCtls: List (String, JsonController msg -> JsonController msg) -> JsonControllerInitializer msg -> JsonControllerInitializer msg
+jsonCtls ctls default path field =
+    let
+        key = keyFromPath path
+    in
+    Utils.find (\(p, _) -> JM.pathMatch p key) ctls
+        |> Maybe.andThen
+            (\(_, initFun) ->
+                default path field |> Maybe.map (\ctl -> initFun ctl)
+            )
 
 
 keyFromPath: JM.Path -> String
