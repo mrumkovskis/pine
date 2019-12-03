@@ -408,11 +408,13 @@ jsonCtls ctls default path field =
     let
         key = keyFromPath path
     in
-    Utils.find (\(p, _) -> JM.pathMatch p key) ctls
-        |> Maybe.andThen
-            (\(_, initFun) ->
-                default path field |> Maybe.map (\ctl -> initFun ctl)
-            )
+      default path field |>
+      Maybe.map
+        (\ctl ->
+          Utils.find (\(p, _) -> JM.pathMatch p key) ctls |>
+          Maybe.map (\(_, initFun) -> initFun ctl) |>
+          Maybe.withDefault ctl
+        )
 
 
 keyFromPath: JM.Path -> String
