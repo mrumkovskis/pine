@@ -918,6 +918,9 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map
         (\( ninps, ninput ) ->
           case ctrl.validateInput value <| JM.data model of
+            ValidationResult [] ->
+              (updateValidationResults ctrl.name ninps [ ("", "") ], Just ninput, Nothing)
+
             ValidationResult res ->
               (updateValidationResults ctrl.name ninps res, Just ninput, Nothing)
 
@@ -1130,6 +1133,11 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         Maybe.map
           (\_ ->
             case res of
+              Ok [] ->
+                ( { same | inputs = updateValidationResults name inputs [ ("", "") ] }
+                , Cmd.none
+                )
+
               Ok r ->
                 ( { same | inputs = updateValidationResults name inputs r }
                 , Cmd.none
