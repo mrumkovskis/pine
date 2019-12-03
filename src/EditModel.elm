@@ -406,7 +406,7 @@ defaultJsonController dataBaseUrl path field =
 jsonCtls: List (String, JsonController msg -> JsonController msg) -> JsonControllerInitializer msg -> JsonControllerInitializer msg
 jsonCtls ctls default path field =
     let
-        key = keyFromPath path
+      key = keyFromPath path
     in
       default path field |>
       Maybe.map
