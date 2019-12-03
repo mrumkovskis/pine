@@ -3,7 +3,7 @@ module EditModel exposing
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, ControllerInitializer, JsonController, JsonControllerInitializer
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
-  , defaultJsonController, jsonCtls, keyFromPath, withParser, withChainedValidator, withFormatter, withSelectInitializer
+  , defaultJsonController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withChainedUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
   , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
@@ -438,16 +438,16 @@ withParser parser (Controller ({ updateModel } as ctrl)) =
     }
 
 
-withValidator: InputValidator model -> Controller msg model -> Controller msg model
-withValidator validator (Controller ctrl) =
+overrideValidator: InputValidator model -> Controller msg model -> Controller msg model
+overrideValidator validator (Controller ctrl) =
   Controller
     { ctrl |
       validateInput = validator
     }
 
 
-withChainedValidator: InputValidator model -> Controller msg model -> Controller msg model
-withChainedValidator validator (Controller ({ validateInput } as ctrl)) =
+withValidator: InputValidator model -> Controller msg model -> Controller msg model
+withValidator validator (Controller ({ validateInput } as ctrl)) =
   Controller
     { ctrl |
       validateInput = validatorChain validateInput validator
