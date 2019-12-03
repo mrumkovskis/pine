@@ -960,7 +960,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
     setEditing ctrl focus maybeDoSearch =  -- OnFocus
       let
         processFocusSelect input =
-          if focus then
+          if focus && not input.readonly then
             ctrl.selectInitializer |>
             Maybe.map
               (\initializer ->
