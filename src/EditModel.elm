@@ -383,7 +383,7 @@ defaultJsonController dataBaseUrl path field =
             Maybe.withDefault ([ (key, "Value must come from list") ])
 
         requiredValidator =
-          if field.required && String.isEmpty iv then
+          if (field.required || not field.nullable) && String.isEmpty iv then
             [ ("", "Field is mandatory") ]
           else
             []
