@@ -1132,7 +1132,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       ValidateFieldMsg name value mod res ->
         Dict.get name inputs |>
-        Utils.filter (\input -> input.value == value && JM.data model == mod) |>
+        Utils.filter (\input -> input.value == value) |>
         Maybe.map
           (\_ ->
             case res of
