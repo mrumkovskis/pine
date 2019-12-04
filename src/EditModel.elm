@@ -381,15 +381,28 @@ defaultJsonController dataBaseUrl path field =
             Utils.find ((==) iv) en |>
             Maybe.map (\_ -> success) |>
             Maybe.withDefault ([ (key, "Value must come from list") ])
-      in
-        typeValidator field.jsonType |>
-        (\r ->
-          if List.isEmpty r then
-            field.enum |>
-            Maybe.map enumValidator |>
-            Maybe.withDefault success
+
+        requiredValidator =
+          if field.required && String.isEmpty iv then
+            [ ("", "Field is mandatory") ]
           else
-            r
+            []
+
+      in
+        ( case requiredValidator of
+            [] ->
+              typeValidator field.jsonType |>
+              (\r ->
+                if List.isEmpty r then
+                  field.enum |>
+                  Maybe.map enumValidator |>
+                  Maybe.withDefault success
+                else
+                  r
+              )
+
+            err ->
+              err
         ) |>
         ValidationResult
   in
