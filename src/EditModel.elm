@@ -836,7 +836,9 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         else
           case ctrl.updateModel input mod of
             UpdateValue nmod ->
-              ( same, set toMsg <| always nmod )
+              ( { same | inputs = newInputs }
+              , set toMsg <| always nmod
+              )
 
             UpdateTask task updater ->
               ( { same |
@@ -1114,7 +1116,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       UpdateFieldMsg name updater res ->
         ( Dict.update name (Maybe.map (\i -> { i | resolving = False })) inputs |>
-          (\ninputs -> { same | inputs = ninputs})
+          (\ninputs -> { same | inputs = ninputs })
         , case res of
             Ok val ->
               set toMsg (updater val)
