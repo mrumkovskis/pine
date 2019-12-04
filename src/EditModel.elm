@@ -4,9 +4,9 @@ module EditModel exposing
   , Msgs, SelectMsgs, ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
   , defaultJsonController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
-  , withValidator, withUpdater, withChainedUpdater, withInputCmd
+  , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
-  , fetch, set, setMsg, create, createMsg, http, httpWithSetter, save, saveMsg, sync, syncMsg, delete
+  , fetch, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
@@ -64,18 +64,12 @@ type alias ModelInitializer msg model =
   JM.FormModel msg model -> Maybe (Dict String (Controller msg model), Dict String (Input msg))
 
 
-{-| Updates model from `Input` optionally emiting command.
-    NOTE: Avoid using batch command since it may cause multiple save call!
--}
-type alias ModelUpdater msg model = Tomsg msg model -> Input msg -> model -> (model, Cmd msg)
+type alias ModelUpdater msg model = Input msg -> model -> UpdateValue model
 
 
-{- consider ModelUpdater refactoring, thus getting rid from http & httpWithSetter functions
-type UpdateResult model
-  = UpdateResult model
-  | UpdateTask (Task String model) (model -> model -> model)? -- first argument from task, second current model value?
-type alias ModelUpdater msg model = Input msg -> model -> UpdateResult model
--}
+type UpdateValue model
+  = UpdateValue model
+  | UpdateTask (Task String model) (model -> model -> model) -- first parameter is task value, second current model.
 
 
 type ValidationResult
@@ -184,12 +178,12 @@ type Msg msg model
   | OnSelectMsg (Controller msg model) String
   | OnSelectFieldMsg String String
   | OnResolvedMsg String
-  | ValidateFieldMsg String String model (Result String (List (String, String)))
+  | ValidateFieldMsg String String (Result String (List (String, String)))
+  | UpdateFieldMsg String (model -> model -> model) (Result String model)
   -- update entire model
   | EditModelMsg (model -> model)
   | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
-  | HttpModelMsg (Result HttpError model -> Maybe (model -> model)) (Result HttpError model)
   | SyncModelMsg
   | SubmitModelMsg
   --
@@ -286,54 +280,50 @@ defaultJsonController dataBaseUrl path field =
     key =
       keyFromPath path
 
-    updater toMsg cinp model =
+    updater cinp model =
       let
-        maybeUpdateSubList val =
-          JM.jsonReader path model |>
+        maybeUpdateSubList val mod =
+          JM.jsonReader path mod |>
           Maybe.map
             (\exv -> case exv of
               JM.JsList vals ->
                 Utils.find ((==) val) vals |>
-                Maybe.map (\_ -> model) |>
+                Maybe.map (\_ -> mod) |>
                 Maybe.withDefault
-                  (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val model)
+                  (JM.jsonEditor (JM.appendPath path <| JM.EndIdx JM.End) val mod)
 
-              _ -> JM.jsonEditor path val model
+              _ -> JM.jsonEditor path val mod
             )
       in
         if field.isComplexType then
           let
-            subviewDecoder _ =
-              JM.jsonDecoder |>
-              JD.map
-                (\val ->
-                  if field.isCollection then
-                    -- set value if value not exists already
-                    maybeUpdateSubList val |>
-                    Maybe.withDefault model
-                  else
-                    JM.jsonEditor path val model
-                )
+            taskUpdater val mod =
+              if field.isCollection then
+                -- set value if value not exists already
+                maybeUpdateSubList val mod |>
+                Maybe.withDefault mod
+              else
+                JM.jsonEditor path val mod
           in
-            ( model
-            , httpWithSetter
-                toMsg
-                ( dataBaseUrl ++ "/create/" ++ field.typeName ++
-                  Utils.httpQuery [(field.name, cinp.value)]
-                )
-                (subviewDecoder ())
-                (Result.toMaybe >> Maybe.map always)
-            )
+            UpdateTask
+              ( Utils.httpGetJson
+                  ( dataBaseUrl ++ "/create/" ++ field.typeName ++
+                    Utils.httpQuery [(field.name, cinp.value)]
+                  )
+                  JM.jsonDecoder |>
+                Task.mapError Utils.httpErrorToString
+              )
+              taskUpdater
         else if field.isCollection then
-          ( ( .value >> JM.stringToJsonValue field.jsonType ) cinp |>
-            Maybe.andThen maybeUpdateSubList |>
-            Maybe.withDefault model
-          , Cmd.none
-          )
+          ( .value >> JM.stringToJsonValue field.jsonType ) cinp |>
+          Maybe.andThen (\v -> maybeUpdateSubList v model) |>
+          Maybe.withDefault model |>
+          UpdateValue
         else
           ( .value >> JM.stringToJsonValue field.jsonType ) cinp |>
-          Maybe.map (\iv -> ( JM.jsonEditor path iv model, Cmd.none )) |>
-          Maybe.withDefault ( model, Cmd.none )
+          Maybe.map (\iv -> JM.jsonEditor path iv model) |>
+          Maybe.withDefault model |>
+          UpdateValue
 
     formatter model =
       JM.jsonReader path model |>
@@ -447,7 +437,7 @@ withParser: (Input msg -> Input msg) -> Controller msg model -> Controller msg m
 withParser parser (Controller ({ updateModel } as ctrl)) =
   Controller
     { ctrl |
-      updateModel = \toMsg input model -> updateModel toMsg (parser input) model
+      updateModel = \input model -> updateModel (parser input) model
     }
 
 
@@ -488,14 +478,6 @@ withUpdater updater (Controller ctrl) =
   Controller
     { ctrl |
       updateModel = updater
-    }
-
-
-withChainedUpdater: ModelUpdater msg model -> Controller msg model -> Controller msg model
-withChainedUpdater updater (Controller ({ updateModel } as ctrl)) =
-  Controller
-    { ctrl |
-      updateModel = updaterChain updateModel updater
     }
 
 
@@ -586,19 +568,6 @@ validatorChain validator1 validator2 value model =
             ValidationTask
 
 
-updaterChain: ModelUpdater msg model -> ModelUpdater msg model -> ModelUpdater msg model
-updaterChain upd1 upd2 toMsg input model =
-  upd1 toMsg input model |>
-  (\(m1, c1) ->
-    upd2 toMsg input m1 |>
-    (\(m2, c2) ->
-      ( m2
-      , if c1 == Cmd.none then c2 else if c2 == Cmd.none then c1 else Cmd.batch [ c1, c2 ]
-      )
-    )
-  )
-
-
 {-| Fetch data by id from server. Calls [`JsonModel.fetch`](JsonModel#fetch)
 -}
 fetch: Tomsg msg model -> Int -> Cmd msg
@@ -634,22 +603,6 @@ create toMsg createParams createFun =
 createMsg: Tomsg msg model -> JM.SearchParams -> (model -> model) -> msg
 createMsg toMsg createParams createFun =
   toMsg <| NewModelMsg createParams createFun
-
-
-{-| Creates model from http request. Setter function's returns optional model update function
-(see [`set`](#set)) which gets existing model as an argument thus the result can be a product from
-both new and existing model.
-If Result is Ok and setter function returns Nothing, model remains unchanged, if Result is Err
-and setter function returns Nothing, http error message is propagated to Ask module.
--}
-httpWithSetter: Tomsg msg model -> String -> JD.Decoder model -> (Result HttpError model -> Maybe (model -> model)) -> Cmd msg
-httpWithSetter toMsg url decoder setter =
-  Http.get { url = url, expect = expectJson (toMsg << HttpModelMsg setter) decoder }
-
-
-http: Tomsg msg model -> String -> JD.Decoder model -> Cmd msg
-http toMsg url decoder =
-  httpWithSetter toMsg url decoder (Result.toMaybe >> Maybe.map always)
 
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
@@ -723,7 +676,7 @@ simpleSelectCtrl updateModel formatter selectInitializer =
 
 noCmdUpdater: (String -> model -> model) -> ModelUpdater msg model
 noCmdUpdater updater =
-  \_ input mod -> (updater input.value mod, Cmd.none)
+  \input mod -> UpdateValue <| updater input.value mod
 
 
 {-| Creates controller -}
@@ -881,30 +834,17 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         if ctrl.formatter mod == input.value then
           ( { same | inputs = newInputs }, Cmd.none )
         else
-          ctrl.updateModel
-            (toMsg << CmdChainMsg [ OnResolvedMsg input.name ] Cmd.none << Just) -- unset resolving flag after cmd
-            input
-            mod |>
-          (\(nm, cmd) ->
-            updateInputsFromModel nm newInputs |>
-            (\(is, valTasks) ->
+          case ctrl.updateModel input mod of
+            UpdateValue nmod ->
+              ( same, set toMsg <| always nmod )
+
+            UpdateTask task updater ->
               ( { same |
                   inputs =
-                    if cmd == Cmd.none then
-                      is
-                    else
-                      is |>
-                      Dict.update input.name (Maybe.map (\i -> { i | resolving = True})) -- set resolving flag if cmd
-                , isDirty = True
-                } --update inputs if updater has changed other fields
-              , do toMsg <|
-                  CmdChainMsg
-                    [ SetModelMsg nm ]
-                    ((if cmd == Cmd.none then valTasks else cmd :: valTasks) |> Cmd.batch)
-                    Nothing
+                    Dict.update input.name (Maybe.map (\i -> { i | resolving = True })) newInputs
+                }
+              , Task.attempt (toMsg << UpdateFieldMsg ctrl.name updater) task
               )
-            )
-          )
 
     updateModelFromActiveInput =
       Dict.values >>
@@ -942,7 +882,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                 ( ninps
                 , Just ninput
                 , Just <|
-                    Task.attempt (toMsg << ValidateFieldMsg ctrl.name value (JM.data model)) t
+                    Task.attempt (toMsg << ValidateFieldMsg ctrl.name value) t
                 )
             else
               (ninps, Just ninput, Nothing)
@@ -1034,20 +974,16 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
     updateInputsFromModel newModel newInputs =
       Dict.foldl
-        (\key input (foldedinps, valtasks) ->
+        (\key input foldedinps ->
           Dict.get key controllers |>
           Maybe.map
             (\(Controller ctrl) ->
               updateInput False ctrl (ctrl.formatter newModel) foldedinps |>
-              (\(ninps, _, mbvalt) ->
-                ( ninps
-                , Maybe.map (\valt -> valt :: valtasks) mbvalt |> Maybe.withDefault valtasks
-                )
-              )
+              (\(ninps, _, _) -> ninps)
             ) |>
-          Maybe.withDefault (foldedinps, valtasks)
+          Maybe.withDefault foldedinps
         )
-        ( newInputs, [] )
+        newInputs
         newInputs
 
     updateModel doInputUpdate transform (newModel, cmd) =
@@ -1070,7 +1006,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
             ) |>
           Maybe.withDefault
             ( updateInputsFromModel (JM.data newem.model) newem.inputs |>
-              (\(ninps, valtasks) -> ( { newem | inputs = ninps }, Cmd.batch valtasks ))
+              (\ninps -> ( { newem | inputs = ninps }, Cmd.none ))
             )
         else (newem, cmd)
       )
@@ -1155,7 +1091,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         , Cmd.none
         )
 
-      ValidateFieldMsg name value mod res ->
+      ValidateFieldMsg name value res ->
         Dict.get name inputs |>
         Utils.filter (\input -> input.value == value) |>
         Maybe.map
@@ -1176,6 +1112,17 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           ) |>
         Maybe.withDefault ( same, Cmd.none )
 
+      UpdateFieldMsg name updater res ->
+        ( Dict.update name (Maybe.map (\i -> { i | resolving = False })) inputs |>
+          (\ninputs -> { same | inputs = ninputs})
+        , case res of
+            Ok val ->
+              set toMsg (updater val)
+
+            Err err ->
+              Ask.error toMessagemsg err
+        )
+
       --edit entire model
       EditModelMsg editFun ->
         ( same, JM.set (toMsg << UpdateModelMsg True) <| editFun <| JM.data model )
@@ -1185,24 +1132,6 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       NewModelMsg searchParams createFun ->
         ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
-
-      HttpModelMsg setter httpResult ->
-        let
-          mod = JM.data model
-
-          result =
-            case httpResult of
-              Ok _ ->
-                setter httpResult |>
-                Maybe.map (set toMsg) |>
-                Maybe.withDefault Cmd.none
-
-              Err e ->
-                setter httpResult |>
-                Maybe.map (set toMsg) |>
-                Maybe.withDefault (Ask.errorOrUnauthorized same.toMessagemsg e)
-        in
-          ( same, result )
 
       SyncModelMsg ->
         updateModelFromActiveInput inputs
