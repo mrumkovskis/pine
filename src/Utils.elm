@@ -8,6 +8,7 @@ module Utils exposing
   , searchParams, toList, styles
   , do, domsg
   , expectJson, resolveJson, expectString, resolveString, badHttpBody
+  , httpGetJson
   )
 
 
@@ -26,7 +27,7 @@ import Url.Builder as UB
 import Url
 import Html
 import Html.Attributes as Attributes
-import Task
+import Task exposing (..)
 
 import Debug exposing (log, toString)
 
@@ -428,3 +429,15 @@ httpResult decoder response =
 
     Http.GoodStatus_ metadata str ->
       decoder metadata str
+
+
+httpGetJson: String -> JD.Decoder a -> Task HttpError a
+httpGetJson url decoder =
+  Http.task
+    { method = "GET"
+    , headers = []
+    , url = url
+    , body = Http.emptyBody
+    , resolver = resolveJson decoder
+    , timeout = Nothing
+    }

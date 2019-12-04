@@ -20,7 +20,6 @@ module ViewMetadata exposing
 import Utils exposing (..)
 
 import Json.Decode as JD
-import Http
 import Set exposing (Set)
 import Task exposing (..)
 import Dict exposing (..)
@@ -143,14 +142,7 @@ fetchMetadataTask urlBase viewName =
       JD.andThen (\v -> JD.map v (maybeStringFieldDecoder "codifType"))
 
     task name =
-      Http.task
-        { method = "GET"
-        , headers = []
-        , url = urlBase ++ "/" ++ percentEncode name
-        , body = Http.emptyBody
-        , resolver = resolveJson viewDecoder
-        , timeout = Nothing
-        }
+      Utils.httpGetJson (urlBase ++ "/" ++ percentEncode name) viewDecoder
 
     tasks result =
       Dict.filter (\_ v -> v == Nothing) result |>
