@@ -1120,9 +1120,21 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       OnSelectMsg (Controller ctrl) value -> -- text selected from select component
         updateInput True ctrl value inputs |>
-        (\(newInputs, maybeInp, _) -> -- do not execute validation task since it will be run by updateModelFromInput function
+        (\(newInputs, maybeInp, maybeCmd) -> -- do not execute validation task since it will be run by updateModelFromInput function
           maybeInp |>
-          Maybe.map (updateModelFromInput newInputs ctrl) |>
+          Maybe.map
+            ( updateModelFromInput newInputs ctrl >>
+              (\(mod, cmd) ->
+                maybeCmd |>
+                Utils.filter ((/=) Cmd.none) |>
+                Maybe.map
+                  (\updcmd ->
+                    if cmd == Cmd.none then updcmd else Cmd.batch [ updcmd, cmd ]
+                  ) |>
+                Maybe.withDefault cmd |>
+                Tuple.pair mod
+              )
+            ) |>
           Maybe.withDefault ( same, Cmd.none )
         )
 
