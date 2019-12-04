@@ -902,7 +902,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map (\(c, input) -> updateModelFromInput inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
-    updateInput ctrl value newInputs =
+    updateInput doValidation ctrl value newInputs =
       Dict.get ctrl.name newInputs |>
       Maybe.map
         (\input ->
@@ -917,19 +917,22 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         ) |>
       Maybe.map
         (\( ninps, ninput ) ->
-          case ctrl.validateInput value <| JM.data model of
-            ValidationResult [] ->
-              (updateValidationResults ctrl.name ninps [ ("", "") ], Just ninput, Nothing)
+          if doValidation then
+            case ctrl.validateInput value <| JM.data model of
+              ValidationResult [] ->
+                (updateValidationResults ctrl.name ninps [ ("", "") ], Just ninput, Nothing)
 
-            ValidationResult res ->
-              (updateValidationResults ctrl.name ninps res, Just ninput, Nothing)
+              ValidationResult res ->
+                (updateValidationResults ctrl.name ninps res, Just ninput, Nothing)
 
-            ValidationTask t ->
-              ( ninps
-              , Just ninput
-              , Just <|
-                  Task.attempt (toMsg << ValidateFieldMsg ctrl.name value (JM.data model)) t
-              )
+              ValidationTask t ->
+                ( ninps
+                , Just ninput
+                , Just <|
+                    Task.attempt (toMsg << ValidateFieldMsg ctrl.name value (JM.data model)) t
+                )
+            else
+              (ninps, Just ninput, Nothing)
         ) |>
       Maybe.withDefault (newInputs, Nothing, Nothing)
 
@@ -943,7 +946,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         )
 
     onInput toSelectmsg ctrl value = -- OnMsg
-      updateInput ctrl value inputs |>
+      updateInput True ctrl value inputs |>
       (\(ninps, mbinp, mbvalt) ->
         ( { same | inputs = ninps }
         , mbinp |> Maybe.andThen .select |>
@@ -1022,7 +1025,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           Dict.get key controllers |>
           Maybe.map
             (\(Controller ctrl) ->
-              updateInput ctrl (ctrl.formatter newModel) foldedinps |>
+              updateInput False ctrl (ctrl.formatter newModel) foldedinps |>
               (\(ninps, _, mbvalt) ->
                 ( ninps
                 , Maybe.map (\valt -> valt :: valtasks) mbvalt |> Maybe.withDefault valtasks
@@ -1103,7 +1106,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         setEditing ctrl True False
 
       OnSelectMsg (Controller ctrl) value -> -- text selected from select component
-        updateInput ctrl value inputs |>
+        updateInput True ctrl value inputs |>
         (\(newInputs, maybeInp, _) -> -- do not execute validation task since it will be run by updateModelFromInput function
           maybeInp |>
           Maybe.map (updateModelFromInput newInputs ctrl) |>
