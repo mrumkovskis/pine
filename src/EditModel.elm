@@ -177,7 +177,6 @@ type Msg msg model
   | FocusNoSearchMsg (Controller msg model)
   | OnSelectMsg (Controller msg model) String
   | OnSelectFieldMsg String String
-  | OnResolvedMsg String
   | ValidateFieldMsg String String (Result String (List (String, String)))
   | UpdateFieldMsg String (model -> model -> model) (Result String model)
   -- update entire model
@@ -1079,15 +1078,6 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           Maybe.map
             (\ctrl -> do toMsg <| OnSelectMsg ctrl value) |>
           Maybe.withDefault Cmd.none
-        )
-
-      OnResolvedMsg name ->
-        ( { same |
-            inputs =
-              inputs |>
-              Dict.update name (Maybe.map (\i -> { i | resolving = False }))
-          }
-        , Cmd.none
         )
 
       ValidateFieldMsg name value res ->
