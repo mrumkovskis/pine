@@ -5,7 +5,7 @@ module EditModel exposing
   , init, initJsonForm, initJsonQueryForm
   , defaultJsonController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
-  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator, success
+  , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
@@ -78,7 +78,7 @@ type ValidationResult
 
 
 {-| Validates input -}
-type alias InputValidator model = String -> model -> ValidationResult
+type alias InputValidator model = String -> String -> model -> ValidationResult
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -330,8 +330,11 @@ defaultJsonController dataBaseUrl path field =
       Maybe.map JM.jsonValueToString |>
       Maybe.withDefault ""
 
-    validator iv mod =
+    validator inpkey iv mod =
       let
+        success k =
+          [( k, "" )]
+
         typeValidator t =
           case t of
             "number" ->
@@ -347,7 +350,7 @@ defaultJsonController dataBaseUrl path field =
                 (\r ->
                   case r of
                     Ok _ ->
-                      success
+                      success inpkey
 
                     Err err ->
                       [ (key, err) ]
@@ -357,19 +360,19 @@ defaultJsonController dataBaseUrl path field =
               String.toLower iv |>
                 (\s ->
                   if s == "true" || s == "false" then
-                    success
+                    success inpkey
                   else
                     [ (key, "Not a boolean: " ++ iv) ]
                 )
 
-            _ -> success
+            _ -> success inpkey
 
         enumValidator en =
           if String.isEmpty iv then
-            success
+            success inpkey
           else
             Utils.find ((==) iv) en |>
-            Maybe.map (\_ -> success) |>
+            Maybe.map (\_ -> success inpkey) |>
             Maybe.withDefault ([ (key, "Value must come from list") ])
 
         requiredValidator =
@@ -386,7 +389,7 @@ defaultJsonController dataBaseUrl path field =
                 if List.isEmpty r then
                   field.enum |>
                   Maybe.map enumValidator |>
-                  Maybe.withDefault success
+                  Maybe.withDefault (success inpkey)
                 else
                   r
               )
@@ -520,15 +523,9 @@ updateController key updater model =
   Maybe.withDefault model
 
 
-{-| Successful validation. -}
-success: List (String, String)
-success =
-  [ ("", "") ]
-
-
 {-| Chain validators. When both validators perform error on then field, left is taken. -}
 validatorChain: InputValidator model -> InputValidator model -> InputValidator model
-validatorChain validator1 validator2 value model =
+validatorChain validator1 validator2 key value model =
   let
     mergeValidations r1 r2 =
       Dict.merge
@@ -543,10 +540,10 @@ validatorChain validator1 validator2 value model =
       Dict.toList
 
     vres1 =
-      validator1 value model
+      validator1 key value model
 
     vres2 =
-      validator2 value model
+      validator2 key value model
   in
     case vres1 of
       ValidationResult res1 ->
@@ -656,7 +653,7 @@ simpleCtrl updateModel formatter =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Nothing
-    , validateInput = \_ _ -> ValidationResult []
+    , validateInput = \_ _ _ -> ValidationResult []
     , inputCmd = Nothing
     }
 
@@ -669,7 +666,7 @@ simpleSelectCtrl updateModel formatter selectInitializer =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Just selectInitializer
-    , validateInput = \_ _ -> ValidationResult []
+    , validateInput = \_ _ _ -> ValidationResult []
     , inputCmd = Nothing
     }
 
@@ -873,7 +870,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map
         (\( ninps, ninput ) ->
           if doValidation then
-            case ctrl.validateInput value <| JM.data model of
+            case ctrl.validateInput ctrl.name value <| JM.data model of
               ValidationResult [] ->
                 (updateValidationResults ctrl.name ninps [ ("", "") ], Just ninput, Nothing)
 
