@@ -1,7 +1,7 @@
 module EditModel exposing
   ( Input, Controller (..), ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditModel, JsonEditMsg, Msg, Tomsg, ControllerInitializer, JsonController, JsonControllerInitializer
-  , Msgs, SelectMsgs, ValidationResult (..)
+  , Msgs, SelectMsgs, UpdateValue (..), ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
   , defaultJsonController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
@@ -377,7 +377,7 @@ defaultJsonController dataBaseUrl path field =
 
         requiredValidator =
           if (field.required || not field.nullable) && String.isEmpty iv then
-            [ ("", "Field is mandatory") ]
+            [ (key, "Field is mandatory") ]
           else
             []
 
@@ -872,7 +872,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           if doValidation then
             case ctrl.validateInput ctrl.name value <| JM.data model of
               ValidationResult [] ->
-                (updateValidationResults ctrl.name ninps [ ("", "") ], Just ninput, Nothing)
+                (updateValidationResults ctrl.name ninps [ (ctrl.name, "") ], Just ninput, Nothing)
 
               ValidationResult res ->
                 (updateValidationResults ctrl.name ninps res, Just ninput, Nothing)
@@ -1097,7 +1097,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           (\_ ->
             case res of
               Ok [] ->
-                ( { same | inputs = updateValidationResults name inputs [ ("", "") ] }
+                ( { same | inputs = updateValidationResults name inputs [ (name, "") ] }
                 , Cmd.none
                 )
 

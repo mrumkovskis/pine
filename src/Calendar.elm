@@ -158,10 +158,10 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
 
 dateValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
 dateValidator map mask =
-  (\value _ ->
+  (\key value _ ->
     let
       valres msg =
-        [ ( "", msg ) ]
+        [ ( key, msg ) ]
     in
       parseDate mask value |>
       Maybe.map (\_ -> valres "") |>
@@ -172,10 +172,10 @@ dateValidator map mask =
 
 dateTimeValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
 dateTimeValidator map mask =
-    (\value _ ->
+    (\key value _ ->
       let
         valres msg =
-          [ ( "", msg ) ]
+          [ ( key, msg ) ]
       in
         parseDateTime mask value |>
         Maybe.map (\_ -> valres "") |>
