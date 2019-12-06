@@ -832,7 +832,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         else
           case ctrl.updateModel input mod of
             UpdateValue nmod ->
-              ( { same | inputs = newInputs }
+              ( { same | inputs = newInputs, isDirty = True }
               , set toMsg <| always nmod
               )
 
@@ -840,6 +840,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               ( { same |
                   inputs =
                     Dict.update input.name (Maybe.map (\i -> { i | resolving = True })) newInputs
+                , isDirty = True
                 }
               , Task.attempt (toMsg << UpdateFieldMsg ctrl.name updater) task
               )
