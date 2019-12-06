@@ -992,15 +992,28 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           newem.initializer newModel |>
           Maybe.map
             (\(ctrls, is) ->
-              ( { newem | controllers = ctrls, inputs = is }
-              , newem.inputs |>
-                Dict.filter (\_ i -> i.editing ) |>
-                Dict.values |>
-                List.head |>
-                Maybe.andThen (\i -> Dict.get i.name ctrls) |>
-                Maybe.map (\c -> do toMsg <| FocusNoSearchMsg c) |> -- restore select box if present
-                Maybe.withDefault Cmd.none
-              )
+              Dict.merge
+                (\k i (r, me) -> (Dict.insert k i r, me)) -- input present only in initialized dict
+                (\k i1 i2 (r, me) -> -- input present in both dicts, preserve editing flag and errors
+                  ( Dict.insert k { i1 | editing = i2.editing, error = i2.error } r
+                  , if i2.editing then Just k else me
+                  )
+                )
+                (\k i (r, me) -> (r, me)) -- input present only in existing dict, drop it
+                is
+                newem.inputs
+                (Dict.empty, Nothing) |>
+              Tuple.mapBoth
+                (\nis -> { newem | controllers = ctrls, inputs = nis })
+                (\me ->
+                  me |>
+                  Maybe.andThen
+                    (\e ->
+                      Dict.get e ctrls |>
+                      Maybe.map (\c -> do toMsg <| FocusNoSearchMsg c) -- restore select box if present
+                    ) |>
+                  Maybe.withDefault Cmd.none
+                )
             ) |>
           Maybe.withDefault
             ( updateInputsFromModel (JM.data newem.model) newem.inputs |>
