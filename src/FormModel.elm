@@ -19,6 +19,7 @@ import Dict
 type alias Model msg =
   { init: () -> EM.JsonEditModel msg
   , form: Maybe (EM.JsonEditModel msg)
+  , saveSuccessCmd: Maybe (JM.JsonValue -> Cmd msg)
   , toMessagemsg: Ask.Tomsg msg
   }
 
@@ -35,7 +36,7 @@ type Msg msg
 type alias Tomsg msg = Msg msg -> msg
 
 
-init: (() -> EM.JsonEditModel msg) -> Ask.Tomsg msg -> Model msg
+init: (() -> EM.JsonEditModel msg) -> Maybe (JM.JsonValue -> Cmd msg) -> Ask.Tomsg msg -> Model msg
 init initializer =
   Model initializer Nothing
 
@@ -124,7 +125,7 @@ map mapper model =
 
 
 update: Tomsg msg -> Msg msg -> Model msg -> (Model msg, Cmd msg)
-update toMsg msg ({ form, toMessagemsg } as model) =
+update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
   case msg of
     CreateMsg data ->
       form |>
@@ -163,10 +164,23 @@ update toMsg msg ({ form, toMessagemsg } as model) =
       (\(newmod, cmd) ->
         if cmd == Cmd.none then
           ( newmod
-          , Maybe.map2
-              (\f m -> domsg <| m <| JM.data f.model)
-              newmod.form
-              maybeSuccessmsg |>
+          , newmod.form |>
+            Maybe.map (.model >> JM.data) |>
+            Maybe.map
+              (\m ->
+                case (maybeSuccessmsg, saveSuccessCmd) of
+                  (Just sm, Just sc) ->
+                    Cmd.batch [ domsg <| sm m, sc m ]
+
+                  (Just sm, Nothing) ->
+                    domsg <| sm m
+
+                  (Nothing, Just sc) ->
+                    sc m
+
+                  _ ->
+                    Cmd.none
+              ) |>
             Maybe.withDefault Cmd.none
           )
         else ( newmod, cmd )
