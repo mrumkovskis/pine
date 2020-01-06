@@ -1,6 +1,8 @@
 module Calendar exposing
   ( Calendar, Holiday
   , dateController, dateTimeController
+  , dateValidator, dateTimeValidator, dateValidatorTask, dateTimeValidatorTask
+  , dateUpdaterTask, dateTimeUpdaterTask
   , formatDate, formatDateTime
   , parseDate, parseDateTime
   )
@@ -12,6 +14,7 @@ import Dict exposing (..)
 import Regex exposing (..)
 import Parser exposing (..)
 import Set
+import Task
 
 import JsonModel as JM
 import EditModel as EM
@@ -155,6 +158,50 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
     )
 
 
+dateValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator JM.JsonValue
+dateValidatorTask =
+  validatorTask "calendar"
+
+
+dateTimeValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator JM.JsonValue
+dateTimeValidatorTask =
+  validatorTask "calendar_time"
+
+
+validatorTask: String -> Dict Char Char -> String -> String -> EM.InputValidator JM.JsonValue
+validatorTask url map locale mask key value _ =
+  Utils.httpGetJson ("/data/" ++ url ++ Utils.httpQuery [(locale, value)]) decoder |>
+  Task.mapError Utils.httpErrorToString |>
+  Task.map
+    (\cal ->
+      if List.isEmpty cal then [( key, localizedMask map mask)] else [( key, "")]
+    ) |>
+  EM.ValidationTask
+
+
+dateUpdaterTask: String -> EM.ModelUpdater msg JM.JsonValue
+dateUpdaterTask =
+  updateTask "calendar"
+
+
+dateTimeUpdaterTask: String -> EM.ModelUpdater msg JM.JsonValue
+dateTimeUpdaterTask =
+  updateTask "calendar_time"
+
+
+updateTask: String -> String -> EM.ModelUpdater msg JM.JsonValue
+updateTask url locale input _ =
+  Utils.httpGetJson ("/data/" ++ url ++ Utils.httpQuery [(locale, input.value)]) decoder |>
+  Task.mapError Utils.httpErrorToString |>
+  Task.map
+    (\cal ->
+      ( List.head cal |> Maybe.map .value |> Maybe.withDefault input.value |> JM.JsString
+      , JM.jsonEdit input.name
+      )
+    ) |>
+  EM.UpdateTask
+
+
 dateValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
 dateValidator map mask =
   \key value _ ->
@@ -211,8 +258,10 @@ dateController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path 
 dateController dataBaseUrl locale map mask doSearch path field =
   EM.defaultJsonController dataBaseUrl path field |>
   EM.withFormatter (dateFormatter mask) |>
-  EM.withParser (dateInputParser mask) |>
-  EM.withValidator (dateValidator map mask) |>
+  EM.withValidator (dateValidatorTask map locale mask) |>
+  EM.withUpdater (dateUpdaterTask locale) |>
+  --EM.withParser (dateInputParser mask) |>
+  --EM.withValidator (dateValidator map mask) |>
   EM.withSelectInitializer (calendarSelect locale mask doSearch)
 
 
@@ -220,8 +269,10 @@ dateTimeController: String -> String -> Dict Char Char -> String -> Bool -> JM.P
 dateTimeController dataBaseUrl locale map mask doSearch path field =
   EM.defaultJsonController dataBaseUrl path field |>
   EM.withFormatter (dateTimeFormatter mask) |>
-  EM.withParser (dateTimeInputParser mask) |>
-  EM.withValidator (dateTimeValidator map mask) |>
+  EM.withValidator (dateTimeValidatorTask map locale mask) |>
+  EM.withUpdater (dateTimeUpdaterTask locale) |>
+  --EM.withParser (dateTimeInputParser mask) |>
+  --EM.withValidator (dateTimeValidator map mask) |>
   EM.withSelectInitializer (timeSelect locale mask doSearch)
 
 
