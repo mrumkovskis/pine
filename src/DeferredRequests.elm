@@ -28,7 +28,7 @@ import Json.Decode as JD
 import Dict exposing (Dict)
 import Http
 -- import WebSocket
-import Task
+
 import Debug exposing (toString)
 
 
@@ -163,9 +163,9 @@ update toMsg msg (Model reqs subs conf as model) =
       let
         statusMap =
           Dict.fromList
-          [ ("OK", (JD.succeed OK))
-          , ("ERR", (JD.succeed ERR))
-          , ("EXE", (JD.succeed EXE))
+          [ ("OK", JD.succeed OK)
+          , ("ERR", JD.succeed ERR)
+          , ("EXE", JD.succeed EXE)
           ]
 
         innerDecoder =
@@ -191,7 +191,7 @@ update toMsg msg (Model reqs subs conf as model) =
 
     cmd id toSubMsg =
       Http.get
-        { url = (conf.deferredResultBaseUri ++ "/" ++ id)
+        { url = conf.deferredResultBaseUri ++ "/" ++ id
         , expect = expectJson toSubMsg JD.value
         }
 

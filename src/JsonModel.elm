@@ -76,7 +76,6 @@ import Json.Encode as JE
 import Dict exposing (Dict)
 import Set exposing (Set)
 import Http
-import Task
 import Regex
 
 import ViewMetadata as VM
@@ -542,15 +541,14 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
     query = Utils.httpQuery
 
     maybeIdPathAndQueryString idParamName params =
-      (case List.partition (\(n, _) -> n == idParamName) params of
+      case List.partition (\(n, _) -> n == idParamName) params of
         ([], pars) -> query pars
 
-        ((_, fid) :: tail, pars) -> "/" ++ fid ++ query pars
-      )
+        ((_, fid) :: _, pars) -> "/" ++ fid ++ query pars
 
     formUri _ searchParams (Model _ mc) =
       mc.dataBaseUri ++ "/" ++ mc.typeName ++
-        (maybeIdPathAndQueryString mc.idParamName searchParams)
+        maybeIdPathAndQueryString mc.idParamName searchParams
 
     saveUri searchParams ((Model _ mc) as model) =
       let
@@ -595,7 +593,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , deferredConfig = Nothing
       , countBaseUri = ""
       , countDecoder = JD.int
-      , countUri = (\_ _ -> "")
+      , countUri = \_ _ -> ""
       , pageSize = 0
       , idParamName = "id"
       , id = formId
@@ -889,13 +887,13 @@ jsonDataDecoder fieldGetter metadata viewTypeName =
         JD.fail ("<unknown json type: " ++ x ++ " >")
 
     fieldDecoder fieldmd =
-      if (not fieldmd.isComplexType) && (not fieldmd.isCollection) then
+      if not fieldmd.isComplexType && not fieldmd.isCollection then
         primDec fieldmd.jsonType
-      else if fieldmd.isComplexType && (not fieldmd.isCollection) then
+      else if fieldmd.isComplexType && not fieldmd.isCollection then
         Dict.get fieldmd.typeName metadata |>
         Maybe.map objectDecoder |>
         Maybe.withDefault (fail fieldmd.typeName)
-      else if (not fieldmd.isComplexType) && fieldmd.isCollection then
+      else if not fieldmd.isComplexType && fieldmd.isCollection then
         JD.list (primDec fieldmd.jsonType) |>
         JD.map JsList
       else
@@ -954,14 +952,14 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
             Dict.get fmd.name fields |>
             Maybe.map
               (\fv ->
-                ( fmd.name
-                , if (not fmd.isComplexType) && (not fmd.isCollection) then
+                [( fmd.name
+                , if not fmd.isComplexType && not fmd.isCollection then
                     encodePrimField fv
-                  else if fmd.isComplexType && (not fmd.isCollection) then
+                  else if fmd.isComplexType && not fmd.isCollection then
                     Dict.get fmd.typeName metadata |>
                     Maybe.map (encodeObject fv) |>
                     Maybe.withDefault JE.null
-                  else if (not fmd.isComplexType) && fmd.isCollection then
+                  else if not fmd.isComplexType && fmd.isCollection then
                     case fv of
                       JsList primitiveValues ->
                         primitiveValues |>
@@ -972,7 +970,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
                     Dict.get fmd.typeName metadata |>
                     Maybe.map (encodeList fv) |>
                     Maybe.withDefault JE.null
-                ) :: []
+                )]
               ) |>
             Maybe.withDefault []
           ) |>
@@ -984,7 +982,7 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
     encodeList lv vmd = case lv of
       JsList values ->
         values |>
-        JE.list ((Utils.flip encodeObject) vmd)
+        JE.list (Utils.flip encodeObject vmd)
 
       _ -> JE.null -- unexpected element, encode as null
   in
@@ -1064,7 +1062,7 @@ stringToJsonValue jsonType value =
     "boolean" ->
       Just <| JsBool (String.toLower value |> (==) "true")
 
-    x ->
+    _ ->
       Just JsNull
 
 
@@ -1167,7 +1165,7 @@ searchParsFromJson m =
         JsObject vals ->
           pars res <| JsObject vals
 
-        x ->
+        _ ->
           jsonValueToString val |>
           (\v ->
             if String.isEmpty v then res
@@ -1195,7 +1193,7 @@ pathDecoder =
       JD.string |>
       JD.map (\s -> if s == "" then End else if s == "$" then EndIdx End else Name s End)
 
-    idxDec = JD.int |> JD.map ((Utils.flip Idx) End)
+    idxDec = JD.int |> JD.map (Utils.flip Idx End)
 
     pathElementDecoder = JD.oneOf [ nameEndIdxDec, idxDec ]
 
@@ -1248,7 +1246,7 @@ reversePath path =
 
         Name n rest -> reverse (Name n np) rest
 
-        Idx i rest as ie -> reverse (Idx i np) rest
+        Idx i rest -> reverse (Idx i np) rest
 
         EndIdx rest -> reverse (EndIdx np) rest
   in
@@ -1468,7 +1466,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
         paramsChanged =
           filterOffLim >>
-          ((/=) (filterOffLim modelData.searchParams))
+          (/=) (filterOffLim modelData.searchParams)
       in
         if restart || paramsChanged searchParams then
           mc.emptyData |> (\ed -> Model { ed | searchParams = searchParams } mc)
@@ -1544,7 +1542,7 @@ update toMsg msg (Model modelData modelConf as same) =
             toDeferredmsg
             (toMsg << subscription)
             err
-            (\question ((defhn, defhv) as defheader) ->
+            (\question ((defhn, _) as defheader) ->
               let
                 yescmd =
                   do (toMsg << yes) <|
@@ -1623,13 +1621,13 @@ update toMsg msg (Model modelData modelConf as same) =
           Model
             { modelData |
               -- if search params correspond set count else reset count
-              count = if (searchParams == modelData.searchParams) then Just cnt else Nothing
+              count = if searchParams == modelData.searchParams then Just cnt else Nothing
             }
             modelConf |> withProgress countDone |> maybeUnqueueCmd
         else
           unqueueOnly same
 
-      DeleteMsg name searchParams (Ok newdata) ->
+      DeleteMsg name _ (Ok _) ->
         if hasIntegrity (name, isFetchProgress) then
           Model modelConf.emptyData modelConf |>
           maybeUnqueueCmd
@@ -1678,7 +1676,7 @@ update toMsg msg (Model modelData modelConf as same) =
         if isMetadataProgress then
           ( same, Cmd.none )
         else
-          ( (same |> withProgress metadataProgress)
+          ( same |> withProgress metadataProgress
           , metadataHttpRequest modelConf.typeName
           )
 
@@ -1819,18 +1817,17 @@ jsonEditor: Path -> JsonValue -> JsonValue -> JsonValue
 jsonEditor path value model =
   let
     setRow rpath idx rows =
-      ( rows |>
-        List.indexedMap (\i val -> (i, val)) |>
-        List.filterMap
-          (\(i, val) ->
-            if i == idx then
-              case transform rpath val of
-                JsNull -> Nothing
+      rows |>
+      List.indexedMap (\i val -> (i, val)) |>
+      List.filterMap
+        (\(i, val) ->
+          if i == idx then
+            case transform rpath val of
+              JsNull -> Nothing
 
-                x -> Just x
-            else Just val
-          )
-      )
+              x -> Just x
+          else Just val
+        )
 
     deleteRow rows idx =
       List.foldl
@@ -1841,7 +1838,7 @@ jsonEditor path value model =
 
     insertRow rpath rows idx =
       (List.take idx rows, List.drop idx rows) |>
-      (\(first, last) -> first ++ ((transform rpath JsNull) :: last))
+      (\(first, last) -> first ++ (transform rpath JsNull :: last))
 
     setField rpath name fields =
       transform rpath (Dict.get name fields |> Maybe.withDefault JsNull) |>
@@ -1919,7 +1916,7 @@ stringToPath path =
       List.map
         (\s ->
           String.toInt s |>
-          Maybe.map (String.fromInt) |>
+          Maybe.map String.fromInt |>
           Maybe.withDefault (String.concat ["\"", s, "\""])
         ) >>
       String.join "," >>

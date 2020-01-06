@@ -13,7 +13,6 @@ import Set exposing (Set)
 import Browser.Navigation as Nav
 import Browser exposing (..)
 import Url exposing (..)
-import Task
 
 import Debug
 
@@ -44,7 +43,7 @@ type alias Tomsg msg = Msg -> msg
 
 init: Nav.Key -> (Route -> msg) -> (Route -> msg) -> List String -> Routes msg
 init key activateMsg syncMsg routes =
-  Routes key activateMsg syncMsg (Set.fromList <| (List.map (String.split "/") routes)) []
+  Routes key activateMsg syncMsg (Set.fromList <| List.map (String.split "/") routes) []
 
 
 urlRequestMsg: Tomsg msg -> (UrlRequest -> msg)
@@ -63,7 +62,7 @@ activeRoute { activePage } =
 
 
 update: Tomsg msg -> Msg -> Routes msg -> (Routes msg, Cmd msg)
-update toMsg msg ({ key, activateMsg, syncMsg, routes, activePage } as model) =
+update _ msg ({ key, activateMsg, syncMsg, routes, activePage } as model) =
   case msg of
     UrlRequestMsg urlRequest ->
       case urlRequest of

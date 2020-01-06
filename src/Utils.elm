@@ -107,7 +107,7 @@ groupBy f l =
     )
     Dict.empty
     l |>
-  Dict.map (\k x -> List.reverse x)
+  Dict.map (\_ x -> List.reverse x)
 
 
 {-| Partitions elements in fixed size -}
@@ -124,7 +124,7 @@ grouped size source =
           (res, temp, i + 1)
       )
     )
-    (([], [], 1)) |>
+    ([], [], 1) |>
   (\(r, _, _) -> r)
 
 
@@ -288,7 +288,7 @@ primitiveStrDecoder =
 {-| Always returns empty json object {} -}
 emptyEncoder: value -> JE.Value
 emptyEncoder =
-  (always <| JE.object [])
+  always <| JE.object []
 
 
 {-| Flips first two arguments of a function. Removed from elm 0.19
@@ -331,7 +331,7 @@ httpErrorToString err =
       else
         body
 
-    BadBody _ body msg -> msg
+    BadBody _ _ msg -> msg
 
 
 eqElCount: List a -> List a -> Int

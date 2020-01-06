@@ -230,7 +230,7 @@ update toMsg msg (Model ({ stickToElId, visibilitySubscriptions, stickSubscripti
       , Cmd.none
       )
 
-    NoOp maybeErr ->
+    NoOp _ ->
       ( same, Cmd.none )
 
 
