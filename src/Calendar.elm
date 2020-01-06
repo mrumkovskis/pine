@@ -317,21 +317,25 @@ parse hasTime mask value =
                 comp n l def =
                   String.slice (pos - off) (pos - off + String.length key) val |>
                   String.filter Char.isDigit |>
-                  (\s -> if String.isEmpty s then def else s) |>
                   (\s ->
-                    let d = String.length s - l in
-                    ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
-                    , off + String.length key - String.length s
-                    )
+                    if String.isEmpty s then
+                      ( def
+                      , off + String.length key - String.length def
+                      )
+                    else
+                      let d = String.length s - l in
+                      ( if d < 0 then String.padLeft l '0' s else String.dropLeft d s
+                      , off + String.length key - String.length s
+                      )
                   ) |>
                   (\(v, o) -> (Dict.insert n v res, o))
               in
                 if String.contains "y" key then
-                  comp "y" 4 "2000"
+                  comp "y" 4 ""
                 else if String.contains "M" key then
-                  comp "M" 2 "1"
+                  comp "M" 2 ""
                 else if String.contains "d" key then
-                  comp "d" 2 "1"
+                  comp "d" 2 ""
                 else if String.contains "h" key then
                   comp "h" 2 ""
                 else if String.contains "m" key then
@@ -345,7 +349,7 @@ parse hasTime mask value =
         ) |>
       Maybe.andThen
         (\(d, _) -> -- validate if some components are set
-          if Dict.size d == (Dict.size <| Dict.filter (always <| String.all ((==) '0')) d) then
+          if Dict.size d == (Dict.size <| Dict.filter (always <| (==) "") d) then
             Nothing
           else Just d
         ) |>
