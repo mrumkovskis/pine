@@ -338,6 +338,9 @@ defaultJsonController dataBaseUrl path field =
         success k =
           [( k, "" )]
 
+        isOk result =
+          List.isEmpty result || List.all (Tuple.second >> (==) "") result
+
         typeValidator t =
           case t of
             "number" ->
@@ -389,7 +392,7 @@ defaultJsonController dataBaseUrl path field =
             [] ->
               typeValidator field.jsonType |>
               (\r ->
-                if List.isEmpty r then
+                if isOk r then
                   field.enum |>
                   Maybe.map enumValidator |>
                   Maybe.withDefault (success inpkey)
