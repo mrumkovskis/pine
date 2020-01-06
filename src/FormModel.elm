@@ -13,8 +13,6 @@ import JsonModel as JM
 import Ask
 import Utils exposing (..)
 
-import Task
-import Dict
 
 type alias Model msg =
   { init: () -> EM.JsonEditModel msg

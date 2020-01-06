@@ -1,6 +1,6 @@
 module Messages exposing
   ( Msg (..), Messages
-  , init, messages
+  , init, messages, unauthorized
   , add, remove, yes, no, clear, flags, update
   )
 
@@ -25,7 +25,6 @@ import Ask
 import Utils exposing (..)
 
 import Dict exposing (Dict)
-import Task
 
 
 {-| Messages storage
@@ -137,7 +136,7 @@ msgInternal toMsg stringTomsg msg =
 
 {-| Model update -}
 update: Tomsg msg flags -> Msg msg flags -> Messages msg flags -> (Messages msg flags, Cmd msg)
-update toMsg message (Messages msgs) =
+update _ message (Messages msgs) =
   let
     newModel newMessages = Messages { msgs | messages = newMessages }
 

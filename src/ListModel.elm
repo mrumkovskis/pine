@@ -10,16 +10,13 @@ module ListModel exposing
 
 import JsonModel as JM
 import EditModel as EM
-import ViewMetadata as VM
 import ScrollEvents as SE
 import Utils exposing (..)
 import Ask
 
-import Dict exposing (Dict)
+import Dict exposing (fromList)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Task
-import Browser.Navigation as Nav
 
 
 type Model msg =
@@ -192,12 +189,12 @@ update toMsg msg (Model ({ searchParams, list, sortCol } as model) as same) =
       LoadAndReplaceUrlMsg ->
         ( same
         , list |>
-          (\(JM.Model d c) ->
+          (\(JM.Model _ c) ->
             searchPars searchParams.model |>
             (\sp ->
               Utils.httpQuery sp |>
               (\pars -> if String.isEmpty pars then "?" else pars) |>
-              ( Ask.replaceUrl c.toMessagemsg )
+              Ask.replaceUrl c.toMessagemsg
             )
           )
         )

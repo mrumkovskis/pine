@@ -16,10 +16,6 @@ import DeferredRequests as DR exposing (Tomsg)
 import CmdChain exposing (Tomsg)
 import ScrollEvents as SE exposing (Tomsg)
 
-import Task
-import Http
-import Json.Decode as JD
-
 
 {-| Message type: Info, Warn, Error
 -}

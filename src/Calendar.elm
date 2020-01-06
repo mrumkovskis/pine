@@ -16,7 +16,6 @@ import Set
 import JsonModel as JM
 import EditModel as EM
 import ViewMetadata as VM
-import Ask
 import Select exposing (..)
 import Utils
 
@@ -158,7 +157,7 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
 
 dateValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
 dateValidator map mask =
-  (\key value _ ->
+  \key value _ ->
     let
       valres msg =
         [ ( key, msg ) ]
@@ -167,21 +166,20 @@ dateValidator map mask =
       Maybe.map (\_ -> valres "") |>
       Maybe.withDefault (valres <| localizedMask map mask) |>
       EM.ValidationResult
-  )
 
 
 dateTimeValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
 dateTimeValidator map mask =
-    (\key value _ ->
-      let
-        valres msg =
-          [ ( key, msg ) ]
-      in
-        parseDateTime mask value |>
-        Maybe.map (\_ -> valres "") |>
-        Maybe.withDefault (valres <| localizedMask map mask) |>
-        EM.ValidationResult
-    )
+  \key value _ ->
+    let
+      valres msg =
+        [ ( key, msg ) ]
+    in
+      parseDateTime mask value |>
+      Maybe.map (\_ -> valres "") |>
+      Maybe.withDefault (valres <| localizedMask map mask) |>
+      EM.ValidationResult
+
 
 
 dateFormatter: String -> JM.JsonValue -> String
@@ -459,7 +457,7 @@ ymd date =
         [ Just y, Just m, Just d ] ->
           Just (y, m, d)
 
-        x ->
+        _ ->
           Nothing
     )
 
@@ -475,7 +473,7 @@ ymd_hms dt =
         [ Just y, Just m, Just d, Just h, Just min, Just s ] ->
           Just ((y, m, d), (h, min, s))
 
-        x ->
+        _ ->
           Nothing
     )
 

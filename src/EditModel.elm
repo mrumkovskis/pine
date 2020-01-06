@@ -6,7 +6,7 @@ module EditModel exposing
   , defaultJsonController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, delete
+  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
@@ -36,10 +36,8 @@ import Select exposing (..)
 import SelectEvents as SE
 import Utils exposing (..)
 
-import Http
 import Dict exposing (..)
 import Json.Encode as JE
-import Json.Decode as JD
 import Task exposing (..)
 
 import Debug exposing (log)
@@ -188,7 +186,6 @@ type Msg msg model
       (Result String (model, model -> model -> model))
   -- update entire model
   | EditModelMsg (model -> model)
-  | SetModelMsg model
   | NewModelMsg JM.SearchParams (model -> model)
   | SyncModelMsg
   | SubmitModelMsg
@@ -246,10 +243,10 @@ initJsonFormInternal:
   Ask.Tomsg msg -> JsonEditModel msg
 initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMessagemsg =
   let
-    jsonFormInitializer (JM.Model _ { metadata } as formModel) =
+    jsonFormInitializer (JM.Model _ _ as formModel) =
       JM.flattenJsonForm fieldGetter formModel |>
       List.indexedMap
-        (\i (path, field, value) ->
+        (\i (path, field, _) ->
           let
             key =
               keyFromPath path
@@ -336,7 +333,7 @@ defaultJsonController dataBaseUrl path field =
       Maybe.map JM.jsonValueToString |>
       Maybe.withDefault ""
 
-    validator inpkey iv mod =
+    validator inpkey iv _ =
       let
         success k =
           [( k, "" )]
@@ -379,7 +376,7 @@ defaultJsonController dataBaseUrl path field =
           else
             Utils.find ((==) iv) en |>
             Maybe.map (\_ -> success inpkey) |>
-            Maybe.withDefault ([ (key, "Value must come from list") ])
+            Maybe.withDefault [ (key, "Value must come from list") ]
 
         requiredValidator =
           if (field.required || not field.nullable) && String.isEmpty iv then
@@ -767,17 +764,15 @@ inpInternal toMsg ctl input =
               in
                 always
                   { navigationmsg =
-                      (\isActive ->
+                      \isActive ->
                         if isActive then
                           navigationMsg toSMsg
                         else
-                          (\ev ->
+                          \ev ->
                             case ev of
                               SE.Select -> onEnter
 
                               x -> navigationMsg toSMsg x
-                          )
-                      )
                   , setActivemsg = setActiveMsg toSMsg
                   , selectmsg =  selectMsg toSMsg
                   }
@@ -1045,7 +1040,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
     updateInputsFromModel newModel newInputs =
       Dict.foldl
-        (\key input foldedinps ->
+        (\key _ foldedinps ->
           Dict.get key controllers |>
           Maybe.map
             (\(Controller ctrl) ->
@@ -1072,7 +1067,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   , if i2.editing then Just k else me
                   )
                 )
-                (\k i (r, me) -> (r, me)) -- input present only in existing dict, drop it
+                (\_ _ (r, me) -> (r, me)) -- input present only in existing dict, drop it
                 is
                 newem.inputs
                 (Dict.empty, Nothing) |>
@@ -1173,9 +1168,6 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       --edit entire model
       EditModelMsg editFun ->
         ( same, JM.set (toMsg << UpdateModelMsg True) <| editFun <| JM.data model )
-
-      SetModelMsg mod ->
-        ( same, JM.set (toMsg << UpdateModelMsg False) mod )
 
       NewModelMsg searchParams createFun ->
         ( same, JM.create (toMsg << CreateModelMsg createFun) searchParams )
