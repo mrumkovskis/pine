@@ -174,7 +174,10 @@ validatorTask url map locale mask key value _ =
   Task.mapError Utils.httpErrorToString |>
   Task.map
     (\cal ->
-      if List.isEmpty cal then [( key, localizedMask map mask)] else [( key, "")]
+      if List.isEmpty cal && (not <| String.isEmpty value) then
+        [( key, localizedMask map mask)]
+      else
+        [( key, "")]
     ) |>
   EM.ValidationTask
 
