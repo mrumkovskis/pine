@@ -177,13 +177,10 @@ type Msg msg model
   | FocusNoSearchMsg (Controller msg model)
   | OnSelectMsg (Controller msg model) String
   | OnSelectFieldMsg String String
-  | ValidateFieldMsg String String (Result String (List (String, String)))
-  | UpdateFieldMsg String (Result String (model, model -> model -> model))
-  | ValidateAndUpdateFieldMsg
-      String
-      String
-      (Result String (List (String, String)))
-      (Result String (model, model -> model -> model))
+  | ValidateFieldMsg
+      (Controller msg model)
+      (Maybe (String, (Result String (List (String, String))))) -- used for validation task
+  | UpdateFieldMsg (Controller msg model) (Result String (model, model -> model -> model))
   -- update entire model
   | EditModelMsg (model -> model)
   | NewModelMsg JM.SearchParams (model -> model)
@@ -828,90 +825,35 @@ jsonDeleteMsg toMsg path =
 update: Tomsg msg model -> Msg msg model -> EditModel msg model -> (EditModel msg model, Cmd msg)
 update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
   let
-    updateModelFromInput newInputs ctrl ({ value } as input) =
+    updateModelFromInput newInputs ctrl input =
       let
         mod = JM.data model
-
-        updValRes res =
-          { same |
-            inputs =
-              updateValidationResults
-                ctrl.name
-                newInputs
-                (if List.isEmpty res then [ (ctrl.name, "") ] else res)
-          }
-
-        updModForUpdTask nm =
-          { nm |
-            inputs =
-              Dict.update input.name (Maybe.map (\i -> { i | resolving = True })) nm.inputs
-          , isDirty = True
-          }
       in
-        case
-          ( ctrl.validateInput ctrl.name input.value mod
-          , if ctrl.formatter mod /= input.value then
-              Just <| ctrl.updateModel input mod
-            else
-              Nothing
-          )
-        of
-          ( ValidationResult res, Nothing ) ->
-            ( updValRes res, Cmd.none )
+        if ctrl.formatter mod /= input.value then
+          case ctrl.updateModel input mod of
+            UpdateValue nmod ->
+              ( { same | inputs = newInputs, isDirty = True }
+              , do toMsg <|
+                  CmdChainMsg
+                    [ EditModelMsg (always nmod), ValidateFieldMsg (Controller ctrl) Nothing ]
+                    Cmd.none
+                    Nothing
+              )
 
-          ( ValidationTask valTask, Nothing ) ->
-            ( { same | inputs = newInputs }
-            , Task.attempt (toMsg << ValidateFieldMsg ctrl.name value) valTask
-            )
+            UpdateTask task ->
+              ( { same |
+                  inputs =
+                    Dict.update
+                      input.name
+                      (Maybe.map (\i -> { i | resolving = True }))
+                      newInputs
+                , isDirty = True
+                }
+              , Task.attempt (toMsg << UpdateFieldMsg (Controller ctrl)) task
+              )
 
-          ( ValidationResult res, Just (UpdateValue nmod) ) ->
-            updValRes res |>
-            (\nm -> ( { nm | isDirty = True }, set toMsg <| always nmod ))
-
-          ( ValidationResult res, Just (UpdateTask updTask) ) ->
-            updValRes res |>
-            updModForUpdTask |>
-            (\nm -> ( nm, Task.attempt (toMsg << UpdateFieldMsg ctrl.name) updTask ))
-
-          ( ValidationTask valTask, Just (UpdateValue nmod) ) ->
-            ( { same | inputs = newInputs, isDirty = True }
-            , valTask |>
-              Task.attempt
-                (\valRes ->
-                  toMsg <| ValidateAndUpdateFieldMsg ctrl.name value valRes <| Ok (nmod, always)
-                )
-            )
-
-          ( ValidationTask valTask, Just (UpdateTask updTask) ) ->
-            ( { same | inputs = newInputs } |> updModForUpdTask
-            , valTask |>
-              Task.andThen (\valRes -> updTask |> Task.map (Tuple.pair valRes)) |>
-              Task.attempt
-                (Result.map
-                  (\(valRes, updRes) ->
-                    toMsg <| ValidateAndUpdateFieldMsg ctrl.name value (Ok valRes) (Ok updRes)
-                  ) >>
-                  (\r ->
-                    case r of
-                      Ok umsg ->
-                        umsg
-
-                      Err err ->
-                        toMsg <| ValidateAndUpdateFieldMsg ctrl.name value (Err err) (Err err)
-                  )
-                )
-            )
-
-    processModelUpdateTask name res editModel =
-      ( Dict.update name (Maybe.map (\i -> { i | resolving = False })) editModel.inputs |>
-        (\ninputs -> { same | inputs = ninputs })
-      , case res of
-          Ok (val, updater) ->
-            set toMsg (updater val)
-
-          Err err ->
-            Ask.error toMessagemsg err
-      )
+        else
+          ( { same | inputs = newInputs }, Cmd.none )
 
     updateModelFromActiveInput =
       Dict.values >>
@@ -922,36 +864,26 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map (\(c, input) -> updateModelFromInput inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
-    processValidationTaskResult name value res editModel =
-      Dict.get name editModel.inputs |>
-      Utils.filter (\input -> input.value == value) |>
-      Maybe.map
-        (\_ ->
-          case res of
-            Ok [] ->
-              ( { editModel |
-                  inputs = updateValidationResults name editModel.inputs [ (name, "") ] }
-              , Cmd.none
-              )
+    updateValidationResults defName res =
+      let
+        updater =
+          List.foldl
+            (\(name, err) newInputs ->
+              Dict.update
+                (if String.isEmpty name then defName else name)
+                (Maybe.map
+                  (\i -> { i | error = if String.isEmpty err then Nothing else Just err })
+                )
+                newInputs
+            )
+      in
+        { same |
+          inputs =
+            updater
+              inputs
+              (if List.isEmpty res then [ (defName, "") ] else res)
+        }
 
-            Ok r ->
-              ( { editModel | inputs = updateValidationResults name editModel.inputs r }
-              , Cmd.none
-              )
-
-            Err err ->
-              ( editModel, Ask.error toMessagemsg err)
-        ) |>
-      Maybe.withDefault ( editModel, Cmd.none )
-
-    updateValidationResults defName =
-      List.foldl
-        (\(name, err) newInputs ->
-          Dict.update
-            (if String.isEmpty name then defName else name)
-            (Maybe.map (\i -> { i | error = if String.isEmpty err then Nothing else Just err }))
-            newInputs
-        )
 
     updateInput ctrl value newInputs =
       Dict.get ctrl.name newInputs |>
@@ -1153,19 +1085,52 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           Maybe.withDefault Cmd.none
         )
 
-      ValidateFieldMsg name value res ->
-        processValidationTaskResult name value res same
+      ValidateFieldMsg (Controller ctrl) Nothing ->
+        Dict.get ctrl.name inputs |>
+        Maybe.map
+          (\{ value } ->
+            case ctrl.validateInput ctrl.name value (JM.data model) of
+              ValidationResult res ->
+                ( updateValidationResults ctrl.name res, Cmd.none )
 
-      UpdateFieldMsg name res ->
-        processModelUpdateTask name res same
+              ValidationTask task ->
+                ( same
+                , Task.attempt
+                    (toMsg << ValidateFieldMsg (Controller ctrl) << Just << Tuple.pair value)
+                    task
+                )
+          ) |>
+        Maybe.withDefault (same, Cmd.none)
 
-      ValidateAndUpdateFieldMsg name value valRes updRes ->
-        processValidationTaskResult name value valRes same |>
-        (\(nm, cmd) ->
-          if cmd == Cmd.none then
-            processModelUpdateTask name updRes nm
-          else
-            ( nm, cmd )
+      ValidateFieldMsg (Controller {name}) (Just (value, res)) ->
+        Dict.get name inputs |>
+        Utils.filter (\input -> input.value == value) |>
+        Maybe.map
+          (\_ ->
+            case res of
+              Ok r ->
+                ( updateValidationResults name r, Cmd.none )
+
+              Err err ->
+                ( same, Ask.error toMessagemsg err)
+          ) |>
+        Maybe.withDefault ( same, Cmd.none )
+
+      UpdateFieldMsg (Controller ctrl) res ->
+        ( { same |
+            inputs =
+              Dict.update ctrl.name (Maybe.map (\i -> { i | resolving = False })) inputs
+          }
+        , case res of
+            Ok (val, updater) ->
+              do toMsg <|
+                CmdChainMsg
+                  [ EditModelMsg (updater val), ValidateFieldMsg (Controller ctrl) Nothing ]
+                  Cmd.none
+                  Nothing
+
+            Err err ->
+              Ask.error toMessagemsg err
         )
 
       --edit entire model
