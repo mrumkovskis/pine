@@ -923,26 +923,26 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.withDefault (same, Cmd.none)
 
     processValidationTaskResult name value res editModel =
-        Dict.get name editModel.inputs |>
-        Utils.filter (\input -> input.value == value) |>
-        Maybe.map
-          (\_ ->
-            case res of
-              Ok [] ->
-                ( { editModel |
-                    inputs = updateValidationResults name editModel.inputs [ (name, "") ] }
-                , Cmd.none
-                )
+      Dict.get name editModel.inputs |>
+      Utils.filter (\input -> input.value == value) |>
+      Maybe.map
+        (\_ ->
+          case res of
+            Ok [] ->
+              ( { editModel |
+                  inputs = updateValidationResults name editModel.inputs [ (name, "") ] }
+              , Cmd.none
+              )
 
-              Ok r ->
-                ( { editModel | inputs = updateValidationResults name editModel.inputs r }
-                , Cmd.none
-                )
+            Ok r ->
+              ( { editModel | inputs = updateValidationResults name editModel.inputs r }
+              , Cmd.none
+              )
 
-              Err err ->
-                ( editModel, Ask.error toMessagemsg err)
-          ) |>
-        Maybe.withDefault ( editModel, Cmd.none )
+            Err err ->
+              ( editModel, Ask.error toMessagemsg err)
+        ) |>
+      Maybe.withDefault ( editModel, Cmd.none )
 
     updateValidationResults defName =
       List.foldl
