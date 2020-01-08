@@ -39,6 +39,7 @@ import Utils exposing (..)
 import Dict exposing (..)
 import Json.Encode as JE
 import Task exposing (..)
+import Regex
 
 import Debug exposing (log)
 
@@ -420,7 +421,7 @@ jsonCtls ctls default path field =
       default path field |>
       Maybe.map
         (\ctl ->
-          Utils.find (\(p, _) -> JM.pathMatch p key) ctls |>
+          Utils.find (\(p, _) -> Regex.contains (JM.pathRegex p) key) ctls |>
           Maybe.map (\(_, initFun) -> initFun ctl) |>
           Maybe.withDefault ctl
         )
@@ -721,16 +722,19 @@ inps keys toMsg model =
 
 inpsByPattern: String -> Tomsg msg model -> EditModel msg model -> List (Input msg)
 inpsByPattern pattern toMsg { controllers, inputs } =
-  Dict.filter (\k _ -> JM.pathMatch pattern k) inputs |>
-  Dict.values |>
-  List.sortBy .idx |>
-  List.concatMap
-    (\i ->
-      Dict.get i.name controllers |>
-      Maybe.map (\c -> inpInternal toMsg c i) |>
-      Maybe.map List.singleton |>
-      Maybe.withDefault []
-    )
+  let
+      regex = JM.pathRegex pattern
+  in
+    Dict.filter (\k _ -> Regex.contains regex k) inputs |>
+    Dict.values |>
+    List.sortBy .idx |>
+    List.concatMap
+      (\i ->
+        Dict.get i.name controllers |>
+        Maybe.map (\c -> inpInternal toMsg c i) |>
+        Maybe.map List.singleton |>
+        Maybe.withDefault []
+      )
 
 
 inpsTableByPattern: Tomsg msg model -> List String -> EditModel msg model -> List (List (Input msg))

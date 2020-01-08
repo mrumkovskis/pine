@@ -18,7 +18,7 @@ module JsonModel exposing
   , jsonDataDecoder, jsonDecoder, jsonEncoder, jsonValue
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
   , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
-  , pathMatch, stringToPath
+  , pathRegex, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2053,37 +2053,38 @@ jsonObject path source =
     )
 
 
-pathMatch: String -> String -> Bool
-pathMatch pattern path =
-  ( ( String.words pattern |>
-      List.map
-        (\s ->
-          if s == "*" then "[^,]+"
-          else if s == "**" then ".*?"
-          else String.concat ["\\\"?", s, "\\\"?"]
-        ) |>
-      List.intersperse "," |>
-      String.join "" |>
-      String.append "^\\[?" |>
-      String.append
-    ) "\\]?$" |>
-    Regex.fromString |>
-    Maybe.withDefault Regex.never |>
-    Regex.contains
-  ) path
+pathRegex: String -> Regex.Regex
+pathRegex pattern =
+  ( String.words pattern |>
+    List.map
+      (\s ->
+        if s == "*" then "[^,]+"
+        else if s == "**" then ".*?"
+        else String.concat ["\\\"?", s, "\\\"?"]
+      ) |>
+    List.intersperse "," |>
+    String.join "" |>
+    String.append "^\\[?" |>
+    String.append
+  ) "\\]?$" |>
+  Regex.fromString |>
+  Maybe.withDefault Regex.never
 
 
 jsonValues: String -> JsonValue -> List (String, JsonValue)
 jsonValues pattern source =
-  traverseJson
-    (\path val res ->
-      if pathMatch pattern path then
-        (path, val) :: res
-      else res
-    )
-    []
-    source |>
-    List.reverse
+  let
+    regex = pathRegex pattern
+  in
+    traverseJson
+      (\path val res ->
+        if Regex.contains regex path then
+          (path, val) :: res
+        else res
+      )
+      []
+      source |>
+      List.reverse
 
 
 stringValues: String -> JsonValue -> List (String, String)
