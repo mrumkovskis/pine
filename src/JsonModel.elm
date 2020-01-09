@@ -76,7 +76,6 @@ import Json.Encode as JE
 import Dict exposing (Dict)
 import Set exposing (Set)
 import Http
-import Regex
 
 import ViewMetadata as VM
 import DeferredRequests as DR
