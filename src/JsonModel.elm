@@ -18,7 +18,7 @@ module JsonModel exposing
   , jsonDataDecoder, jsonDecoder, jsonEncoder, jsonValue
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
   , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
-  , pathMatches, stringToPath
+  , pathMatchesArr, pathMatchesPath, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2053,63 +2053,72 @@ jsonObject path source =
     )
 
 
-pathMatches: String -> String -> Bool
-pathMatches pattern path =
-  let
-    isMatch patt p =
-      case patt of
-        [] ->
-          p == End
+pathMatchesArr: List String -> String -> Bool
+pathMatchesArr patternList path =
+  JD.decodeString pathDecoder path |>
+  Result.map(pathMatchesInternal patternList) |>
+  Result.withDefault False
 
-        pathEl :: tail ->
-          case pathEl of
-            "*" ->
-              case p of
-                Name _ r ->
-                  isMatch tail r
 
-                Idx _ r ->
-                  isMatch tail r
+pathMatchesPath: String -> Path -> Bool
+pathMatchesPath pattern path =
+  pathMatchesInternal (String.words pattern) path
 
-                EndIdx r ->
-                  isMatch tail r
 
-                End ->
-                  False
+pathMatchesInternal: List String -> Path -> Bool
+pathMatchesInternal pattern path =
+  case pattern of
+    [] ->
+      path == End
 
-            "**" ->
-              True
+    pathEl :: tail ->
+      case pathEl of
+        "*" ->
+          case path of
+            Name _ r ->
+              pathMatchesInternal tail r
 
-            s ->
-              case p of
-                Name ps r ->
-                  s == ps && isMatch tail r
+            Idx _ r ->
+              pathMatchesInternal tail r
 
-                Idx i r ->
-                  s == String.fromInt i && isMatch tail r
+            EndIdx r ->
+              pathMatchesInternal tail r
 
-                EndIdx r ->
-                  s == "$" && isMatch tail r
+            End ->
+              False
 
-                End ->
-                  False
-  in
-    JD.decodeString pathDecoder path |>
-    Result.map(isMatch <| String.words pattern) |>
-    Result.withDefault False
+        "**" ->
+          True
+
+        s ->
+          case path of
+            Name ps r ->
+              s == ps && pathMatchesInternal tail r
+
+            Idx i r ->
+              s == String.fromInt i && pathMatchesInternal tail r
+
+            EndIdx r ->
+              s == "$" && pathMatchesInternal tail r
+
+            End ->
+              False
 
 
 jsonValues: String -> JsonValue -> List (String, JsonValue)
 jsonValues pattern source =
-  traverseJson
-    (\path val res ->
-      if pathMatches pattern path then
-        (path, val) :: res
-      else res
-    )
-    []
-    source |>
-    List.reverse
+  let
+    patternArr = String.words pattern
+  in
+    traverseJson
+      (\path val res ->
+        if pathMatchesArr patternArr path then
+          (path, val) :: res
+        else res
+      )
+      []
+      source |>
+      List.reverse
 
 
 stringValues: String -> JsonValue -> List (String, String)

@@ -39,7 +39,7 @@ import Utils exposing (..)
 import Dict exposing (..)
 import Json.Encode as JE
 import Task exposing (..)
-import Regex
+
 
 import Debug exposing (log)
 
@@ -415,16 +415,13 @@ defaultJsonController dataBaseUrl path field =
 
 jsonCtls: List (String, JsonController msg -> JsonController msg) -> JsonControllerInitializer msg -> JsonControllerInitializer msg
 jsonCtls ctls default path field =
-    let
-      key = keyFromPath path
-    in
-      default path field |>
-      Maybe.map
-        (\ctl ->
-          Utils.find (\(p, _) -> JM.pathMatches p key) ctls |>
-          Maybe.map (\(_, initFun) -> initFun ctl) |>
-          Maybe.withDefault ctl
-        )
+  default path field |>
+  Maybe.map
+    (\ctl ->
+      Utils.find (\(p, _) -> JM.pathMatchesPath p path) ctls |>
+      Maybe.map (\(_, initFun) -> initFun ctl) |>
+      Maybe.withDefault ctl
+    )
 
 
 keyFromPath: JM.Path -> String
@@ -722,16 +719,19 @@ inps keys toMsg model =
 
 inpsByPattern: String -> Tomsg msg model -> EditModel msg model -> List (Input msg)
 inpsByPattern pattern toMsg { controllers, inputs } =
-  Dict.filter (\k _ -> JM.pathMatches pattern k) inputs |>
-  Dict.values |>
-  List.sortBy .idx |>
-  List.concatMap
-    (\i ->
-      Dict.get i.name controllers |>
-      Maybe.map (\c -> inpInternal toMsg c i) |>
-      Maybe.map List.singleton |>
-      Maybe.withDefault []
-    )
+  let
+    patternArr = String.words pattern
+  in
+    Dict.filter (\k _ -> JM.pathMatchesArr patternArr k) inputs |>
+    Dict.values |>
+    List.sortBy .idx |>
+    List.concatMap
+      (\i ->
+        Dict.get i.name controllers |>
+        Maybe.map (\c -> inpInternal toMsg c i) |>
+        Maybe.map List.singleton |>
+        Maybe.withDefault []
+      )
 
 
 inpsTableByPattern: Tomsg msg model -> List String -> EditModel msg model -> List (List (Input msg))
