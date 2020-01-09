@@ -18,7 +18,7 @@ module JsonModel exposing
   , jsonDataDecoder, jsonDecoder, jsonEncoder, jsonValue
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
   , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
-  , pathRegex, stringToPath
+  , pathMatches, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2053,38 +2053,63 @@ jsonObject path source =
     )
 
 
-pathRegex: String -> Regex.Regex
-pathRegex pattern =
-  ( String.words pattern |>
-    List.map
-      (\s ->
-        if s == "*" then "[^,]+"
-        else if s == "**" then ".*?"
-        else String.concat ["\\\"?", s, "\\\"?"]
-      ) |>
-    List.intersperse "," |>
-    String.join "" |>
-    String.append "^\\[?" |>
-    String.append
-  ) "\\]?$" |>
-  Regex.fromString |>
-  Maybe.withDefault Regex.never
+pathMatches: String -> String -> Bool
+pathMatches pattern path =
+  let
+    isMatch patt p =
+      case patt of
+        [] ->
+          p == End
+
+        pathEl :: tail ->
+          case pathEl of
+            "*" ->
+              case p of
+                Name _ r ->
+                  isMatch tail r
+
+                Idx _ r ->
+                  isMatch tail r
+
+                EndIdx r ->
+                  isMatch tail r
+
+                End ->
+                  False
+
+            "**" ->
+              True
+
+            s ->
+              case p of
+                Name ps r ->
+                  s == ps && isMatch tail r
+
+                Idx i r ->
+                  s == String.fromInt i && isMatch tail r
+
+                EndIdx r ->
+                  s == "$" && isMatch tail r
+
+                End ->
+                  False
+  in
+    JD.decodeString pathDecoder path |>
+    Result.map(isMatch <| String.words pattern) |>
+    Result.withDefault False
 
 
 jsonValues: String -> JsonValue -> List (String, JsonValue)
 jsonValues pattern source =
-  let
-    regex = pathRegex pattern
-  in
-    traverseJson
-      (\path val res ->
-        if Regex.contains regex path then
-          (path, val) :: res
-        else res
-      )
-      []
-      source |>
-      List.reverse
+  traverseJson
+    (\path val res ->
+      if pathMatches pattern path then
+        (path, val) :: res
+      else res
+    )
+    []
+    source |>
+    List.reverse
 
 
 stringValues: String -> JsonValue -> List (String, String)
