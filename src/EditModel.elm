@@ -38,6 +38,7 @@ import Utils exposing (..)
 
 import Dict exposing (..)
 import Json.Encode as JE
+import Json.Decode as JD
 import Task exposing (..)
 
 
@@ -47,6 +48,7 @@ import Debug exposing (log)
 {-| Represents form input field. Is synchronized with model. -}
 type alias Input msg =
   { name: String
+  , path: JM.Path
   , value: String
   , editing: Bool
   , error: Maybe String
@@ -205,11 +207,14 @@ init model ctrlList toMessagemsg =
       List.map (\(k, Controller c) -> (k, Controller { c | name = k })) |>
       Dict.fromList
 
+    path =
+      JD.decodeString JM.pathDecoder >> Result.withDefault JM.End
+
     inputs =
       controllers |>
       Dict.map
         (\k _ ->
-          Input k "" False Nothing Nothing Nothing -1 Nothing False False
+          Input k (path k) "" False Nothing Nothing Nothing -1 Nothing False False
         )
   in
     EditModel
@@ -257,7 +262,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
               ctrl |> (\(Controller { formatter }) -> formatter <| JM.data formModel)
           in
             ( ( key, ctrl )
-            , ( key, Input key inpVal False Nothing Nothing Nothing i (Just field) False False )
+            , ( key, Input key path inpVal False Nothing Nothing Nothing i (Just field) False False )
             )
         ) |>
         List.unzip |>
@@ -722,7 +727,7 @@ inpsByPattern pattern toMsg { controllers, inputs } =
   let
     patternArr = String.words pattern
   in
-    Dict.filter (\k _ -> JM.pathMatchesArr patternArr k) inputs |>
+    Dict.filter (\_ i -> JM.pathMatches patternArr i.path) inputs |>
     Dict.values |>
     List.sortBy .idx |>
     List.concatMap

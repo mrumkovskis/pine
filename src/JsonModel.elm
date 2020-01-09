@@ -18,7 +18,7 @@ module JsonModel exposing
   , jsonDataDecoder, jsonDecoder, jsonEncoder, jsonValue
   , jsonString, jsonInt, jsonFloat, jsonBool, jsonList, jsonObject, jsonEditor, jsonReader
   , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
-  , pathMatchesArr, pathMatchesPath, stringToPath
+  , pathMatches, pathMatchesArr, pathMatchesPath, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath
   , isInitialized, notInitialized, ready
@@ -2056,17 +2056,17 @@ jsonObject path source =
 pathMatchesArr: List String -> String -> Bool
 pathMatchesArr patternList path =
   JD.decodeString pathDecoder path |>
-  Result.map(pathMatchesInternal patternList) |>
+  Result.map(pathMatches patternList) |>
   Result.withDefault False
 
 
 pathMatchesPath: String -> Path -> Bool
 pathMatchesPath pattern path =
-  pathMatchesInternal (String.words pattern) path
+  pathMatches (String.words pattern) path
 
 
-pathMatchesInternal: List String -> Path -> Bool
-pathMatchesInternal pattern path =
+pathMatches: List String -> Path -> Bool
+pathMatches pattern path =
   case pattern of
     [] ->
       path == End
@@ -2076,13 +2076,13 @@ pathMatchesInternal pattern path =
         "*" ->
           case path of
             Name _ r ->
-              pathMatchesInternal tail r
+              pathMatches tail r
 
             Idx _ r ->
-              pathMatchesInternal tail r
+              pathMatches tail r
 
             EndIdx r ->
-              pathMatchesInternal tail r
+              pathMatches tail r
 
             End ->
               False
@@ -2093,13 +2093,13 @@ pathMatchesInternal pattern path =
         s ->
           case path of
             Name ps r ->
-              s == ps && pathMatchesInternal tail r
+              s == ps && pathMatches tail r
 
             Idx i r ->
-              s == String.fromInt i && pathMatchesInternal tail r
+              s == String.fromInt i && pathMatches tail r
 
             EndIdx r ->
-              s == "$" && pathMatchesInternal tail r
+              s == "$" && pathMatches tail r
 
             End ->
               False
