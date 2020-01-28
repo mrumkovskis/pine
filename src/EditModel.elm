@@ -1,9 +1,9 @@
 module EditModel exposing
   ( Input, Controller (..), ModelUpdater, InputValidator, Formatter, SelectInitializer
-  , JsonEditModel, JsonEditMsg, Tomsg, ControllerInitializer, JsonController, JsonControllerInitializer
+  , EditModel, JsonEditMsg, Tomsg, ControllerInitializer
   , Msgs, SelectMsgs, UpdateValue (..), ValidationResult (..)
   , init, initJsonForm, initJsonQueryForm
-  , defaultJsonController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
+  , defaultController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, delete
@@ -23,7 +23,7 @@ module EditModel exposing
 @docs id, noCmd, input
 
 # Types
-@docs Controller, JsonEditModel, Input, InputWithAttributes, Msg, Tomsg
+@docs Controller, EditModel, Input, InputWithAttributes, Msg, Tomsg
 
 @docs update
 -}
@@ -62,7 +62,7 @@ type alias Input msg =
 
 
 type alias ModelInitializer msg model =
-  JM.FormModel msg model -> Maybe (Dict String (Controller msg model), Dict String (Input msg))
+  JM.FormModel msg model -> Maybe (Dict String (Controller msg), Dict String (Input msg))
 
 
 type alias ModelUpdater msg model = Input msg -> model -> UpdateValue model
@@ -81,7 +81,7 @@ type ValidationResult
 
 
 {-| Validates input -}
-type alias InputValidator model = String -> String -> model -> ValidationResult
+type alias InputValidator = String -> String -> JM.JsonValue -> ValidationResult
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -91,37 +91,29 @@ type alias InputValidator model = String -> String -> model -> ValidationResult
 type alias Formatter model = model -> String
 
 
-type alias SelectInitializer msg model =
+type alias SelectInitializer msg =
   Select.Tomsg msg JM.JsonValue -> -- toSelectmsg
   Ask.Tomsg msg -> -- toMessagemsg
   String -> -- search string
   (String -> msg) -> -- select msg
-  model ->
+  JM.JsonValue ->
   (SelectModel msg JM.JsonValue, Cmd msg)
 
 
 {-| Controller. Binds [`Input`](#Input) together with [JsonModel](JsonModel) -}
-type Controller msg model =
+type Controller msg =
   Controller
     { name: String
-    , updateModel: ModelUpdater msg model -- called on OnSelect, OnFocus _ False
-    , formatter: Formatter model
-    , selectInitializer: Maybe (SelectInitializer msg model) -- called on OnFocus _ True
-    , validateInput: InputValidator model -- called on OnMsg, OnSelect
+    , updateModel: ModelUpdater msg JM.JsonValue -- called on OnSelect, OnFocus _ False
+    , formatter: Formatter JM.JsonValue
+    , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
+    , validateInput: InputValidator -- called on OnMsg, OnSelect
     , inputCmd: Maybe (String -> Cmd msg)
     }
 
 
-type alias ControllerInitializer msg model =
-  JM.Path -> VM.Field -> Maybe (Controller msg model)
-
-
-type alias JsonController msg =
-  Controller msg JM.JsonValue
-
-
-type alias JsonControllerInitializer msg =
-  JM.Path -> VM.Field -> Maybe (JsonController msg)
+type alias ControllerInitializer msg =
+  JM.Path -> VM.Field -> Maybe (Controller msg)
 
 
 type alias Msgs msg =
@@ -143,10 +135,10 @@ type alias SelectMsgs msg =
 
 
 {-| Edit model -}
-type alias JsonEditModel msg =
+type alias EditModel msg =
   { model: JM.FormModel msg JM.JsonValue
   , initializer: ModelInitializer msg JM.JsonValue
-  , controllers: Dict String (Controller msg JM.JsonValue)
+  , controllers: Dict String (Controller msg)
   , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
   --, validate: Tomsg msg model -> model -> (Result String model, Cmd msg)
@@ -167,17 +159,17 @@ type JsonEditMsg msg
   | CreateModelMsg (JM.JsonValue -> JM.JsonValue) (JM.FormMsg msg JM.JsonValue)
   | DeleteModelMsg (JM.FormMsg msg JM.JsonValue)
   -- select components messages
-  | SelectMsg (Controller msg JM.JsonValue) (Select.Msg msg JM.JsonValue)
+  | SelectMsg (Controller msg) (Select.Msg msg JM.JsonValue)
   -- input fields event messages
-  | OnMsg (Controller msg JM.JsonValue) String
-  | OnFocusMsg (Controller msg JM.JsonValue) Bool
-  | FocusNoSearchMsg (Controller msg JM.JsonValue)
-  | OnSelectMsg (Controller msg JM.JsonValue) String
+  | OnMsg (Controller msg) String
+  | OnFocusMsg (Controller msg) Bool
+  | FocusNoSearchMsg (Controller msg)
+  | OnSelectMsg (Controller msg) String
   | OnSelectFieldMsg String String
   | ValidateFieldMsg
-      (Controller msg JM.JsonValue)
+      (Controller msg)
       (Maybe (String, (Result String (List (String, String))))) -- used for validation task
-  | UpdateFieldMsg (Controller msg JM.JsonValue) (Result String (JM.JsonValue, JM.JsonValue -> JM.JsonValue -> JM.JsonValue))
+  | UpdateFieldMsg (Controller msg) (Result String (JM.JsonValue, JM.JsonValue -> JM.JsonValue -> JM.JsonValue))
   -- update entire model
   | EditModelMsg (JM.JsonValue -> JM.JsonValue)
   | NewModelMsg JM.SearchParams (JM.JsonValue -> JM.JsonValue)
@@ -193,7 +185,7 @@ type alias Tomsg msg = (JsonEditMsg msg -> msg)
 
 {-| Initializes model
 -}
-init: JM.FormModel msg JM.JsonValue -> List (String, Controller msg JM.JsonValue) -> Ask.Tomsg msg -> JsonEditModel msg
+init: JM.FormModel msg JM.JsonValue -> List (String, Controller msg) -> Ask.Tomsg msg -> EditModel msg
 init model ctrlList toMessagemsg =
   let
     controllers =
@@ -211,7 +203,7 @@ init model ctrlList toMessagemsg =
           Input k (path k) "" False Nothing Nothing Nothing -1 Nothing False False
         )
   in
-    JsonEditModel
+    EditModel
       model
       (always Nothing)
       controllers
@@ -224,20 +216,20 @@ init model ctrlList toMessagemsg =
 
 
 initJsonForm:
-  String -> String -> JsonControllerInitializer msg -> String -> Ask.Tomsg msg -> JsonEditModel msg
+  String -> String -> ControllerInitializer msg -> String -> Ask.Tomsg msg -> EditModel msg
 initJsonForm =
   initJsonFormInternal .fields
 
 
 initJsonQueryForm:
-  String -> String -> JsonControllerInitializer msg -> String -> Ask.Tomsg msg -> JsonEditModel msg
+  String -> String -> ControllerInitializer msg -> String -> Ask.Tomsg msg -> EditModel msg
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
 initJsonFormInternal:
-  (VM.View -> List VM.Field) -> String -> String -> JsonControllerInitializer msg -> String ->
-  Ask.Tomsg msg -> JsonEditModel msg
+  (VM.View -> List VM.Field) -> String -> String -> ControllerInitializer msg -> String ->
+  Ask.Tomsg msg -> EditModel msg
 initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ _ as formModel) =
@@ -250,7 +242,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
 
             ctrl =
               initializer path field |>
-              Maybe.withDefault (defaultJsonController dataBaseUrl path field)
+              Maybe.withDefault (defaultController dataBaseUrl path field)
 
             inpVal =
               ctrl |> (\(Controller { formatter }) -> formatter <| JM.data formModel)
@@ -262,7 +254,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
         List.unzip |>
         Tuple.mapBoth Dict.fromList Dict.fromList
   in
-    JsonEditModel
+    EditModel
       (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUrl typeName toMessagemsg)
       (jsonFormInitializer >> Just)
       Dict.empty
@@ -274,8 +266,8 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
       False
 
 
-defaultJsonController: String -> JM.Path -> VM.Field -> JsonController msg
-defaultJsonController dataBaseUrl path field =
+defaultController: String -> JM.Path -> VM.Field -> Controller msg
+defaultController dataBaseUrl path field =
   let
     key =
       keyFromPath path
@@ -412,7 +404,7 @@ defaultJsonController dataBaseUrl path field =
       }
 
 
-jsonCtls: List (String, JsonController msg -> JsonController msg) -> JsonControllerInitializer msg -> JsonControllerInitializer msg
+jsonCtls: List (String, Controller msg -> Controller msg) -> ControllerInitializer msg -> ControllerInitializer msg
 jsonCtls ctls default path field =
   default path field |>
   Maybe.map
@@ -436,7 +428,7 @@ keyFromPath path =
       JM.pathEncoder path |> JE.encode 0
 
 
-withParser: (Input msg -> Input msg) -> Controller msg model -> Controller msg model
+withParser: (Input msg -> Input msg) -> Controller msg -> Controller msg
 withParser parser (Controller ({ updateModel } as ctrl)) =
   Controller
     { ctrl |
@@ -444,7 +436,7 @@ withParser parser (Controller ({ updateModel } as ctrl)) =
     }
 
 
-overrideValidator: InputValidator model -> Controller msg model -> Controller msg model
+overrideValidator: InputValidator -> Controller msg -> Controller msg
 overrideValidator validator (Controller ctrl) =
   Controller
     { ctrl |
@@ -452,7 +444,7 @@ overrideValidator validator (Controller ctrl) =
     }
 
 
-withValidator: InputValidator model -> Controller msg model -> Controller msg model
+withValidator: InputValidator -> Controller msg -> Controller msg
 withValidator validator (Controller ({ validateInput } as ctrl)) =
   Controller
     { ctrl |
@@ -460,7 +452,7 @@ withValidator validator (Controller ({ validateInput } as ctrl)) =
     }
 
 
-withFormatter: (JM.JsonValue -> String) -> JsonController msg -> JsonController msg
+withFormatter: (JM.JsonValue -> String) -> Controller msg -> Controller msg
 withFormatter formatter (Controller ({ name } as ctrl)) =
   Controller
     { ctrl |
@@ -468,7 +460,7 @@ withFormatter formatter (Controller ({ name } as ctrl)) =
     }
 
 
-withSelectInitializer: SelectInitializer msg model -> Controller msg model -> Controller msg model
+withSelectInitializer: SelectInitializer msg -> Controller msg -> Controller msg
 withSelectInitializer selInitializer (Controller ctrl) =
   Controller
     { ctrl |
@@ -476,7 +468,7 @@ withSelectInitializer selInitializer (Controller ctrl) =
     }
 
 
-withUpdater: ModelUpdater msg model -> Controller msg model -> Controller msg model
+withUpdater: ModelUpdater msg JM.JsonValue -> Controller msg -> Controller msg
 withUpdater updater (Controller ctrl) =
   Controller
     { ctrl |
@@ -484,7 +476,7 @@ withUpdater updater (Controller ctrl) =
     }
 
 
-withInputCmd: (String -> Cmd msg) -> Controller msg model -> Controller msg model
+withInputCmd: (String -> Cmd msg) -> Controller msg -> Controller msg
 withInputCmd inpCmd (Controller ctrl) =
   Controller
     { ctrl |
@@ -492,29 +484,29 @@ withInputCmd inpCmd (Controller ctrl) =
     }
 
 
-setModelUpdater: String -> ModelUpdater msg JM.JsonValue -> JsonEditModel msg -> JsonEditModel msg
+setModelUpdater: String -> ModelUpdater msg JM.JsonValue -> EditModel msg -> EditModel msg
 setModelUpdater key updater model =
   updateController key (withUpdater updater) model
 
 
-setFormatter: String -> Formatter JM.JsonValue -> JsonEditModel msg -> JsonEditModel msg
+setFormatter: String -> Formatter JM.JsonValue -> EditModel msg -> EditModel msg
 setFormatter key formatter model =
   updateController key (\(Controller c) -> Controller { c | formatter = formatter }) model
 
 
-setSelectInitializer: String -> Maybe (SelectInitializer msg JM.JsonValue) -> JsonEditModel msg -> JsonEditModel msg
+setSelectInitializer: String -> Maybe (SelectInitializer msg) -> EditModel msg -> EditModel msg
 setSelectInitializer key initializer model =
   updateController
     key
     (\(Controller c) -> Controller { c | selectInitializer = initializer }) model
 
 
-setInputValidator: String -> InputValidator JM.JsonValue -> JsonEditModel msg -> JsonEditModel msg
+setInputValidator: String -> InputValidator -> EditModel msg -> EditModel msg
 setInputValidator key validator model =
   updateController key (withValidator validator) model
 
 
-updateController: String -> (Controller msg JM.JsonValue -> Controller msg JM.JsonValue) -> JsonEditModel msg -> JsonEditModel msg
+updateController: String -> (Controller msg -> Controller msg) -> EditModel msg -> EditModel msg
 updateController key updater model =
   Dict.get key model.controllers |>
   Maybe.map updater |>
@@ -524,7 +516,7 @@ updateController key updater model =
 
 
 {-| Chain validators. When both validators perform error on then field, left is taken. -}
-validatorChain: InputValidator model -> InputValidator model -> InputValidator model
+validatorChain: InputValidator -> InputValidator -> InputValidator
 validatorChain validator1 validator2 key value model =
   let
     mergeValidations r1 r2 =
@@ -633,20 +625,20 @@ delete toMsg did =
 
 {-| Gets model id.  Calls [`JsonModel.id`](JsonModel#id) and tries to convert result to `Int`
 -}
-id: JsonEditModel msg -> Maybe Int
+id: EditModel msg -> Maybe Int
 id =
   .model >> JM.id >> Maybe.andThen String.toInt
 
 
 {-| Gets model data.
 -}
-data: JsonEditModel msg -> JM.JsonValue
+data: EditModel msg -> JM.JsonValue
 data { model } =
   JM.data model
 
 
 {-| Creates simple controller -}
-simpleCtrl: (String -> model -> model) -> Formatter model -> Controller msg model
+simpleCtrl: (String -> JM.JsonValue -> JM.JsonValue) -> Formatter JM.JsonValue -> Controller msg
 simpleCtrl updateModel formatter =
   Controller
     { name = ""
@@ -659,7 +651,7 @@ simpleCtrl updateModel formatter =
 
 
 {-| Creates simple controller with select list -}
-simpleSelectCtrl: (String -> model -> model) -> Formatter model -> SelectInitializer msg model -> Controller msg model
+simpleSelectCtrl: (String -> JM.JsonValue -> JM.JsonValue) -> Formatter JM.JsonValue -> SelectInitializer msg -> Controller msg
 simpleSelectCtrl updateModel formatter selectInitializer =
   Controller
     { name = ""
@@ -678,12 +670,12 @@ noCmdUpdater updater =
 
 {-| Creates controller -}
 controller:
-  ModelUpdater msg model ->
-  Formatter model ->
-  Maybe (SelectInitializer msg model) ->
-  InputValidator model ->
+  ModelUpdater msg JM.JsonValue ->
+  Formatter JM.JsonValue ->
+  Maybe (SelectInitializer msg) ->
+  InputValidator ->
   Maybe (String -> Cmd msg) ->
-  Controller msg model
+  Controller msg
 controller updateModel formatter selectInitializer validator inputCmd =
   Controller
     { name = ""
@@ -698,7 +690,7 @@ controller updateModel formatter selectInitializer validator inputCmd =
 {-| Gets input from model for rendering. Function furnishes input with attributes
     using `InputAttrs`
 -}
-inp: String -> Tomsg msg -> JsonEditModel msg -> Maybe (Input msg)
+inp: String -> Tomsg msg -> EditModel msg -> Maybe (Input msg)
 inp key toMsg { controllers, inputs } =
   Maybe.map2 (inpInternal toMsg)
     (Dict.get key controllers)
@@ -707,7 +699,7 @@ inp key toMsg { controllers, inputs } =
 
 {-| Gets inputs from model for rendering
 -}
-inps: List String -> Tomsg msg -> JsonEditModel msg -> List (Input msg)
+inps: List String -> Tomsg msg -> EditModel msg -> List (Input msg)
 inps keys toMsg model =
   List.foldl
     (\k r -> inp k toMsg model |> Maybe.map (\i -> i :: r) |> Maybe.withDefault r)
@@ -716,7 +708,7 @@ inps keys toMsg model =
   List.reverse
 
 
-inpsByPattern: String -> Tomsg msg -> JsonEditModel msg -> List (Input msg)
+inpsByPattern: String -> Tomsg msg -> EditModel msg -> List (Input msg)
 inpsByPattern pattern toMsg { controllers, inputs } =
   let
     patternArr = String.words pattern
@@ -733,14 +725,14 @@ inpsByPattern pattern toMsg { controllers, inputs } =
       )
 
 
-inpsTableByPattern: Tomsg msg -> List String -> JsonEditModel msg -> List (List (Input msg))
+inpsTableByPattern: Tomsg msg -> List String -> EditModel msg -> List (List (Input msg))
 inpsTableByPattern toMsg patterns model =
   patterns |>
   List.map (\p -> inpsByPattern p toMsg model) |>
   Utils.transpose
 
 
-inpInternal: Tomsg msg -> Controller msg JM.JsonValue -> Input msg -> Input msg
+inpInternal: Tomsg msg -> Controller msg -> Input msg -> Input msg
 inpInternal toMsg ctl input =
   let
     onEnter = syncMsg toMsg
@@ -784,7 +776,7 @@ inpInternal toMsg ctl input =
 
 {-| Produces `OnMsg` input message. This can be used to set or clear text in input field.
 -}
-onInputMsg: String -> Tomsg msg -> JsonEditModel msg -> Maybe (String -> msg)
+onInputMsg: String -> Tomsg msg -> EditModel msg -> Maybe (String -> msg)
 onInputMsg key toMsg { controllers } =
   Dict.get key controllers |>
   Maybe.map (\ctrl -> toMsg << OnMsg ctrl)
@@ -801,7 +793,7 @@ onInputCmd key toMsg cmd value =
 {-| Produces `OnSelectMsg` input message which updates model from input.
   This can be used on input events like `onCheck` or `onClick` to update model from input
 -}
-inputMsg: String -> Tomsg msg -> JsonEditModel msg -> Maybe (String -> msg)
+inputMsg: String -> Tomsg msg -> EditModel msg -> Maybe (String -> msg)
 inputMsg key toMsg { controllers } =
   Dict.get key controllers |>
   Maybe.map (\ctrl -> toMsg << OnSelectMsg ctrl)
@@ -822,7 +814,7 @@ jsonDeleteMsg toMsg path =
 
 
 {-| Model update -}
-update: Tomsg msg -> JsonEditMsg msg -> JsonEditModel msg -> (JsonEditModel msg, Cmd msg)
+update: Tomsg msg -> JsonEditMsg msg -> EditModel msg -> (EditModel msg, Cmd msg)
 update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
   let
     updateModelFromInput newInputs ctrl input =

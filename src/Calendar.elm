@@ -105,7 +105,7 @@ jsonDecoder =
     )
 
 
-calendarSelect: String -> String -> Bool -> EM.SelectInitializer msg JM.JsonValue
+calendarSelect: String -> String -> Bool -> EM.SelectInitializer msg
 calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
   let
     calendar =
@@ -131,7 +131,7 @@ calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _
     )
 
 
-timeSelect: String -> String -> Bool -> EM.SelectInitializer msg JM.JsonValue
+timeSelect: String -> String -> Bool -> EM.SelectInitializer msg
 timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
   let
     time =
@@ -158,17 +158,17 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
     )
 
 
-dateValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator JM.JsonValue
+dateValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator
 dateValidatorTask =
   validatorTask "calendar"
 
 
-dateTimeValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator JM.JsonValue
+dateTimeValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator
 dateTimeValidatorTask =
   validatorTask "calendar_time"
 
 
-validatorTask: String -> Dict Char Char -> String -> String -> EM.InputValidator JM.JsonValue
+validatorTask: String -> Dict Char Char -> String -> String -> EM.InputValidator
 validatorTask url map locale mask key value _ =
   Utils.httpGetJson ("/data/" ++ url ++ Utils.httpQuery [(locale, value)]) decoder |>
   Task.mapError Utils.httpErrorToString |>
@@ -205,7 +205,7 @@ updateTask url locale input _ =
   EM.UpdateTask
 
 
-dateValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
+dateValidator: Dict Char Char -> String -> EM.InputValidator
 dateValidator map mask =
   \key value _ ->
     let
@@ -218,7 +218,7 @@ dateValidator map mask =
       EM.ValidationResult
 
 
-dateTimeValidator: Dict Char Char -> String -> EM.InputValidator JM.JsonValue
+dateTimeValidator: Dict Char Char -> String -> EM.InputValidator
 dateTimeValidator map mask =
   \key value _ ->
     let
@@ -257,9 +257,9 @@ localizedMask map =
   String.map (\c -> Dict.get c map |> Maybe.withDefault c)
 
 
-dateController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.JsonController msg
+dateController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.Controller msg
 dateController dataBaseUrl locale map mask doSearch path field =
-  EM.defaultJsonController dataBaseUrl path field |>
+  EM.defaultController dataBaseUrl path field |>
   EM.withFormatter (dateFormatter mask) |>
   EM.withValidator (dateValidatorTask map locale mask) |>
   EM.withUpdater (dateUpdaterTask locale) |>
@@ -268,9 +268,9 @@ dateController dataBaseUrl locale map mask doSearch path field =
   EM.withSelectInitializer (calendarSelect locale mask doSearch)
 
 
-dateTimeController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.JsonController msg
+dateTimeController: String -> String -> Dict Char Char -> String -> Bool -> JM.Path -> VM.Field -> EM.Controller msg
 dateTimeController dataBaseUrl locale map mask doSearch path field =
-  EM.defaultJsonController dataBaseUrl path field |>
+  EM.defaultController dataBaseUrl path field |>
   EM.withFormatter (dateTimeFormatter mask) |>
   EM.withValidator (dateTimeValidatorTask map locale mask) |>
   EM.withUpdater (dateTimeUpdaterTask locale) |>
