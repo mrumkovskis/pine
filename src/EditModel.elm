@@ -913,6 +913,39 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
     setEditing ctrl focus maybeDoSearch =  -- OnFocus
       let
+
+        modelAroundPath: JM.Path -> JM.JsonValue
+        modelAroundPath path = 
+          let
+            travelThePath: JM.Path -> JM.JsonValue -> JM.JsonValue
+            travelThePath pp mm = 
+              case pp of 
+                JM.End -> mm -- ERROR CASE, Should be caught by "Name _ End"
+
+                JM.EndIdx _ -> mm -- hope it works?
+
+                JM.Name _ JM.End -> mm -- proper end scenario
+
+                JM.Name name restOfPath ->
+                  mm
+                  |> JM.jsonValue name
+                  |> Maybe.map (travelThePath restOfPath)
+                  |> Maybe.withDefault mm -- not sure what to do if path not found
+                
+                JM.Idx index restOfPath ->
+                  case mm of
+                    JM.JsList l ->
+                      l
+                      |> List.drop index
+                      |> List.head
+                      |> Maybe.map (travelThePath restOfPath)
+                      |> Maybe.withDefault mm -- Item with given index in list not found
+
+                    _ -> mm -- expected list, got something else 
+
+          in
+            travelThePath path (JM.data model)
+
         processFocusSelect input =
           if focus && not input.readonly then
             ctrl.selectInitializer |>
@@ -923,7 +956,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   same.toMessagemsg
                   input.value
                   (toMsg << OnSelectMsg (Controller ctrl))
-                  (JM.data model)
+                  (modelAroundPath input.path)
               ) |>
             Maybe.map
               (Tuple.mapBoth
