@@ -927,8 +927,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
             JM.Name name restOfPath ->
               mm
               |> JM.jsonValue name
-              |> Maybe.map (travelThePath restOfPath)
-              |> Maybe.withDefault Nothing -- not sure what to do if path not found
+              |> Maybe.andThen (travelThePath restOfPath)
             
             JM.Idx index restOfPath ->
               case mm of
@@ -936,8 +935,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   l
                   |> List.drop index
                   |> List.head
-                  |> Maybe.map (travelThePath restOfPath)
-                  |> Maybe.withDefault Nothing -- Item with given index in list not found
+                  |> Maybe.andThen (travelThePath restOfPath)
 
                 _ -> Nothing -- expected list, got something else 
 
