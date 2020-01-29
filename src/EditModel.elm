@@ -912,23 +912,23 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       )
 
 
-    modelAroundPath: JM.Path -> JM.JsonValue
+    modelAroundPath: JM.Path -> Maybe JM.JsonValue
     modelAroundPath path = 
       let
-        travelThePath: JM.Path -> JM.JsonValue -> JM.JsonValue
+        travelThePath: JM.Path -> JM.JsonValue -> Maybe JM.JsonValue
         travelThePath pp mm = 
           case pp of 
-            JM.End -> mm -- ERROR CASE, Should be caught by "Name _ End"
+            JM.End -> Nothing -- ERROR CASE, Should be caught by "Name _ End"
 
-            JM.EndIdx _ -> mm -- hope it works?
+            JM.EndIdx _ -> Nothing 
 
-            JM.Name _ JM.End -> mm -- proper end scenario
+            JM.Name _ JM.End -> Just mm -- proper end scenario
 
             JM.Name name restOfPath ->
               mm
               |> JM.jsonValue name
               |> Maybe.map (travelThePath restOfPath)
-              |> Maybe.withDefault mm -- not sure what to do if path not found
+              |> Maybe.withDefault Nothing -- not sure what to do if path not found
             
             JM.Idx index restOfPath ->
               case mm of
@@ -937,9 +937,9 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   |> List.drop index
                   |> List.head
                   |> Maybe.map (travelThePath restOfPath)
-                  |> Maybe.withDefault mm -- Item with given index in list not found
+                  |> Maybe.withDefault Nothing -- Item with given index in list not found
 
-                _ -> mm -- expected list, got something else 
+                _ -> Nothing -- expected list, got something else 
 
       in
         travelThePath path (JM.data model)
@@ -958,7 +958,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   same.toMessagemsg
                   input.value
                   (toMsg << OnSelectMsg (Controller ctrl))
-                  (modelAroundPath input.path)
+                  (modelAroundPath input.path |> Maybe.withDefault JM.JsNull)
               ) |>
             Maybe.map
               (Tuple.mapBoth
@@ -1116,7 +1116,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         Dict.get ctrl.name inputs |>
         Maybe.map
           (\{ value, path } ->
-            case ctrl.validateInput ctrl.name value (modelAroundPath path) of
+            case ctrl.validateInput ctrl.name value (modelAroundPath path |> Maybe.withDefault JM.JsNull) of
               ValidationResult res ->
                 ( updateValidationResults ctrl.name res, Cmd.none )
 
