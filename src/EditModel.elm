@@ -6,7 +6,7 @@ module EditModel exposing
   , defaultController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, delete
+  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete
   , id, data, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
@@ -166,6 +166,7 @@ type JsonEditMsg msg
   | FocusNoSearchMsg (Controller msg)
   | OnSelectMsg (Controller msg) String
   | OnSelectFieldMsg String String
+  | ValidatePathMsg String
   | ValidateFieldMsg
       (Controller msg)
       (Maybe (String, (Result String (List (String, String))))) -- used for validation task
@@ -614,6 +615,10 @@ sync =
 syncMsg: Tomsg msg -> msg
 syncMsg toMsg =
   toMsg <| SyncModelMsg
+
+validate: Tomsg msg -> String -> Cmd msg
+validate toMsg path = 
+  domsg (toMsg <| ValidatePathMsg path )
 
 
 {-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
@@ -1109,6 +1114,12 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
             (\ctrl -> do toMsg <| OnSelectMsg ctrl value) |>
           Maybe.withDefault Cmd.none
         )
+
+      ValidatePathMsg path -> 
+        (same, controllers
+        |> Dict.get path
+        |> Maybe.map (\c -> domsg <| toMsg <| ValidateFieldMsg c Nothing)
+        |> Maybe.withDefault Cmd.none)
 
       ValidateFieldMsg (Controller ctrl) Nothing ->
         Dict.get ctrl.name inputs |>
