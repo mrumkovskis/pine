@@ -52,9 +52,8 @@ zip list1 list2 =
 {-| Finds list element at specified index.
 -}
 at: Int -> List a -> Maybe a
-at idx l =
-  if idx == 0 then List.head l
-  else List.tail l |> Maybe.andThen (at (idx - 1))
+at idx =
+  List.drop idx >> List.head
 
 
 {-| Find first element matching condition -}
