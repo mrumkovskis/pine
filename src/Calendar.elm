@@ -158,26 +158,26 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
     )
 
 
-dateValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator
+dateValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator msg
 dateValidatorTask =
   validatorTask "calendar"
 
 
-dateTimeValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator
+dateTimeValidatorTask: Dict Char Char -> String -> String -> EM.InputValidator msg
 dateTimeValidatorTask =
   validatorTask "calendar_time"
 
 
-validatorTask: String -> Dict Char Char -> String -> String -> EM.InputValidator
-validatorTask url map locale mask key value _ =
+validatorTask: String -> Dict Char Char -> String -> String -> EM.InputValidator msg
+validatorTask url map locale mask { name, value } _ =
   Utils.httpGetJson ("/data/" ++ url ++ Utils.httpQuery [(locale, value)]) decoder |>
   Task.mapError Utils.httpErrorToString |>
   Task.map
     (\cal ->
       if List.isEmpty cal && (not <| String.isEmpty value) then
-        [( key, localizedMask map mask)]
+        [( name, localizedMask map mask)]
       else
-        [( key, "")]
+        [( name, "")]
     ) |>
   EM.ValidationTask
 
@@ -205,12 +205,12 @@ updateTask url locale input _ =
   EM.UpdateTask
 
 
-dateValidator: Dict Char Char -> String -> EM.InputValidator
+dateValidator: Dict Char Char -> String -> EM.InputValidator msg
 dateValidator map mask =
-  \key value _ ->
+  \{ name, value } _ ->
     let
       valres msg =
-        [ ( key, msg ) ]
+        [ ( name, msg ) ]
     in
       parseDate mask value |>
       Maybe.map (\_ -> valres "") |>
@@ -218,12 +218,12 @@ dateValidator map mask =
       EM.ValidationResult
 
 
-dateTimeValidator: Dict Char Char -> String -> EM.InputValidator
+dateTimeValidator: Dict Char Char -> String -> EM.InputValidator msg
 dateTimeValidator map mask =
-  \key value _ ->
+  \{ name, value } _ ->
     let
       valres msg =
-        [ ( key, msg ) ]
+        [ ( name, msg ) ]
     in
       parseDateTime mask value |>
       Maybe.map (\_ -> valres "") |>

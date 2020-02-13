@@ -81,7 +81,7 @@ type ValidationResult
 
 
 {-| Validates input -}
-type alias InputValidator = String -> String -> JM.JsonValue -> ValidationResult
+type alias InputValidator msg = Input msg -> JM.JsonValue -> ValidationResult
 
 
 {- Get input field text from model. Function is called when value is selected from list or model
@@ -107,7 +107,7 @@ type Controller msg =
     , updateModel: ModelUpdater msg JM.JsonValue -- called on OnSelect, OnFocus _ False
     , formatter: Formatter JM.JsonValue
     , selectInitializer: Maybe (SelectInitializer msg) -- called on OnFocus _ True
-    , validateInput: InputValidator -- called on OnMsg, OnSelect
+    , validateInput: InputValidator msg -- called on OnMsg, OnSelect
     , inputCmd: Maybe (String -> Cmd msg)
     }
 
@@ -323,7 +323,7 @@ defaultController dataBaseUrl path field =
       Maybe.map JM.jsonValueToString |>
       Maybe.withDefault ""
 
-    validator inpkey iv _ =
+    validator { name, value } _ =
       let
         success k =
           [( k, "" )]
@@ -335,45 +335,45 @@ defaultController dataBaseUrl path field =
           case t of
             "number" ->
               let
-                res = Maybe.map (\_ -> iv) >> Result.fromMaybe ("Not a number: " ++ iv)
+                res = Maybe.map (\_ -> value) >> Result.fromMaybe ("Not a number: " ++ value)
               in
                 field.fractionDigits |>
                 Maybe.map
                   (\fd ->
-                    if fd > 0 then String.toFloat iv |> res else String.toInt iv |> res
+                    if fd > 0 then String.toFloat value |> res else String.toInt value |> res
                   ) |>
-                Maybe.withDefault (String.toInt iv |> res) |>
+                Maybe.withDefault (String.toInt value |> res) |>
                 (\r ->
                   case r of
                     Ok _ ->
-                      success inpkey
+                      success name
 
                     Err err ->
                       [ (key, err) ]
                 )
 
             "boolean" ->
-              String.toLower iv |>
+              String.toLower value |>
                 (\s ->
                   if s == "true" || s == "false" then
-                    success inpkey
+                    success name
                   else
-                    [ (key, "Not a boolean: " ++ iv) ]
+                    [ (key, "Not a boolean: " ++ value) ]
                 )
 
-            _ -> success inpkey
+            _ -> success name
 
         enumValidator en =
-          if String.isEmpty iv then
-            success inpkey
+          if String.isEmpty value then
+            success name
           else
-            Utils.find ((==) iv) en |>
-            Maybe.map (\_ -> success inpkey) |>
-            Maybe.withDefault [ (key, "Value must come from list") ]
+            Utils.find ((==) value) en |>
+            Maybe.map (\_ -> success name) |>
+            Maybe.withDefault [ (name, "Value must come from list") ]
 
         requiredValidator =
-          if (field.required || not field.nullable) && String.isEmpty iv then
-            [ (key, "Field is mandatory") ]
+          if (field.required || not field.nullable) && String.isEmpty name then
+            [ (name, "Field is mandatory") ]
           else
             []
 
@@ -385,7 +385,7 @@ defaultController dataBaseUrl path field =
                 if isOk r then
                   field.enum |>
                   Maybe.map enumValidator |>
-                  Maybe.withDefault (success inpkey)
+                  Maybe.withDefault (success name)
                 else
                   r
               )
@@ -437,7 +437,7 @@ withParser parser (Controller ({ updateModel } as ctrl)) =
     }
 
 
-overrideValidator: InputValidator -> Controller msg -> Controller msg
+overrideValidator: InputValidator msg -> Controller msg -> Controller msg
 overrideValidator validator (Controller ctrl) =
   Controller
     { ctrl |
@@ -445,7 +445,7 @@ overrideValidator validator (Controller ctrl) =
     }
 
 
-withValidator: InputValidator -> Controller msg -> Controller msg
+withValidator: InputValidator msg -> Controller msg -> Controller msg
 withValidator validator (Controller ({ validateInput } as ctrl)) =
   Controller
     { ctrl |
@@ -502,7 +502,7 @@ setSelectInitializer key initializer model =
     (\(Controller c) -> Controller { c | selectInitializer = initializer }) model
 
 
-setInputValidator: String -> InputValidator -> EditModel msg -> EditModel msg
+setInputValidator: String -> InputValidator msg -> EditModel msg -> EditModel msg
 setInputValidator key validator model =
   updateController key (withValidator validator) model
 
@@ -517,8 +517,8 @@ updateController key updater model =
 
 
 {-| Chain validators. When both validators perform error on then field, left is taken. -}
-validatorChain: InputValidator -> InputValidator -> InputValidator
-validatorChain validator1 validator2 key value model =
+validatorChain: InputValidator msg -> InputValidator msg -> InputValidator msg
+validatorChain validator1 validator2 input model =
   let
     mergeValidations r1 r2 =
       Dict.merge
@@ -533,10 +533,10 @@ validatorChain validator1 validator2 key value model =
       Dict.toList
 
     vres1 =
-      validator1 key value model
+      validator1 input model
 
     vres2 =
-      validator2 key value model
+      validator2 input model
   in
     case vres1 of
       ValidationResult res1 ->
@@ -617,7 +617,7 @@ syncMsg toMsg =
   toMsg <| SyncModelMsg
 
 validate: Tomsg msg -> String -> Cmd msg
-validate toMsg path = 
+validate toMsg path =
   domsg (toMsg <| ValidatePathMsg path )
 
 
@@ -650,7 +650,7 @@ simpleCtrl updateModel formatter =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Nothing
-    , validateInput = \_ _ _ -> ValidationResult []
+    , validateInput = \_ _ -> ValidationResult []
     , inputCmd = Nothing
     }
 
@@ -663,7 +663,7 @@ simpleSelectCtrl updateModel formatter selectInitializer =
     , updateModel = noCmdUpdater updateModel
     , formatter = formatter
     , selectInitializer = Just selectInitializer
-    , validateInput = \_ _ _ -> ValidationResult []
+    , validateInput = \_ _ -> ValidationResult []
     , inputCmd = Nothing
     }
 
@@ -678,7 +678,7 @@ controller:
   ModelUpdater msg JM.JsonValue ->
   Formatter JM.JsonValue ->
   Maybe (SelectInitializer msg) ->
-  InputValidator ->
+  InputValidator msg ->
   Maybe (String -> Cmd msg) ->
   Controller msg
 controller updateModel formatter selectInitializer validator inputCmd =
@@ -916,38 +916,6 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         )
       )
 
-
-    modelAroundPath: JM.Path -> Maybe JM.JsonValue
-    modelAroundPath path = 
-      let
-        travelThePath: JM.Path -> JM.JsonValue -> Maybe JM.JsonValue
-        travelThePath pp mm = 
-          case pp of 
-            JM.End -> Nothing -- ERROR CASE, Should be caught by "Name _ End"
-
-            JM.EndIdx _ -> Nothing 
-
-            JM.Name _ JM.End -> Just mm -- proper end scenario
-
-            JM.Name name restOfPath ->
-              mm
-              |> JM.jsonValue name
-              |> Maybe.andThen (travelThePath restOfPath)
-            
-            JM.Idx index restOfPath ->
-              case mm of
-                JM.JsList l ->
-                  l
-                  |> List.drop index
-                  |> List.head
-                  |> Maybe.andThen (travelThePath restOfPath)
-
-                _ -> Nothing -- expected list, got something else 
-
-      in
-        travelThePath path (JM.data model)
-
-
     setEditing ctrl focus maybeDoSearch =  -- OnFocus
       let
 
@@ -961,7 +929,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   same.toMessagemsg
                   input.value
                   (toMsg << OnSelectMsg (Controller ctrl))
-                  (modelAroundPath input.path |> Maybe.withDefault JM.JsNull)
+                  (JM.data model)
               ) |>
             Maybe.map
               (Tuple.mapBoth
@@ -1115,7 +1083,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           Maybe.withDefault Cmd.none
         )
 
-      ValidatePathMsg path -> 
+      ValidatePathMsg path ->
         (same, controllers
         |> Dict.get path
         |> Maybe.map (\c -> domsg <| toMsg <| ValidateFieldMsg c Nothing)
@@ -1124,15 +1092,15 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       ValidateFieldMsg (Controller ctrl) Nothing ->
         Dict.get ctrl.name inputs |>
         Maybe.map
-          (\{ value, path } ->
-            case ctrl.validateInput ctrl.name value (modelAroundPath path |> Maybe.withDefault JM.JsNull) of
+          (\input ->
+            case ctrl.validateInput input (JM.data model) of
               ValidationResult res ->
                 ( updateValidationResults ctrl.name res, Cmd.none )
 
               ValidationTask task ->
                 ( same
                 , Task.attempt
-                    (toMsg << ValidateFieldMsg (Controller ctrl) << Just << Tuple.pair value)
+                    (toMsg << ValidateFieldMsg (Controller ctrl) << Just << Tuple.pair input.value)
                     task
                 )
           ) |>
