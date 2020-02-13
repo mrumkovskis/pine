@@ -106,7 +106,7 @@ jsonDecoder =
 
 
 calendarSelect: String -> String -> Bool -> EM.SelectInitializer msg
-calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
+calendarSelect locale mask doSearch toMsg toMessagemsg { value } toDestinationmsg _ =
   let
     calendar =
       JM.initForm "/metadata" "/data" "calendar" jsonDecoder (always JE.null) [] (always Nothing)
@@ -114,7 +114,7 @@ calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _
     ( Select.init
         (calendar toMessagemsg)
         locale
-        search
+        value
         ( JM.jsonString "value" >>
           Maybe.map (formatDate mask) >>
           Maybe.withDefault "<vērtība nav atrasta>" >>
@@ -125,14 +125,14 @@ calendarSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _
           Maybe.withDefault "<vērtība nav atrasta>"
         )
     , if doSearch then
-        Select.search toMsg search
+        Select.search toMsg value
       else
         Cmd.none
     )
 
 
 timeSelect: String -> String -> Bool -> EM.SelectInitializer msg
-timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
+timeSelect locale mask doSearch toMsg toMessagemsg { value } toDestinationmsg _ =
   let
     time =
       JM.initForm "/metadata" "/data" "calendar_time" jsonDecoder (always JE.null) [] (always Nothing)
@@ -141,7 +141,7 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
     ( Select.init
         (time toMessagemsg)
         locale
-        search
+        value
         ( JM.jsonString "value" >>
           Maybe.map (formatDateTime mask) >>
           Maybe.withDefault "<vērtība nav atrasta>" >>
@@ -152,7 +152,7 @@ timeSelect locale mask doSearch toMsg toMessagemsg search toDestinationmsg _ =
           Maybe.withDefault "<vērtība nav atrasta>"
         )
     , if doSearch then
-        Select.search toMsg search
+        Select.search toMsg value
       else
         Cmd.none
     )

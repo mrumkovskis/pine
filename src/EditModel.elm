@@ -94,7 +94,7 @@ type alias Formatter model = model -> String
 type alias SelectInitializer msg =
   Select.Tomsg msg JM.JsonValue -> -- toSelectmsg
   Ask.Tomsg msg -> -- toMessagemsg
-  String -> -- search string
+  Input msg ->
   (String -> msg) -> -- select msg
   JM.JsonValue ->
   (SelectModel msg JM.JsonValue, Cmd msg)
@@ -927,7 +927,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                 initializer
                   (toMsg << SelectMsg (Controller ctrl))
                   same.toMessagemsg
-                  input.value
+                  input
                   (toMsg << OnSelectMsg (Controller ctrl))
                   (JM.data model)
               ) |>
