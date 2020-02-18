@@ -14,8 +14,6 @@ import Browser.Navigation as Nav
 import Browser exposing (..)
 import Url exposing (..)
 
-import Debug
-
 
 type alias Route =
   { route: String

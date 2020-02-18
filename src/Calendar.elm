@@ -3,6 +3,7 @@ module Calendar exposing
   , dateController, dateTimeController
   , dateValidator, dateTimeValidator, dateValidatorTask, dateTimeValidatorTask
   , dateUpdaterTask, dateTimeUpdaterTask
+  , dateInputParser, dateTimeInputParser
   , formatDate, formatDateTime
   , parseDate, parseDateTime
   )
@@ -21,9 +22,6 @@ import EditModel as EM
 import ViewMetadata as VM
 import Select exposing (..)
 import Utils
-
-
-import Debug
 
 
 type alias Calendar =

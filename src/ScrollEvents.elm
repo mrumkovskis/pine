@@ -13,8 +13,6 @@ import Dict exposing (Dict)
 import Task
 import Utils exposing (..)
 
-import Debug exposing (log, toString)
-
 
 type alias StickyElPos =
   { top: Float
@@ -36,8 +34,6 @@ type Msg msg
   | WindowScrollOrResizeMsg
   | SubscribeVisibilityMsg String msg
   | SubscribeStickToMsg String (String -> Maybe StickyElPos -> msg)
-  | UnsubscribeVisibilityMsg String
-  | UnsubscribeStickToMsg String
   | NoOp (Maybe Dom.Error)
 
 
@@ -208,24 +204,6 @@ update toMsg msg (Model ({ stickToElId, visibilitySubscriptions, stickSubscripti
           { mi |
             stickSubscriptions =
               stickSubscriptions |> Dict.insert elId toStickPosmsg
-          }
-      , Cmd.none
-      )
-
-    UnsubscribeVisibilityMsg elId ->
-      ( Model
-          { mi |
-            visibilitySubscriptions =
-              visibilitySubscriptions |> Dict.remove elId
-          }
-      , Cmd.none
-      )
-
-    UnsubscribeStickToMsg elId ->
-      ( Model
-          { mi |
-            stickSubscriptions =
-              stickSubscriptions |> Dict.remove elId
           }
       , Cmd.none
       )

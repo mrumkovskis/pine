@@ -20,7 +20,6 @@ module ViewMetadata exposing
 import Utils exposing (..)
 
 import Json.Decode as JD
-import Set exposing (Set)
 import Task exposing (..)
 import Dict exposing (..)
 import Url exposing (percentEncode)

@@ -42,9 +42,6 @@ import Json.Decode as JD
 import Task exposing (..)
 
 
-import Debug exposing (log)
-
-
 {-| Represents form input field. Is synchronized with model. -}
 type alias Input msg =
   { name: String

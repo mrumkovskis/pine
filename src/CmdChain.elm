@@ -5,11 +5,6 @@ module CmdChain exposing
 
 import Utils exposing (..)
 
-import Task
-
-import Debug exposing (log, toString)
-
-
 type alias Updater msg model = msg -> model -> (model, Cmd msg)
 
 

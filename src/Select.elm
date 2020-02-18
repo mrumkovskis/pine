@@ -20,9 +20,6 @@ import Html.Events exposing (..)
 import Json.Decode as JD
 
 
-import Debug exposing (log)
-
-
 {-| Model for select component -}
 type alias SelectModel msg value =
   { model: JM.ListModel msg value
