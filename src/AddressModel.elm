@@ -11,10 +11,9 @@ This is relevant for LV addresses.
 
 import Json.Decode as JD
 import Json.Encode as JE
-import Http
 
 import JsonModel as JM
-import Ask
+import EditModel exposing (SelectInitializer)
 import Select
 import Utils
 
@@ -108,8 +107,8 @@ initAddress address =
 {-| Initialize [`Select`](Select)
 backed by [`addresses`](https://github.com/mrumkovskis/addresses) service.
 -}
-init: String -> Select.Tomsg msg JM.JsonValue -> Ask.Tomsg msg -> String -> (String -> msg) -> model -> (Select.SelectModel msg JM.JsonValue, Cmd msg)
-init uri toSelectmsg toMessagemsg search toAddressmsg _ =
+init: String -> SelectInitializer msg
+init uri _ toMessagemsg input toAddressmsg _ =
   ( Select.init
       (JM.initList
         "/metadata"
@@ -120,7 +119,7 @@ init uri toSelectmsg toMessagemsg search toAddressmsg _ =
         toMessagemsg
       )
       "search"
-      search
+      input.value
       (JM.jsonString "" >> Maybe.withDefault "<nav>" >> toAddressmsg)
       (JM.jsonString "" >> Maybe.withDefault "<nav>")
   , Cmd.none
