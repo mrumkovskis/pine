@@ -20,7 +20,7 @@ module JsonModel exposing
   , traverseJson, jsonValues, stringValues, jsonQueryObj, jsonEmptyObj, jsonEmptyList, isEmptyObj, isEmptyList
   , pathMatches, pathMatchesArr, pathMatchesPath, stringToPath
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
-  , pathDecoder, pathEncoder, reversePath, appendPath
+  , pathDecoder, pathEncoder, reversePath, appendPath, dropTail
   , isInitialized, notInitialized, ready
   , map, mapList
   -- commands
@@ -1266,6 +1266,24 @@ appendPath begin end =
 
     EndIdx rest ->
       EndIdx <| appendPath rest end
+
+
+dropTail: Path -> Path
+dropTail path =
+  case path of
+    End -> End
+
+    Name _ End -> End
+
+    Idx _ End -> End
+
+    EndIdx End -> End
+
+    Name n rest -> Name n <| dropTail rest
+
+    Idx i rest -> Idx i <| dropTail rest
+
+    EndIdx rest -> EndIdx <| dropTail rest
 
 -- commands
 
