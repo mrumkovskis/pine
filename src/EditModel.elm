@@ -737,7 +737,7 @@ inpsTableByPattern toMsg patterns model =
 inpInternal: Tomsg msg -> Controller msg -> Input msg -> Input msg
 inpInternal toMsg ctl input =
   let
-    onEnter = syncMsg toMsg
+    onEnter = syncMsg toMsg -- update model from input when enter is pressed
 
     msgs =
       { onInput = toMsg << OnMsg ctl
