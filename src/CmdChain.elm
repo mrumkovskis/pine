@@ -1,5 +1,5 @@
 module CmdChain exposing
-  ( Msg (..), Tomsg, exec, update
+  ( Msg, Tomsg, exec, update
   )
 
 
@@ -10,7 +10,6 @@ type alias Updater msg model = msg -> model -> (model, Cmd msg)
 
 type Msg msg
   = ExecMsg (List (Cmd msg)) (Maybe msg)
-  | InterruptMsg
 
 
 type alias Tomsg msg = Msg msg -> msg
@@ -47,6 +46,3 @@ update updater toMsg msg model =
             cmd :: rest ->
               Cmd.map (toMsg << ExecMsg rest << Just) cmd
         )
-
-    InterruptMsg ->
-      ( model, Cmd.none )
