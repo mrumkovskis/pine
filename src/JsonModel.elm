@@ -74,6 +74,7 @@ list [`JsonModel.ListModel`](JsonModel#ListModel) based.
 import Json.Decode as JD
 import Json.Encode as JE
 import Dict exposing (Dict)
+import Set exposing (Set)
 import Http
 
 import ViewMetadata as VM
