@@ -18,6 +18,8 @@ module FormModel exposing
     , saveMsg
     , set
     , setMsg
+    , silentSave
+    , silentSaveMsg
     , toModelMsg
     , update
     )
@@ -69,14 +71,24 @@ create toMsg searchParams =
     domsg << createMsg toMsg searchParams
 
 
-saveMsg : Tomsg msg -> Bool -> Maybe (JM.JsonValue -> msg) -> msg
-saveMsg toMsg silentSave maybeSuccessmsg =
-    EM.saveMsg (toMsg << SaveMsg silentSave maybeSuccessmsg)
+saveMsg : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
+saveMsg toMsg maybeSuccessmsg =
+    EM.saveMsg (toMsg << SaveMsg False maybeSuccessmsg)
 
 
-save : Tomsg msg -> Bool -> Maybe (JM.JsonValue -> msg) -> Cmd msg
-save toMsg silentSave =
-    domsg << saveMsg toMsg silentSave
+save : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
+save toMsg =
+    domsg << saveMsg toMsg
+
+
+silentSaveMsg : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
+silentSaveMsg toMsg maybeSuccessmsg =
+    EM.saveMsg (toMsg << SaveMsg True maybeSuccessmsg)
+
+
+silentSave : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
+silentSave toMsg =
+    domsg << silentSaveMsg toMsg
 
 
 fetchMsg : Tomsg msg -> Int -> msg
@@ -170,9 +182,9 @@ update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
                 , maybeMsg |> Maybe.map domsg |> Maybe.withDefault Cmd.none
                 )
 
-        SaveMsg silentSave maybeSuccessmsg data ->
+        SaveMsg isSilentSave maybeSuccessmsg data ->
             form
-                |> Maybe.map (EM.update (toMsg << SaveMsg silentSave maybeSuccessmsg) data)
+                |> Maybe.map (EM.update (toMsg << SaveMsg isSilentSave maybeSuccessmsg) data)
                 |> Maybe.map (Tuple.mapFirst (\m -> { model | form = Just m }))
                 |> Maybe.withDefault ( model, Cmd.none )
                 |> (\( newmod, cmd ) ->
@@ -184,7 +196,7 @@ update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
                                     (\m ->
                                         let
                                             saveCmd =
-                                                saveSuccessCmd |> Utils.filter (always <| not silentSave)
+                                                saveSuccessCmd |> Utils.filter (always <| not isSilentSave)
                                         in
                                         case ( maybeSuccessmsg, saveCmd ) of
                                             ( Just sm, Just sc ) ->
