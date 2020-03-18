@@ -25,7 +25,7 @@ import Utils
 
 
 type alias Calendar =
-  { value: String
+  { value: Maybe String
   , today: String
   , month: String
   , year: String
@@ -50,7 +50,7 @@ decoder =
       dec =
         JD.map8
           Calendar
-          (JD.field "value" JD.string)
+          (JD.field "value" <| JD.maybe <| JD.string)
           (JD.field "today" JD.string)
           (JD.field "month" JD.string)
           (JD.field "year" JD.string)
@@ -76,7 +76,7 @@ jsonDecoder =
   JD.map
     ( List.map
         (\entry ->
-          [ ("value", JM.JsString entry.value)
+          [ ("value", JM.JsString <| Maybe.withDefault "" <| entry.value)
           , ("today", JM.JsString entry.today)
           , ("month", JM.JsString entry.month)
           , ("year", JM.JsString entry.year)
@@ -196,7 +196,7 @@ updateTask url locale input _ =
   Task.mapError Utils.httpErrorToString |>
   Task.map
     (\cal ->
-      ( List.head cal |> Maybe.map .value |> Maybe.withDefault input.value |> JM.JsString
+      ( List.head cal |> Maybe.andThen .value |> Maybe.withDefault input.value |> JM.JsString
       , JM.jsonEdit input.name
       )
     ) |>
