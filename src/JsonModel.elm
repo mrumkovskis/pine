@@ -22,7 +22,7 @@ module JsonModel exposing
   , jsonEdit, jsonValueToString, stringToJsonValue, searchParsFromJson, flattenJsonForm
   , pathDecoder, pathEncoder, reversePath, appendPath, dropLast
   , isInitialized, notInitialized, ready
-  , map, mapList
+  , map, mapList, mapField, forAll, atIndex
   -- commands
   , fetch, fetchMsg, fetchFromStart, fetchFromStartMsg, fetchWithParam, fetchWithParamMsg, refreshMsg, refresh
   , fetchDeferred, fetchDeferredFromStart, fetchCount, fetchCountDeferred, fetchMetadata
@@ -2203,3 +2203,50 @@ isEmptyList json =
 
     _ ->
       True
+
+
+mapField : String -> (JsonValue -> JsonValue) -> JsonValue -> JsonValue
+mapField fieldName mapper value =
+  case value of
+    JsObject values ->
+      JsObject <|
+        Dict.map
+          (\k v ->
+            if k == fieldName then
+              mapper v
+
+            else
+              v
+          )
+          values
+
+    fv ->
+      fv
+
+
+forAll : (JsonValue -> JsonValue) -> JsonValue -> JsonValue
+forAll mapper value =
+  case value of
+    JsList l ->
+      JsList <| List.map mapper l
+
+    fv ->
+      fv
+
+
+atIndex : Int -> (JsonValue -> JsonValue) -> JsonValue -> JsonValue
+atIndex ii mapper value =
+  case value of
+    JsList l ->
+      JsList <|
+        List.indexedMap
+          (\i ->
+            if i == ii then
+              mapper
+            else
+              identity
+          )
+          l
+
+    fv ->
+      fv
