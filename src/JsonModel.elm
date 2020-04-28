@@ -1394,12 +1394,16 @@ dataHttpRequest uri maybeHeader toMsg decoder =
 
 {-| Fetches mojoz view field definition enum values -}
 enumFetcher: String -> String -> (String -> value) -> DataFetcher msg (List value)
-enumFetcher viewName fieldName mapper toMsg _ _ _ (Model _ modelConf) =
+enumFetcher viewName fieldName mapper toMsg _ searchParams _ (Model _ modelConf) =
   let
+    enumParam = 
+      Dict.fromList searchParams |> Dict.get "" |> Maybe.withDefault ""
+      
     values =
       Dict.get viewName modelConf.metadata |>
       Maybe.andThen (VM.field fieldName) |>
       Maybe.andThen .enum |>
+      Maybe.map (\e -> List.filter (String.contains enumParam) e) |>
       Maybe.map (List.map mapper) |>
       Maybe.withDefault []
   in
