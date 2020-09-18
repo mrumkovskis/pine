@@ -972,7 +972,12 @@ jsonDataEncoder fieldGetter metadata viewTypeName value =
               ) |>
             Maybe.withDefault []
           ) |>
-          JE.object
+          (\d ->
+            if List.isEmpty d then
+              JE.null
+            else
+              JE.object d
+          )
 
       _ -> JE.null -- unexpected element, encode as null
 
