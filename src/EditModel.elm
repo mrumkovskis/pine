@@ -7,7 +7,7 @@ module EditModel exposing
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete
-  , id, data, inp, inps, inpsByPattern, inpsTableByPattern
+  , id, data, inpValue, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
   , update
@@ -638,6 +638,11 @@ data: EditModel msg -> JM.JsonValue
 data { model } =
   JM.data model
 
+{-| Gets input value by input name -}
+inpValue: String -> EditModel msg -> Maybe String
+inpValue name { inputs } =
+  Dict.get name inputs |>
+  Maybe.map .value
 
 {-| Creates simple controller -}
 simpleCtrl: (String -> JM.JsonValue -> JM.JsonValue) -> Formatter JM.JsonValue -> Controller msg
