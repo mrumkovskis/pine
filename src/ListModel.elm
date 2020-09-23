@@ -2,6 +2,7 @@ module ListModel exposing
     ( Model(..)
     , Msg
     , Tomsg
+    , delayedCmd
     , init
     , load
     , loadAndReplaceUrl
@@ -28,7 +29,9 @@ import EditModel as EM
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import JsonModel as JM
+import Process
 import ScrollEvents as SE
+import Task
 import Utils exposing (..)
 
 
@@ -52,6 +55,7 @@ type Msg msg
     | SortMsg String
     | SelectMsg (Bool -> JM.JsonValue -> msg) Bool JM.JsonValue
     | SyncMsg JM.SearchParams
+    | DelayedCmdMsg (Cmd msg) (EM.EditModel msg -> Bool)
 
 
 type alias Tomsg msg =
@@ -141,6 +145,13 @@ syncMsg toMsg params =
 sync : Tomsg msg -> JM.SearchParams -> Cmd msg
 sync toMsg params =
     domsg <| syncMsg toMsg params
+
+
+delayedCmd : Tomsg msg -> Float -> (EM.EditModel msg -> Bool) -> Cmd msg -> Cmd msg
+delayedCmd toMsg delay condFunc cmd =
+    Task.perform
+        toMsg
+        (Process.sleep delay |> Task.map (always <| DelayedCmdMsg cmd condFunc))
 
 
 map : (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
@@ -296,6 +307,15 @@ update toMsg msg ((Model ({ searchParams, list, sortCol } as model)) as same) =
 
                 -- set search form values
                 ]
+            )
+
+        DelayedCmdMsg cmd condFunc ->
+            ( Model model
+            , if condFunc searchParams then
+                cmd
+
+              else
+                Cmd.none
             )
 
         ScrollEventsMsg data ->
