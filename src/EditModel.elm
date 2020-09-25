@@ -7,7 +7,7 @@ module EditModel exposing
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
   , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete
-  , id, data, inpValue, inp, inps, inpsByPattern, inpsTableByPattern, withClearMsg
+  , id, data, inpValue, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
   , update
@@ -737,18 +737,6 @@ inpsTableByPattern toMsg patterns model =
   patterns |>
   List.map (\p -> inpsByPattern p toMsg model) |>
   Utils.transpose
-
-
-withClearMsg: Tomsg msg -> Input msg -> EditModel msg -> Input msg
-withClearMsg toMsg input { controllers } =
-  let
-    clearMsg =
-      Dict.get input.name controllers |>
-      Maybe.map(\ctl -> toMsg <| OnSelectMsg ctl "")
-  in
-    { input |
-      msgs = input.msgs |> Maybe.map (\msgs -> { msgs | clearmsg = clearMsg })
-    }
 
 
 inpInternal: Tomsg msg -> Controller msg -> Input msg -> Input msg
