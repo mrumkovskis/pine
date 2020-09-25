@@ -4,6 +4,7 @@ module ListModel exposing
     , Tomsg
     , delayedCmd
     , init
+    , isProgress
     , load
     , loadAndReplaceUrl
     , loadAndReplaceUrlMsg
@@ -157,6 +158,11 @@ delayedCmd toMsg delay cmdFunc =
 map : (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
 map mapper (Model model) =
     Model { model | list = JM.mapList mapper model.list }
+
+
+isProgress : Model msg -> Bool
+isProgress (Model { list }) =
+    JM.isProgress list
 
 
 update : Tomsg msg -> Msg msg -> Model msg -> ( Model msg, Cmd msg )
