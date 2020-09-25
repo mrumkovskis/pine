@@ -55,7 +55,7 @@ type Msg msg
     | SortMsg String
     | SelectMsg (Bool -> JM.JsonValue -> msg) Bool JM.JsonValue
     | SyncMsg JM.SearchParams
-    | DelayedCmdMsg (Cmd msg) (EM.EditModel msg -> Bool)
+    | DelayedCmdMsg (EM.EditModel msg -> Cmd msg)
 
 
 type alias Tomsg msg =
@@ -147,11 +147,11 @@ sync toMsg params =
     domsg <| syncMsg toMsg params
 
 
-delayedCmd : Tomsg msg -> Float -> (EM.EditModel msg -> Bool) -> Cmd msg -> Cmd msg
-delayedCmd toMsg delay condFunc cmd =
+delayedCmd : Tomsg msg -> Float -> (EM.EditModel msg -> Cmd msg) -> Cmd msg
+delayedCmd toMsg delay cmdFunc =
     Task.perform
         toMsg
-        (Process.sleep delay |> Task.map (always <| DelayedCmdMsg cmd condFunc))
+        (Process.sleep delay |> Task.map (always <| DelayedCmdMsg cmdFunc))
 
 
 map : (JM.JsonValue -> JM.JsonValue) -> Model msg -> Model msg
@@ -309,14 +309,8 @@ update toMsg msg ((Model ({ searchParams, list, sortCol } as model)) as same) =
                 ]
             )
 
-        DelayedCmdMsg cmd condFunc ->
-            ( Model model
-            , if condFunc searchParams then
-                cmd
-
-              else
-                Cmd.none
-            )
+        DelayedCmdMsg cmdFunc ->
+            ( Model model, cmdFunc searchParams )
 
         ScrollEventsMsg data ->
             ( Model model, SE.process (toMsg << ScrollEventsMsg) data )
