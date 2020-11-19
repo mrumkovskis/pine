@@ -1,7 +1,7 @@
 module EditModel exposing
   ( Input, Controller (..), ModelUpdater, InputValidator, Formatter, SelectInitializer
   , EditModel, JsonEditMsg, Tomsg, ControllerInitializer
-  , Msgs, SelectMsgs, UpdateValue (..), ValidationResult (..)
+  , Msgs, SelectMsgs, UpdateValue (..), ValidationResult (..), validateAll, validateAllMsg
   , init, initJsonForm, initJsonQueryForm
   , defaultController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
@@ -167,6 +167,8 @@ type JsonEditMsg msg
   | ValidateFieldMsg
       (Controller msg)
       (Maybe (String, (Result String (List (String, String))))) -- used for validation task
+  | ValidateAllMsg
+  | ValidateAllUpdateMsg (Result String (List (List (String, String))))
   | UpdateFieldMsg (Controller msg) (Result String (JM.JsonValue, JM.JsonValue -> JM.JsonValue -> JM.JsonValue))
   -- update entire model
   | EditModelMsg (JM.JsonValue -> JM.JsonValue)
@@ -617,6 +619,14 @@ validate: Tomsg msg -> String -> Cmd msg
 validate toMsg path =
   domsg (toMsg <| ValidatePathMsg path )
 
+validateAll: Tomsg msg -> Cmd msg
+validateAll =
+  domsg << validateAllMsg
+
+validateAllMsg: Tomsg msg -> msg
+validateAllMsg toMsg =
+  toMsg <| ValidateAllMsg
+
 
 {-| Save model from server.  Calls [`JsonModel.delete`](JsonModel#delete)
 -}
@@ -863,22 +873,21 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map (\(c, input) -> updateModelFromInput inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
-    updateValidationResults defName res =
-      let
-        updater =
-          List.foldl
-            (\(name, err) newInputs ->
-              Dict.update
-                (if String.isEmpty name then defName else name)
-                (Maybe.map
-                  (\i -> { i | error = if String.isEmpty err then Nothing else Just err })
-                )
-                newInputs
+    validationUpdater defName = 
+      List.foldl
+        (\(name, err) newInputs ->
+          Dict.update
+            (if String.isEmpty name then defName else name)
+            (Maybe.map
+              (\i -> { i | error = if String.isEmpty err then Nothing else Just err })
             )
-      in
+            newInputs
+        )
+
+    updateValidationResults defName res =
         { same |
           inputs =
-            updater
+            validationUpdater defName
               inputs
               (if List.isEmpty res then [ (defName, "") ] else res)
         }
@@ -1121,6 +1130,64 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                 ( same, Ask.error toMessagemsg err)
           ) |>
         Maybe.withDefault ( same, Cmd.none )
+
+
+      ValidateAllMsg ->
+        let
+          mapResult ctrl res = 
+            List.map (\(name, err) ->
+              if String.isEmpty name then
+                (ctrl.name, err)
+              else
+                (name, err)
+            ) res
+
+          taskList =
+            Dict.toList controllers
+              |> List.concatMap (\(_, Controller ctrl) ->
+                Dict.get ctrl.name inputs
+                  |> Maybe.map (\input ->
+                    case ctrl.validateInput input (JM.data model) of
+                      ValidationResult res ->
+                        [ Task.succeed (mapResult ctrl res) ]
+
+                      ValidationTask task ->
+                        [ Task.map (\res -> (mapResult ctrl res)) task ]
+                  )
+                  |> Maybe.withDefault []
+              ) 
+              |> Task.sequence
+        in
+        (same
+        , Task.attempt
+            (toMsg << ValidateAllUpdateMsg)
+            taskList
+        )
+
+      ValidateAllUpdateMsg res ->
+        let
+          updateInputs resultList =
+            Dict.map (\key input ->
+              Dict.get key resultList
+                |> Maybe.map (\err -> { input | error = if String.isEmpty err then Nothing else Just err })
+                |> Maybe.withDefault input
+                  
+            ) inputs
+
+          newInps resultList = 
+            resultList
+              |> List.concat
+              |> List.filter (\(_, r) -> not <| String.isEmpty r)
+              |> Dict.fromList
+        in
+        case res of
+          Ok resultList ->
+            ( { same | inputs = updateInputs <| newInps resultList }
+            , Cmd.none  
+            )
+
+          Err err ->
+            ( same, Ask.error toMessagemsg err)
 
       UpdateFieldMsg (Controller ctrl) res ->
         ( { same |
