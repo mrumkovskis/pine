@@ -1174,15 +1174,15 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                   
             ) inputs
 
-          newInps resultList = 
+          updatedInputs resultList = 
             resultList
               |> List.concat
-              |> List.filter (\(_, r) -> not <| String.isEmpty r)
               |> Dict.fromList
+              |> updateInputs
         in
         case res of
           Ok resultList ->
-            ( { same | inputs = updateInputs <| newInps resultList }
+            ( { same | inputs = updatedInputs resultList }
             , Cmd.none  
             )
 
