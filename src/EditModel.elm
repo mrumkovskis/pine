@@ -354,7 +354,7 @@ defaultController dataBaseUrl path field =
             "boolean" ->
               String.toLower value |>
                 (\s ->
-                  if s == "true" || s == "false" then
+                  if String.isEmpty s || s == "true" || s == "false" then
                     success name
                   else
                     [ (key, "Not a boolean: " ++ value) ]
