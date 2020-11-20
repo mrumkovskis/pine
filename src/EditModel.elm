@@ -1134,13 +1134,13 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       ValidateAllMsg ->
         let
-          mapResult ctrl res = 
+          mapResult ctrl = 
             List.map (\(name, err) ->
               if String.isEmpty name then
                 (ctrl.name, err)
               else
                 (name, err)
-            ) res
+            )
 
           taskList =
             Dict.toList controllers
