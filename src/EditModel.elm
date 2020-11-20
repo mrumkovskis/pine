@@ -371,7 +371,7 @@ defaultController dataBaseUrl path field =
             Maybe.withDefault [ (name, "Value must come from list") ]
 
         requiredValidator =
-          if (field.required || not field.nullable) && String.isEmpty name then
+          if (field.required || not field.nullable) && String.isEmpty value then
             [ (name, "Field is mandatory") ]
           else
             []
@@ -389,7 +389,7 @@ defaultController dataBaseUrl path field =
                   r
               )
 
-            err ->
+            err -> 
               err
         ) |>
         ValidationResult
