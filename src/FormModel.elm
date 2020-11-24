@@ -18,8 +18,6 @@ module FormModel exposing
     , saveMsg
     , set
     , setMsg
-    , silentSave
-    , silentSaveMsg
     , toModelMsg
     , update
     )
@@ -33,7 +31,6 @@ import Utils exposing (..)
 type alias Model msg =
     { init : () -> EM.EditModel msg
     , form : Maybe (EM.EditModel msg)
-    , saveSuccessCmd : Maybe (JM.JsonValue -> Cmd msg)
     , toMessagemsg : Ask.Tomsg msg
     }
 
@@ -41,9 +38,9 @@ type alias Model msg =
 type Msg msg
     = CreateMsg (EM.JsonEditMsg msg)
     | EditMsg JM.JsonValue
-    | CancelEditMsg (Maybe msg) Bool
-    | SaveMsg Bool (Maybe (JM.JsonValue -> msg)) (EM.JsonEditMsg msg)
-    | DeleteMsg (Maybe (JM.JsonValue -> msg)) Int
+    | CancelEditMsg (Maybe (Cmd msg)) Bool
+    | SaveMsg (Maybe (JM.JsonValue -> Cmd msg)) (EM.JsonEditMsg msg)
+    | DeleteMsg (Maybe (JM.JsonValue -> Cmd msg)) Int
     | SetMsg JM.JsonValue
 
 
@@ -51,7 +48,7 @@ type alias Tomsg msg =
     Msg msg -> msg
 
 
-init : (() -> EM.EditModel msg) -> Maybe (JM.JsonValue -> Cmd msg) -> Ask.Tomsg msg -> Model msg
+init : (() -> EM.EditModel msg) -> Ask.Tomsg msg -> Model msg
 init initializer =
     Model initializer Nothing
 
@@ -71,24 +68,14 @@ create toMsg searchParams =
     domsg << createMsg toMsg searchParams
 
 
-saveMsg : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
-saveMsg toMsg maybeSuccessmsg =
-    EM.saveMsg (toMsg << SaveMsg False maybeSuccessmsg)
+saveMsg : Tomsg msg -> Maybe (JM.JsonValue -> Cmd msg) -> msg
+saveMsg toMsg maybeSuccessCmd =
+    EM.saveMsg (toMsg << SaveMsg maybeSuccessCmd)
 
 
-save : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
+save : Tomsg msg -> Maybe (JM.JsonValue -> Cmd msg) -> Cmd msg
 save toMsg =
     domsg << saveMsg toMsg
-
-
-silentSaveMsg : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> msg
-silentSaveMsg toMsg maybeSuccessmsg =
-    EM.saveMsg (toMsg << SaveMsg True maybeSuccessmsg)
-
-
-silentSave : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Cmd msg
-silentSave toMsg =
-    domsg << silentSaveMsg toMsg
 
 
 fetchMsg : Tomsg msg -> Int -> msg
@@ -111,24 +98,24 @@ edit toMsg =
     domsg << editMsg toMsg
 
 
-cancelMsg : Tomsg msg -> Maybe msg -> Bool -> msg
-cancelMsg toMsg maybemsg =
-    toMsg << CancelEditMsg maybemsg
+cancelMsg : Tomsg msg -> Maybe (Cmd msg) -> Bool -> msg
+cancelMsg toMsg maybeCmd =
+    toMsg << CancelEditMsg maybeCmd
 
 
-cancel : Tomsg msg -> Maybe msg -> Bool -> Cmd msg
-cancel toMsg maybemsg =
-    domsg << cancelMsg toMsg maybemsg
+cancel : Tomsg msg -> Maybe (Cmd msg) -> Bool -> Cmd msg
+cancel toMsg maybeCmd =
+    domsg << cancelMsg toMsg maybeCmd
 
 
-deleteMsg : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> msg
-deleteMsg toMsg maybeSuccessmsg =
-    toMsg << DeleteMsg maybeSuccessmsg
+deleteMsg : Tomsg msg -> Maybe (JM.JsonValue -> Cmd msg) -> Int -> msg
+deleteMsg toMsg maybeSuccessCmd =
+    toMsg << DeleteMsg maybeSuccessCmd
 
 
-delete : Tomsg msg -> Maybe (JM.JsonValue -> msg) -> Int -> Cmd msg
-delete toMsg maybeSuccessmsg =
-    domsg << deleteMsg toMsg maybeSuccessmsg
+delete : Tomsg msg -> Maybe (JM.JsonValue -> Cmd msg) -> Int -> Cmd msg
+delete toMsg maybeSuccessCmd =
+    domsg << deleteMsg toMsg maybeSuccessCmd
 
 
 setMsg : Tomsg msg -> JM.JsonValue -> msg
@@ -150,7 +137,7 @@ map mapper model =
 
 
 update : Tomsg msg -> Msg msg -> Model msg -> ( Model msg, Cmd msg )
-update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
+update toMsg msg ({ form, toMessagemsg } as model) =
     case msg of
         CreateMsg data ->
             form
@@ -167,24 +154,24 @@ update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
                 |> Maybe.withDefault Cmd.none
             )
 
-        CancelEditMsg maybeMsg ask ->
+        CancelEditMsg maybeCmd ask ->
             if ask && (model.form |> Maybe.map .isDirty |> Maybe.withDefault False) then
                 ( model
                 , Ask.ask
                     toMessagemsg
                     "Vai atcelt datu labošanu?"
-                    (cancel toMsg maybeMsg False)
+                    (cancel toMsg maybeCmd False)
                     Nothing
                 )
 
             else
                 ( { model | form = Nothing }
-                , maybeMsg |> Maybe.map domsg |> Maybe.withDefault Cmd.none
+                , maybeCmd |> Maybe.withDefault Cmd.none
                 )
 
-        SaveMsg isSilentSave maybeSuccessmsg data ->
+        SaveMsg maybeSuccessCmd data ->
             form
-                |> Maybe.map (EM.update (toMsg << SaveMsg isSilentSave maybeSuccessmsg) data)
+                |> Maybe.map (EM.update (toMsg << SaveMsg maybeSuccessCmd) data)
                 |> Maybe.map (Tuple.mapFirst (\m -> { model | form = Just m }))
                 |> Maybe.withDefault ( model, Cmd.none )
                 |> (\( newmod, cmd ) ->
@@ -192,25 +179,7 @@ update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
                             ( newmod
                             , newmod.form
                                 |> Maybe.map (.model >> JM.data)
-                                |> Maybe.map
-                                    (\m ->
-                                        let
-                                            saveCmd =
-                                                saveSuccessCmd |> Utils.filter (always <| not isSilentSave)
-                                        in
-                                        case ( maybeSuccessmsg, saveCmd ) of
-                                            ( Just sm, Just sc ) ->
-                                                Cmd.batch [ domsg <| sm m, sc m ]
-
-                                            ( Just sm, Nothing ) ->
-                                                domsg <| sm m
-
-                                            ( Nothing, Just sc ) ->
-                                                sc m
-
-                                            _ ->
-                                                Cmd.none
-                                    )
+                                |> Maybe.andThen (\m -> maybeSuccessCmd |> Maybe.map (\successCmd -> successCmd m))
                                 |> Maybe.withDefault Cmd.none
                             )
 
@@ -218,14 +187,14 @@ update toMsg msg ({ form, saveSuccessCmd, toMessagemsg } as model) =
                             ( newmod, cmd )
                    )
 
-        DeleteMsg maybeSuccessmsg id ->
+        DeleteMsg maybeSuccessCmd id ->
             Tuple.pair
                 model
             <|
                 Ask.ask
                     toMessagemsg
                     "Vai dzēst ierakstu?"
-                    (EM.delete (toMsg << SaveMsg True maybeSuccessmsg) id)
+                    (EM.delete (toMsg << SaveMsg maybeSuccessCmd) id)
                     Nothing
 
         SetMsg data ->
