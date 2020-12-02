@@ -159,6 +159,9 @@ update _ message (Messages msgs) =
             Ask.Question _ cmd _ ->
               Just <| ( removeMsg msg, cmd ) -- do yes command associated with Ask message
 
+            Ask.CustomDialog _ _ cmd _ ->
+                Just <| ( removeMsg msg, cmd )
+
             _ -> Nothing
         ) |>
       Maybe.withDefault (Tuple.pair (removeMsg msg) Cmd.none)
@@ -171,6 +174,9 @@ update _ message (Messages msgs) =
           case m of
             Ask.Question _ _ maybeCmd ->
               Just <| ( removeMsg msg, maybeCmd |> Maybe.withDefault Cmd.none ) -- do no command associated with Ask message
+
+            Ask.CustomDialog _ _ _ maybeCmd ->
+              Just <| ( removeMsg msg, maybeCmd |> Maybe.withDefault Cmd.none )
 
             _ -> Nothing
         ) |>
