@@ -202,6 +202,8 @@ init model ctrlList toMessagemsg =
         (\k _ ->
           Input k (path k) "" False Nothing Nothing Nothing -1 Nothing False False
         )
+
+
   in
     EditModel
       model
@@ -216,21 +218,21 @@ init model ctrlList toMessagemsg =
 
 
 initJsonForm:
-  String -> String -> ControllerInitializer msg -> String -> Ask.Tomsg msg -> EditModel msg
+  String -> String -> ControllerInitializer msg -> String -> Tomsg msg -> Ask.Tomsg msg -> EditModel msg
 initJsonForm =
   initJsonFormInternal .fields
 
 
 initJsonQueryForm:
-  String -> String -> ControllerInitializer msg -> String -> Ask.Tomsg msg -> EditModel msg
+  String -> String -> ControllerInitializer msg -> String -> Tomsg msg -> Ask.Tomsg msg -> EditModel msg
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
 initJsonFormInternal:
   (VM.View -> List VM.Field) -> String -> String -> ControllerInitializer msg -> String ->
-  Ask.Tomsg msg -> EditModel msg
-initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMessagemsg =
+  Tomsg msg -> Ask.Tomsg msg -> EditModel msg
+initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMsg toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ _ as formModel) =
       JM.flattenJsonForm fieldGetter formModel |>
@@ -253,13 +255,22 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
         ) |>
         List.unzip |>
         Tuple.mapBoth Dict.fromList Dict.fromList
+
+    askToMsg: Ask.Tomsg msg
+    askToMsg msg =
+      case msg of
+        Ask.Message Ask.Error _ ->
+          toMsg <| CmdChainMsg [ValidateAllMsg]  (domsg <| toMessagemsg msg) Nothing
+
+        _ -> (toMessagemsg msg)
+    
   in
     EditModel
-      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUrl typeName toMessagemsg)
+      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUrl typeName askToMsg)
       (jsonFormInitializer >> Just)
       Dict.empty
       Dict.empty
-      toMessagemsg
+      askToMsg
       False
       False
       True
