@@ -6,7 +6,7 @@ module EditModel exposing
   , defaultController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete
+  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete, toAskMsg
   , id, data, inpValue, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
@@ -175,6 +175,7 @@ type JsonEditMsg msg
   | NewModelMsg JM.SearchParams (JM.JsonValue -> JM.JsonValue)
   | SyncModelMsg
   | SubmitModelMsg
+  | AskMsg (Ask.Tomsg msg) (Ask.Tomsg msg -> Ask.Msg msg -> EditModel msg -> Cmd msg) (Ask.Msg msg)
   --
   | CmdChainMsg (List (JsonEditMsg msg)) (Cmd msg) (Maybe (JsonEditMsg msg))
 
@@ -218,21 +219,21 @@ init model ctrlList toMessagemsg =
 
 
 initJsonForm:
-  String -> String -> ControllerInitializer msg -> String -> Tomsg msg -> Ask.Tomsg msg -> EditModel msg
+  String -> String -> ControllerInitializer msg -> String -> Ask.Tomsg msg -> EditModel msg
 initJsonForm =
   initJsonFormInternal .fields
 
 
 initJsonQueryForm:
-  String -> String -> ControllerInitializer msg -> String -> Tomsg msg -> Ask.Tomsg msg -> EditModel msg
+  String -> String -> ControllerInitializer msg -> String -> Ask.Tomsg msg -> EditModel msg
 initJsonQueryForm =
   initJsonFormInternal .filter
 
 
 initJsonFormInternal:
   (VM.View -> List VM.Field) -> String -> String -> ControllerInitializer msg -> String ->
-  Tomsg msg -> Ask.Tomsg msg -> EditModel msg
-initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMsg toMessagemsg =
+  Ask.Tomsg msg -> EditModel msg
+initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeName toMessagemsg =
   let
     jsonFormInitializer (JM.Model _ _ as formModel) =
       JM.flattenJsonForm fieldGetter formModel |>
@@ -255,22 +256,13 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
         ) |>
         List.unzip |>
         Tuple.mapBoth Dict.fromList Dict.fromList
-
-    askToMsg: Ask.Tomsg msg
-    askToMsg msg =
-      case msg of
-        Ask.Message Ask.Error _ ->
-          toMsg <| CmdChainMsg [ValidateAllMsg]  (domsg <| toMessagemsg msg) Nothing
-
-        _ -> (toMessagemsg msg)
-    
   in
     EditModel
-      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUrl typeName askToMsg)
+      (JM.initJsonValueForm fieldGetter metadataBaseUri dataBaseUrl typeName toMessagemsg)
       (jsonFormInitializer >> Just)
       Dict.empty
       Dict.empty
-      askToMsg
+      toMessagemsg
       False
       False
       True
@@ -645,6 +637,9 @@ delete: Tomsg msg -> Int -> Cmd msg
 delete toMsg did =
   JM.delete (toMsg << DeleteModelMsg) [("id", String.fromInt did)]
 
+toAskMsg: Tomsg msg -> Ask.Tomsg msg -> (Ask.Tomsg msg -> Ask.Msg msg -> EditModel msg -> Cmd msg) -> Ask.Tomsg msg
+toAskMsg toMsg askToMsgDelegate handler =
+  toMsg << (AskMsg askToMsgDelegate handler)
 
 {-| Gets model id.  Calls [`JsonModel.id`](JsonModel#id) and tries to convert result to `Int`
 -}
@@ -1246,6 +1241,9 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           )
         )
 
+      AskMsg askToMsgDelegate handler message ->
+        (same, handler askToMsgDelegate message same)
+
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
         Maybe.map
@@ -1268,3 +1266,4 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               modmsg :: rest ->
                 do (toMsg << CmdChainMsg rest cmd << Just) modmsg
           )
+
