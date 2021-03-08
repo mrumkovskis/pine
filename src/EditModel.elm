@@ -142,7 +142,7 @@ type alias EditModel msg =
   --, error: Maybe String
   , isSaving: Bool
   , isDeleting: Bool
-  --, isValidating: Bool
+  , isValidatingAll: Bool
   , isEditable: Bool
   , isDirty: Bool
   }
@@ -214,6 +214,7 @@ init model ctrlList toMessagemsg =
       toMessagemsg
       False
       False
+      False
       True
       False
 
@@ -263,6 +264,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
       Dict.empty
       Dict.empty
       toMessagemsg
+      False
       False
       False
       True
@@ -1164,7 +1166,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               ) 
               |> Task.sequence
         in
-        (same
+        ({same | isValidatingAll = True}
         , Task.attempt
             (toMsg << ValidateAllUpdateMsg)
             taskList
@@ -1188,7 +1190,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         in
         case res of
           Ok resultList ->
-            ( { same | inputs = updatedInputs resultList }
+            ( { same | inputs = updatedInputs resultList, isValidatingAll = False}
             , Cmd.none  
             )
 
