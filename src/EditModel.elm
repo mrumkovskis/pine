@@ -138,8 +138,7 @@ type alias EditModel msg =
   , controllers: Dict String (Controller msg)
   , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
-  --, validate: Tomsg msg model -> model -> (Result String model, Cmd msg)
-  --, error: Maybe String
+  , error: Maybe (Ask.Msg msg)
   , isSaving: Bool
   , isDeleting: Bool
   , isValidatingAll: Bool
@@ -212,6 +211,7 @@ init model ctrlList toMessagemsg =
       controllers
       inputs
       toMessagemsg
+      Nothing
       False
       False
       False
@@ -264,6 +264,7 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
       Dict.empty
       Dict.empty
       toMessagemsg
+      Nothing
       False
       False
       False
@@ -394,7 +395,7 @@ defaultController dataBaseUrl path field =
                   r
               )
 
-            err -> 
+            err ->
               err
         ) |>
         ValidationResult
@@ -881,7 +882,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map (\(c, input) -> updateModelFromInput inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
-    validationUpdater defName = 
+    validationUpdater defName =
       List.foldl
         (\(name, err) newInputs ->
           Dict.update
@@ -1142,7 +1143,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       ValidateAllMsg ->
         let
-          mapResult ctrl = 
+          mapResult ctrl =
             List.map (\(name, err) ->
               if String.isEmpty name then
                 (ctrl.name, err)
@@ -1163,10 +1164,10 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                         [ Task.map (\res -> (mapResult ctrl res)) task ]
                   )
                   |> Maybe.withDefault []
-              ) 
+              )
               |> Task.sequence
         in
-        ({same | isValidatingAll = True}
+        ({same | isValidatingAll = True, error = Nothing}
         , Task.attempt
             (toMsg << ValidateAllUpdateMsg)
             taskList
@@ -1179,10 +1180,10 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               Dict.get key resultList
                 |> Maybe.map (\err -> { input | error = if String.isEmpty err then Nothing else Just err })
                 |> Maybe.withDefault input
-                  
+
             ) inputs
 
-          updatedInputs resultList = 
+          updatedInputs resultList =
             resultList
               |> List.concat
               |> Dict.fromList
@@ -1191,7 +1192,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         case res of
           Ok resultList ->
             ( { same | inputs = updatedInputs resultList, isValidatingAll = False}
-            , Cmd.none  
+            , Cmd.none
             )
 
           Err err ->
@@ -1244,7 +1245,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         )
 
       AskMsg askToMsgDelegate handler message ->
-        (same, handler askToMsgDelegate message same)
+        ({ same | error = Just message }, handler askToMsgDelegate message same)
 
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
