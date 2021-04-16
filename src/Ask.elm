@@ -1,6 +1,6 @@
 module Ask exposing
   ( MsgType (..), Msg (..), NavBarAction (..), Tomsg
-  , askmsg, ask, info, warn, error, unauthorized
+  , askmsg, ask, custommsg, custom, info, warn, error, unauthorized
   , askToDeferredmsg, askToCmdChainmsg, pushUrl, replaceUrl, back, forward
   , askToScrollEventsmsg, errorOrUnauthorized, text
   )
@@ -15,7 +15,7 @@ import Utils exposing (..)
 import DeferredRequests as DR exposing (Tomsg)
 import CmdChain exposing (Tomsg)
 import ScrollEvents as SE exposing (Tomsg)
-
+import Html exposing (..)
 
 {-| Message type: Info, Warn, Error
 -}
@@ -39,6 +39,7 @@ type NavBarAction
 type Msg msg
   = Message MsgType String
   | Question String (Cmd msg) (Maybe(Cmd msg))
+  | CustomDialog String (Html msg) (Cmd msg) (Maybe (Cmd msg))  
   | NavBarAction NavBarAction String
   | SubscribeToDeferredMsg (DR.Tomsg msg -> msg)
   | SubscribeToCmdChainMsg (CmdChain.Tomsg msg -> msg)
@@ -60,6 +61,16 @@ ask: Tomsg msg -> String -> Cmd msg -> Maybe (Cmd msg) -> Cmd msg
 ask toMsg question cmdYes maybeCmdNo =
   do toMsg <| Question question cmdYes maybeCmdNo
 
+custommsg : Tomsg msg -> String -> Html msg -> Cmd msg -> Maybe (Cmd msg) -> msg
+custommsg toMsg key question cmdYes maybeCmdNo =
+    toMsg <| CustomDialog key question cmdYes maybeCmdNo
+
+
+{-| Asks `Question`. Question contains command to be performed on positive answer.
+-}
+custom : Tomsg msg -> String -> Html msg -> Cmd msg -> Maybe (Cmd msg) -> Cmd msg
+custom toMsg key question cmdYes maybeCmdNo =
+    do toMsg <| CustomDialog key question cmdYes maybeCmdNo
 
 {-| Sends `Info` message
 -}
@@ -147,6 +158,9 @@ text msg =
     Message _ txt -> txt
 
     Question txt _ _ -> txt
+
+    CustomDialog key _ _ _ ->
+        key
 
     _ -> ""
 

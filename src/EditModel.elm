@@ -6,7 +6,7 @@ module EditModel exposing
   , defaultController, jsonCtls, keyFromPath, withParser, overrideValidator, withFormatter, withSelectInitializer
   , withValidator, withUpdater, withInputCmd
   , setModelUpdater, setFormatter, setSelectInitializer, setInputValidator
-  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete
+  , fetch, fetchMsg, set, setMsg, create, createMsg, save, saveMsg, sync, syncMsg, validate, delete, toAskMsg
   , id, data, inpValue, inp, inps, inpsByPattern, inpsTableByPattern
   , simpleCtrl, simpleSelectCtrl, noCmdUpdater, controller, inputMsg, onInputMsg, onInputCmd
   , jsonEditMsg, jsonDeleteMsg
@@ -138,11 +138,10 @@ type alias EditModel msg =
   , controllers: Dict String (Controller msg)
   , inputs: Dict String (Input msg)
   , toMessagemsg: Ask.Tomsg msg
-  --, validate: Tomsg msg model -> model -> (Result String model, Cmd msg)
-  --, error: Maybe String
+  , error: Maybe (Ask.Msg msg)
   , isSaving: Bool
   , isDeleting: Bool
-  --, isValidating: Bool
+  , isValidatingAll: Bool
   , isEditable: Bool
   , isDirty: Bool
   }
@@ -175,6 +174,7 @@ type JsonEditMsg msg
   | NewModelMsg JM.SearchParams (JM.JsonValue -> JM.JsonValue)
   | SyncModelMsg
   | SubmitModelMsg
+  | AskMsg (Ask.Tomsg msg) (Ask.Tomsg msg -> Ask.Msg msg -> EditModel msg -> Cmd msg) (Ask.Msg msg)
   --
   | CmdChainMsg (List (JsonEditMsg msg)) (Cmd msg) (Maybe (JsonEditMsg msg))
 
@@ -202,6 +202,8 @@ init model ctrlList toMessagemsg =
         (\k _ ->
           Input k (path k) "" False Nothing Nothing Nothing -1 Nothing False False
         )
+
+
   in
     EditModel
       model
@@ -209,6 +211,8 @@ init model ctrlList toMessagemsg =
       controllers
       inputs
       toMessagemsg
+      Nothing
+      False
       False
       False
       True
@@ -260,6 +264,8 @@ initJsonFormInternal fieldGetter metadataBaseUri dataBaseUrl initializer typeNam
       Dict.empty
       Dict.empty
       toMessagemsg
+      Nothing
+      False
       False
       False
       True
@@ -389,7 +395,7 @@ defaultController dataBaseUrl path field =
                   r
               )
 
-            err -> 
+            err ->
               err
         ) |>
         ValidationResult
@@ -634,6 +640,9 @@ delete: Tomsg msg -> Int -> Cmd msg
 delete toMsg did =
   JM.delete (toMsg << DeleteModelMsg) [("id", String.fromInt did)]
 
+toAskMsg: Tomsg msg -> Ask.Tomsg msg -> (Ask.Tomsg msg -> Ask.Msg msg -> EditModel msg -> Cmd msg) -> Ask.Tomsg msg
+toAskMsg toMsg askToMsgDelegate handler =
+  toMsg << (AskMsg askToMsgDelegate handler)
 
 {-| Gets model id.  Calls [`JsonModel.id`](JsonModel#id) and tries to convert result to `Int`
 -}
@@ -873,7 +882,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       Maybe.map (\(c, input) -> updateModelFromInput inputs c input) >>
       Maybe.withDefault (same, Cmd.none)
 
-    validationUpdater defName = 
+    validationUpdater defName =
       List.foldl
         (\(name, err) newInputs ->
           Dict.update
@@ -1134,7 +1143,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       ValidateAllMsg ->
         let
-          mapResult ctrl = 
+          mapResult ctrl =
             List.map (\(name, err) ->
               if String.isEmpty name then
                 (ctrl.name, err)
@@ -1155,10 +1164,10 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
                         [ Task.map (\res -> (mapResult ctrl res)) task ]
                   )
                   |> Maybe.withDefault []
-              ) 
+              )
               |> Task.sequence
         in
-        (same
+        ({same | isValidatingAll = True, error = Nothing}
         , Task.attempt
             (toMsg << ValidateAllUpdateMsg)
             taskList
@@ -1171,10 +1180,10 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               Dict.get key resultList
                 |> Maybe.map (\err -> { input | error = if String.isEmpty err then Nothing else Just err })
                 |> Maybe.withDefault input
-                  
+
             ) inputs
 
-          updatedInputs resultList = 
+          updatedInputs resultList =
             resultList
               |> List.concat
               |> Dict.fromList
@@ -1182,8 +1191,8 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         in
         case res of
           Ok resultList ->
-            ( { same | inputs = updatedInputs resultList }
-            , Cmd.none  
+            ( { same | inputs = updatedInputs resultList, isValidatingAll = False}
+            , Cmd.none
             )
 
           Err err ->
@@ -1235,6 +1244,9 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           )
         )
 
+      AskMsg askToMsgDelegate handler message ->
+        ({ same | error = Just message }, handler askToMsgDelegate message same)
+
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
         Maybe.map
@@ -1257,3 +1269,4 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
               modmsg :: rest ->
                 do (toMsg << CmdChainMsg rest cmd << Just) modmsg
           )
+
