@@ -1245,7 +1245,12 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
         )
 
       AskMsg askToMsgDelegate handler message ->
-        ({ same | error = Just message }, handler askToMsgDelegate message same)
+        let
+          newModel = 
+            { same | error = Just message, isSaving = False, isDeleting = False }
+
+        in
+        (newModel, handler askToMsgDelegate message newModel)
 
       CmdChainMsg msgs cmd mmsg ->
         mmsg |>
