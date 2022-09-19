@@ -174,7 +174,7 @@ type JsonEditMsg msg
   | EditModelMsg (JM.JsonValue -> JM.JsonValue)
   | NewModelMsg JM.SearchParams (JM.JsonValue -> JM.JsonValue)
   | SyncModelMsg
-  | SubmitModelMsg
+  | SubmitModelMsg JM.SearchParams
   | AskMsg (Ask.Tomsg msg) (Ask.Tomsg msg -> Ask.Msg msg -> EditModel msg -> Cmd msg) (Ask.Msg msg)
   --
   | CmdChainMsg (List (JsonEditMsg msg)) (Cmd msg) (Maybe (JsonEditMsg msg))
@@ -601,14 +601,14 @@ createMsg toMsg createParams createFun =
 
 {-| Save model to server.  Calls [`JsonModel.save`](JsonModel#save)
 -}
-save: Tomsg msg -> Cmd msg
-save =
-  domsg << saveMsg
+save: Tomsg msg -> JM.SearchParams -> Cmd msg
+save toMsg params =
+  domsg <| saveMsg toMsg params
 
 
-saveMsg: Tomsg msg -> msg
-saveMsg toMsg =
-  toMsg SubmitModelMsg
+saveMsg: Tomsg msg -> JM.SearchParams -> msg
+saveMsg toMsg searchParams =
+  toMsg <| SubmitModelMsg searchParams
 
 
 sync: Tomsg msg -> Cmd msg
@@ -1224,7 +1224,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
       SyncModelMsg ->
         updateModelFromActiveInput inputs
 
-      SubmitModelMsg ->
+      SubmitModelMsg params ->
         ( same
         , inputs |>
           Dict.values |>
@@ -1232,7 +1232,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
           List.map .name |>
           (\rl ->
             if List.isEmpty rl then
-              JM.save (toMsg << SaveModelMsg) []
+              JM.save (toMsg << SaveModelMsg) params
             else
               Ask.error
                 toMessagemsg
