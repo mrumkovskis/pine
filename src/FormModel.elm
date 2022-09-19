@@ -16,6 +16,8 @@ module FormModel exposing
     , map
     , save
     , saveMsg
+    , saveWithParams
+    , saveWithParamsMsg
     , set
     , setMsg
     , toModelMsg
@@ -70,12 +72,22 @@ create toMsg searchParams =
 
 saveMsg : Tomsg msg -> Maybe (JM.JsonValue -> Cmd msg) -> msg
 saveMsg toMsg maybeSuccessCmd =
-    EM.saveMsg (toMsg << SaveMsg maybeSuccessCmd)
+    EM.saveMsg (toMsg << SaveMsg maybeSuccessCmd) []
 
 
 save : Tomsg msg -> Maybe (JM.JsonValue -> Cmd msg) -> Cmd msg
 save toMsg =
     domsg << saveMsg toMsg
+
+
+saveWithParamsMsg : Tomsg msg -> JM.SearchParams -> Maybe (JM.JsonValue -> Cmd msg) -> msg
+saveWithParamsMsg toMsg params maybeSuccessCmd =
+    EM.saveMsg (toMsg << SaveMsg maybeSuccessCmd) params
+
+
+saveWithParams : Tomsg msg -> JM.SearchParams -> Maybe (JM.JsonValue -> Cmd msg) -> Cmd msg
+saveWithParams toMsg params =
+    domsg << saveWithParamsMsg toMsg params
 
 
 fetchMsg : Tomsg msg -> Int -> msg
