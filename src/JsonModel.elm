@@ -343,7 +343,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       Model
         { md |
           data = md.data ++ newData
-        , count = Nothing
+        , count = md.count
         , completed = List.length newData < mc.pageSize
         , ready = True
         }
