@@ -1633,7 +1633,7 @@ update toMsg msg (Model modelData modelConf as same) =
 
       DataMsg name restart searchParams (Ok newdata) ->
         if hasIntegrity (name, isFetchProgress) then
-            maybeWithNewData restart searchParams same |>
+            same |>
             modelConf.setter newdata |>
             withProgress fetchDone |>
             maybeUnqueueCmd
@@ -1732,7 +1732,7 @@ update toMsg msg (Model modelData modelConf as same) =
             noInitCmd =
               always <| DataCmdMsg False restart searchParams deferredHeader
           in
-            initializeAndCmd (same |> withProgress fetchProgress) noInitCmd cmd
+            initializeAndCmd (same |> maybeWithNewData restart searchParams |> withProgress fetchProgress) noInitCmd cmd
 
       DataWithParamCmd name param ->
         ( same
