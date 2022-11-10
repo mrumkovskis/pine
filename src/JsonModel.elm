@@ -170,7 +170,7 @@ type alias Config msg value =
   , offsetParamName: String
   , limitParamName: String
   , toMessagemsg: Ask.Tomsg msg
-  , queuedCmd: Maybe (Msg msg value)
+  , queuedCmd : List (Msg msg value)
   , loadedCount: value -> Int
   }
 
@@ -408,7 +408,7 @@ initList metadataBaseUri dataBaseUri typeName decoder encoder toMessagemsg =
       , offsetParamName = "offset"
       , limitParamName = "limit"
       , toMessagemsg = toMessagemsg
-      , queuedCmd = Nothing
+      , queuedCmd = []
       , loadedCount = List.length
       }
 
@@ -598,7 +598,7 @@ initFormInternal fieldGetter metadataBaseUri dataBaseUri typeName decoder encode
       , offsetParamName = "offset"
       , limitParamName = "limit"
       , toMessagemsg = toMessagemsg
-      , queuedCmd = Nothing
+      , queuedCmd = []
       , loadedCount = \_ -> 1
       }
 
@@ -1597,14 +1597,14 @@ update toMsg msg (Model modelData modelConf as same) =
           errorResponse progressDone err
 
     queueCmd (Model d mc) cmd =
-      ( Model d { mc | queuedCmd = Just cmd }
+      ( Model d { mc | queuedCmd = cmd :: mc.queuedCmd}
       , Cmd.none
       )
 
     maybeUnqueueCmd ((Model d mc) as mod) =
-      mc.queuedCmd |>
-      Maybe.map (\cmd -> ( Model d { mc | queuedCmd = Nothing }, do toMsg cmd) ) |>
-      Maybe.withDefault (mod, Cmd.none)
+      case mc.queuedCmd of
+          [] -> (mod, Cmd.none)
+          head :: tail -> ( Model d { mc | queuedCmd = tail }, do toMsg head)
 
     unqueueOnly =
       maybeUnqueueCmd >> Tuple.mapSecond (\_ -> Cmd.none)
