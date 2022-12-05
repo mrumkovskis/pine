@@ -1059,7 +1059,10 @@ stringToJsonValue jsonType value =
         Just <| JsString value
 
     "number" ->
-      String.toFloat value |> Maybe.map JsNumber
+      if String.isEmpty value then
+        Just JsNull
+      else
+        String.toFloat value |> Maybe.map JsNumber
 
     "boolean" ->
       Just <| JsBool (String.toLower value |> (==) "true")
