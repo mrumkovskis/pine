@@ -128,6 +128,7 @@ type alias SelectMsgs msg =
   { navigationmsg: Bool -> SE.Msg -> msg
   , setActivemsg: Int -> msg
   , selectmsg: Int -> msg
+  , searchmsg: String -> msg
   }
 
 
@@ -793,6 +794,7 @@ inpInternal toMsg ctl input =
                               x -> navigationMsg toSMsg x
                   , setActivemsg = setActiveMsg toSMsg
                   , selectmsg =  selectMsg toSMsg
+                  , searchmsg =  searchMsg toSMsg
                   }
             )
       }
@@ -1246,7 +1248,7 @@ update toMsg msg ({ model, inputs, controllers, toMessagemsg } as same) =
 
       AskMsg askToMsgDelegate handler message ->
         let
-          newModel = 
+          newModel =
             { same | error = Just message, isSaving = False, isDeleting = False }
 
         in
