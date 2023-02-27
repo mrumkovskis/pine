@@ -21,13 +21,14 @@ import JsonModel as JM
 import EditModel as EM
 import ViewMetadata as VM
 import Select exposing (..)
-import Utils
+import Utils exposing (required)
 
 
 type alias Calendar =
   { value: Maybe String
   , today: String
   , month: String
+  , month_int: Int
   , year: String
   , days: List String
   , weeks: List String
@@ -47,19 +48,19 @@ type alias Holiday =
 decoder: JD.Decoder (List Calendar)
 decoder =
   let
-      dec =
-        JD.map8
-          Calendar
-          (JD.field "value" <| JD.maybe <| JD.string)
-          (JD.field "today" JD.string)
-          (JD.field "month" JD.string)
-          (JD.field "year" JD.string)
-          (JD.field "days" <| JD.list JD.string)
-          (JD.field "weeks" <| JD.list JD.string)
-          (JD.field "holidays" <| JD.list holDec)
-          (JD.field "calendar" <| JD.list JD.string)
+      calendarDecoder =
+        JD.succeed Calendar
+          |> required "value" (JD.string |> JD.maybe)
+          |> required "today" JD.string
+          |> required "month" JD.string
+          |> required "month_int" (JD.map (\float -> truncate float) JD.float)
+          |> required "year" JD.string
+          |> required "days" (JD.list JD.string)
+          |> required "weeks" (JD.list JD.string)
+          |> required "holidays" (JD.list holidayDecoder)
+          |> required "calendar" (JD.list JD.string)
 
-      holDec =
+      holidayDecoder =
         JD.map4
           Holiday
           (JD.field "holiday" JD.string)
@@ -67,7 +68,7 @@ decoder =
           (JD.field "description" Utils.strOrEmpty)
           (JD.field "is_moved_working_day" JD.bool)
   in
-    JD.list dec
+    JD.list calendarDecoder
 
 
 jsonDecoder: JD.Decoder (List JM.JsonValue)
@@ -79,6 +80,7 @@ jsonDecoder =
           [ ("value", JM.JsString <| Maybe.withDefault "" <| entry.value)
           , ("today", JM.JsString entry.today)
           , ("month", JM.JsString entry.month)
+          , ("month_int", JM.JsNumber (toFloat entry.month_int))
           , ("year", JM.JsString entry.year)
           , ("days", JM.JsList <| List.map JM.JsString entry.days)
           , ("weeks", JM.JsList <| List.map JM.JsString entry.weeks)

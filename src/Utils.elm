@@ -9,13 +9,15 @@ module Utils exposing
   , do, domsg
   , expectJson, resolveJson, expectString, resolveString, badHttpBody
   , httpGetJson
+  , andMap, required, requiredAt
   )
 
 
 {-| Various useful utility methods.
 
 @docs at, httpQuery, matchIdx, noBreakSpace, optField, emptyEncoder
-      orElse, strOrEmpty, zip, flip, curry, uncurry, httpErrorToString
+      orElse, strOrEmpty, zip, flip, curry, uncurry, httpErrorToString,
+      andMap, required, requiredAt
 -}
 
 
@@ -440,3 +442,20 @@ httpGetJson url decoder =
     , resolver = resolveJson decoder
     , timeout = Nothing
     }
+
+{-| Adds decoder to a decoder pipeline
+-}
+andMap : JD.Decoder a -> JD.Decoder (a -> b) -> JD.Decoder b
+andMap = JD.map2 (|>)
+
+{-| Adds field decoder to a decoder pipeline
+-}
+required : String -> JD.Decoder a -> JD.Decoder (a -> b) -> JD.Decoder b
+required fieldName dec =
+  andMap (JD.field fieldName dec)
+
+{-| Adds nested field decoder to a decoder pipeline
+-}
+requiredAt : List String -> JD.Decoder a -> JD.Decoder (a -> b) -> JD.Decoder b
+requiredAt path dec =
+  andMap (JD.at path dec)
